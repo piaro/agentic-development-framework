@@ -1,0 +1,15 @@
+schema_version: 1
+contract_roots:
+  - contracts
+decision_root: decisions
+evidence_root: evidence
+policies:
+  require_contract_assessment_from_risk: R1
+  require_independent_challenger_from_risk: R2
+  require_failure_model_from_risk: R3
+  data_changes_require:
+    - data-invariants
+    - operation
+runtime:
+  python: ">=3.10"
+  dependencies: .agentic/runtime/requirements.txt

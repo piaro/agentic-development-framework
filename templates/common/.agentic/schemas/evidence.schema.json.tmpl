@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://piaro.example/agentic/evidence.schema.json",
+  "type": "object",
+  "required": ["schema_version", "change", "requirements", "residual_risks"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "requirements": {"type": "array"},
+    "residual_risks": {"type": "array"}
+  }
+}

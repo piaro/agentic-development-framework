@@ -1,0 +1,17 @@
+# Agentic Development
+
+このRepositoryでは、現在有効な正しさを`contracts/`、判断履歴を`decisions/`、検証事実を`evidence/`に置きます。
+
+## 変更開始
+
+```sh
+.agentic/bin/agentic change init <change-id> --title "変更タイトル"
+```
+
+1. `$agentic-change`で影響範囲を整理する。
+2. `$agentic-contract`でContract Readiness Assessmentを作る。
+3. `agentic contract lint`と`agentic contract resolve`を実行する。
+4. `agentic change ready`が成功してから`$agentic-builder`で実装する。
+5. 独立した`$agentic-challenger`で反証し、`evidence/`へ結果を残す。
+
+Feature Contractから上位Contractを暗黙に変更しません。全体判断が未確定なら、変更をblockedにして先にContractを決定します。

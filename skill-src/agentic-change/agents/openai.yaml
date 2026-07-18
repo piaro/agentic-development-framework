@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agentic Change"
+  short_description: "Assess change impact, contracts, and readiness"
+  default_prompt: "Use $agentic-change to initialize and assess this change before implementation."

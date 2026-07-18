@@ -1,0 +1,14 @@
+# Stateful Scenarios
+
+Operation Contractから操作列を作り、各操作後にData Invariantを検査します。
+
+最低限含める組み合わせ:
+
+- create / update / delete / recreate
+- finalize / cancel / retry
+- duplicate / out-of-order / concurrent execution
+- timeout後の遅延成功と再実行
+- DB commitとevent publishの間の停止
+- migration中の新旧コード混在
+
+対象プロジェクトは、Operation idを実際のAPIまたはService呼び出しへ変換するScenario Driverを実装してください。

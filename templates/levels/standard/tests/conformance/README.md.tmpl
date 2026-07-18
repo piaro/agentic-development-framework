@@ -1,0 +1,16 @@
+# Conformance Tests
+
+Architecture Contract、Data Invariant、Operation Contractへの適合を機械的に検証します。
+
+最低限の候補:
+
+- 許可されないパッケージ依存
+- 永続化・外部通信の共通 adapter 経由
+- wire type と domain type の変換
+- tenant / authorization scope
+- 同一能力の共通 contract test suite
+- Operation Contractにないデータ更新経路
+- Feature Contractと上位Contractの参照漏れ
+- Data Invariantを検査するquery / property test
+
+各テストが守るContract idとclause idをテスト名・コメントから追跡可能にしてください。

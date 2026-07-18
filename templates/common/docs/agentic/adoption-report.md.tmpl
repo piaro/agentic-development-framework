@@ -1,0 +1,44 @@
+# Adoption Report
+
+> エージェントがRepositoryを調査して完成させる。コードからの推測は「推測」、未確認は「未確認」と明記する。
+
+## 現状の事実
+
+- 実行入口: TODO
+- パッケージ・サービス境界: TODO
+- データストアと外部サービス: TODO
+- 既存仕様・判断履歴: TODO
+- テストと観測: TODO
+
+## Contractへ昇格する正しさ
+
+| 対象 | 現在の正本 | 不変条件・判断 | Contract kind | 状態 |
+|---|---|---|---|---|
+| TODO | TODO | TODO | project / domain / capability / architecture | proposed |
+
+## 同じ能力の異なる実装
+
+| 能力 | 実装箇所 | 差異 | 正とする設計 | 移行対象 |
+|---|---|---|---|---|
+| TODO | TODO | TODO | 要判断 | TODO |
+
+## データ変更経路と不整合リスク
+
+| Entity | Writer / Operation | Transaction | 外部作用 | 不変条件 | 未確認 |
+|---|---|---|---|---|---|
+| TODO | TODO | TODO | TODO | TODO | TODO |
+
+## Platformの未知
+
+| 境界 | 仮定 | 証拠 | 必要なprobe | 失敗時の観測 |
+|---|---|---|---|---|
+| TODO | TODO | 未確認 | TODO | TODO |
+
+## 移行順序
+
+1. 将来変更を検査するContractと安全網
+2. 新規変更の参照設計
+3. Data InvariantとOperation Contract
+4. adapter・データ移行・backfill
+5. 呼び出し側移行
+6. 旧経路削除

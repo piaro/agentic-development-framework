@@ -1,0 +1,321 @@
+#!/bin/sh
+
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+
+MODE=""
+LEVEL=""
+TARGET=""
+PROJECT_NAME=""
+DRY_RUN=0
+NON_INTERACTIVE=0
+UPGRADE=0
+
+usage() {
+  cat <<'EOF'
+Usage: agentic-init [options]
+
+Options:
+  --mode new|adopt                 新規作成または既存導入
+  --level lite|standard|system|critical
+  --target PATH                    導入先
+  --name NAME                      プロジェクト名
+  --non-interactive                対話を行わない
+  --upgrade                        kit管理のSkillとAGENTSブロックを更新
+  --dry-run                        変更せず予定だけ表示
+  -h, --help                       ヘルプ
+EOF
+}
+
+fail() {
+  printf 'error: %s\n' "$1" >&2
+  exit 1
+}
+
+prompt_mode() {
+  printf '%s\n' '導入モードを選択してください:'
+  printf '%s\n' '  1) new   - 新規プロジェクト'
+  printf '%s\n' '  2) adopt - 既存プロジェクトへ導入'
+  printf '> '
+  read -r answer
+  case "$answer" in
+    1|new) MODE="new" ;;
+    2|adopt) MODE="adopt" ;;
+    *) fail "不正なモードです: $answer" ;;
+  esac
+}
+
+prompt_level() {
+  printf '%s\n' '導入レベルを選択してください:'
+  printf '%s\n' '  1) lite     - 個人・短期プロトタイプ'
+  printf '%s\n' '  2) standard - 通常のアプリ/チーム（推奨）'
+  printf '%s\n' '  3) system   - 複数サービス/複数エージェント'
+  printf '%s\n' '  4) critical - 高い安全性・監査・不可逆操作'
+  printf '> '
+  read -r answer
+  case "$answer" in
+    1|lite) LEVEL="lite" ;;
+    2|standard) LEVEL="standard" ;;
+    3|system) LEVEL="system" ;;
+    4|critical) LEVEL="critical" ;;
+    *) fail "不正なレベルです: $answer" ;;
+  esac
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mode)
+      [ "$#" -ge 2 ] || fail "--mode に値が必要です"
+      MODE=$2
+      shift 2
+      ;;
+    --level)
+      [ "$#" -ge 2 ] || fail "--level に値が必要です"
+      LEVEL=$2
+      shift 2
+      ;;
+    --target)
+      [ "$#" -ge 2 ] || fail "--target に値が必要です"
+      TARGET=$2
+      shift 2
+      ;;
+    --name)
+      [ "$#" -ge 2 ] || fail "--name に値が必要です"
+      PROJECT_NAME=$2
+      shift 2
+      ;;
+    --non-interactive)
+      NON_INTERACTIVE=1
+      shift
+      ;;
+    --upgrade)
+      UPGRADE=1
+      shift
+      ;;
+    --dry-run)
+      DRY_RUN=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      fail "不明なオプションです: $1"
+      ;;
+  esac
+done
+
+if [ -z "$MODE" ]; then
+  [ "$NON_INTERACTIVE" -eq 0 ] || fail "--mode が必要です"
+  prompt_mode
+fi
+
+if [ -z "$LEVEL" ]; then
+  [ "$NON_INTERACTIVE" -eq 0 ] || fail "--level が必要です"
+  prompt_level
+fi
+
+case "$MODE" in
+  new|adopt) ;;
+  *) fail "--mode は new または adopt です" ;;
+esac
+
+case "$LEVEL" in
+  lite|standard|system|critical) ;;
+  *) fail "--level は lite, standard, system, critical のいずれかです" ;;
+esac
+
+if [ -z "$TARGET" ]; then
+  [ "$NON_INTERACTIVE" -eq 0 ] || fail "--target が必要です"
+  printf '導入先パス: '
+  read -r TARGET
+fi
+
+[ -n "$TARGET" ] || fail "導入先が空です"
+
+if [ "$MODE" = "new" ]; then
+  if [ -d "$TARGET" ] && [ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+    fail "new の導入先は空である必要があります。既存プロジェクトには --mode adopt を使ってください"
+  fi
+else
+  [ -d "$TARGET" ] || fail "adopt の導入先が存在しません: $TARGET"
+fi
+
+if [ -z "$PROJECT_NAME" ]; then
+  PROJECT_NAME=$(basename -- "$TARGET")
+fi
+
+[ -n "$PROJECT_NAME" ] || fail "プロジェクト名が空です"
+
+TODAY=$(date '+%Y-%m-%d')
+ESCAPED_NAME=$(printf '%s' "$PROJECT_NAME" | sed 's/[\\&|]/\\&/g')
+ESCAPED_LEVEL=$(printf '%s' "$LEVEL" | sed 's/[\\&|]/\\&/g')
+ESCAPED_MODE=$(printf '%s' "$MODE" | sed 's/[\\&|]/\\&/g')
+
+render_template() {
+  src=$1
+  dst=$2
+  owned=${3:-0}
+
+  if [ -e "$dst" ] && [ "$owned" -ne 1 ]; then
+    printf 'skip: %s already exists\n' "$dst"
+    return
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] write %s\n' "$dst"
+    return
+  fi
+
+  mkdir -p "$(dirname -- "$dst")"
+  tmp="$dst.tmp.$$"
+  sed \
+    -e "s|{{PROJECT_NAME}}|$ESCAPED_NAME|g" \
+    -e "s|{{LEVEL}}|$ESCAPED_LEVEL|g" \
+    -e "s|{{MODE}}|$ESCAPED_MODE|g" \
+    -e "s|{{DATE}}|$TODAY|g" \
+    "$src" > "$tmp"
+  mv "$tmp" "$dst"
+  printf 'write: %s\n' "$dst"
+}
+
+install_overlay() {
+  overlay=$1
+  if [ ! -d "$overlay" ]; then
+    return 0
+  fi
+  for src in $(find "$overlay" -type f -name '*.tmpl' | sort); do
+    rel=${src#"$overlay"/}
+    rel=${rel%.tmpl}
+    owned=0
+    [ "$rel" = ".agentic/installation.yaml" ] && owned=1
+    render_template "$src" "$TARGET/$rel" "$owned"
+  done
+}
+
+install_skill() {
+  for src in "$KIT_ROOT"/skill-src/*; do
+    [ -d "$src" ] || continue
+    name=$(basename -- "$src")
+    dst="$TARGET/.agents/skills/$name"
+
+    if [ -e "$dst" ]; then
+      if [ "$UPGRADE" -ne 1 ]; then
+        printf 'skip: %s already exists\n' "$dst"
+        continue
+      fi
+      if [ "$DRY_RUN" -eq 1 ]; then
+        printf '[dry-run] replace managed skill %s\n' "$dst"
+        continue
+      fi
+      rm -rf "$dst"
+    fi
+
+    if [ "$DRY_RUN" -eq 1 ]; then
+      printf '[dry-run] copy skill to %s\n' "$dst"
+      continue
+    fi
+
+    mkdir -p "$(dirname -- "$dst")"
+    cp -R "$src" "$dst"
+    printf 'write: %s\n' "$dst"
+  done
+}
+
+install_runtime() {
+  src="$KIT_ROOT/bin/agentic"
+  dst="$TARGET/.agentic/bin/agentic"
+  [ -f "$src" ] || fail "agentic CLI がありません: $src"
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] copy runtime to %s\n' "$dst"
+    return
+  fi
+
+  mkdir -p "$(dirname -- "$dst")"
+  cp "$src" "$dst"
+  chmod +x "$dst"
+  printf 'write: %s\n' "$dst"
+}
+
+install_agents_block() {
+  dst="$TARGET/AGENTS.md"
+  marker='<!-- agentic-development:start -->'
+  end_marker='<!-- agentic-development:end -->'
+
+  if [ -f "$dst" ] && grep -Fq "$marker" "$dst"; then
+    if [ "$UPGRADE" -ne 1 ]; then
+      printf 'skip: AGENTS.md block already exists\n'
+      return
+    fi
+    if [ "$DRY_RUN" -eq 1 ]; then
+      printf '[dry-run] replace agentic-development block in %s\n' "$dst"
+      return
+    fi
+    tmp="$dst.tmp.$$"
+    awk -v start="$marker" -v finish="$end_marker" '
+      index($0, start) { skipping = 1; next }
+      index($0, finish) { skipping = 0; next }
+      !skipping { print }
+    ' "$dst" > "$tmp"
+    cat "$KIT_ROOT/templates/snippets/AGENTS.block" >> "$tmp"
+    mv "$tmp" "$dst"
+    printf 'write: %s managed block upgraded\n' "$dst"
+    return
+  fi
+
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] append agentic-development block to %s\n' "$dst"
+    return
+  fi
+
+  if [ ! -f "$dst" ]; then
+    printf '# Project Agent Instructions\n' > "$dst"
+  fi
+
+  cat "$KIT_ROOT/templates/snippets/AGENTS.block" >> "$dst"
+  printf 'write: %s managed block\n' "$dst"
+}
+
+if [ "$DRY_RUN" -eq 0 ]; then
+  mkdir -p "$TARGET"
+fi
+
+install_overlay "$KIT_ROOT/templates/common"
+install_overlay "$KIT_ROOT/templates/levels/lite"
+
+case "$LEVEL" in
+  standard|system|critical) install_overlay "$KIT_ROOT/templates/levels/standard" ;;
+esac
+
+case "$LEVEL" in
+  system|critical) install_overlay "$KIT_ROOT/templates/levels/system" ;;
+esac
+
+case "$LEVEL" in
+  critical) install_overlay "$KIT_ROOT/templates/levels/critical" ;;
+esac
+
+if [ "$MODE" = "new" ]; then
+  install_overlay "$KIT_ROOT/templates/new"
+fi
+
+install_skill
+install_runtime
+install_agents_block
+
+if [ "$MODE" = "new" ]; then
+  if [ "$DRY_RUN" -eq 1 ]; then
+    printf '[dry-run] git init %s\n' "$TARGET"
+  elif command -v git >/dev/null 2>&1 && [ ! -d "$TARGET/.git" ]; then
+    git -C "$TARGET" init -q -b main
+    printf 'write: initialized git repository\n'
+  fi
+fi
+
+printf '\nAgentic Development Kit installation complete.\n'
+printf 'mode=%s level=%s target=%s\n' "$MODE" "$LEVEL" "$TARGET"
+printf 'Next: ask an agent to use $agentic-development and complete docs/agentic/adoption-report.md\n'

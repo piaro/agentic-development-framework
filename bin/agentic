@@ -1,0 +1,538 @@
+#!/usr/bin/env python3
+"""Repository-local control plane for Agentic Development Kit.
+
+Semantic decisions remain the responsibility of agents and humans. This CLI
+validates their artifacts, resolves accepted contracts, builds mutation impact,
+and prevents a change from being marked ready or complete while evidence is
+missing.
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import hashlib
+import sys
+from datetime import date
+from pathlib import Path
+from typing import Any, Iterable
+
+try:
+    import yaml
+except ModuleNotFoundError as exc:  # pragma: no cover - environment dependent
+    raise SystemExit(
+        "PyYAML is required. Install .agentic/runtime/requirements.txt first."
+    ) from exc
+
+
+class AgenticError(Exception):
+    """Expected validation or workflow failure."""
+
+
+def find_root(start: Path) -> Path:
+    current = start.resolve()
+    for candidate in (current, *current.parents):
+        if (candidate / ".agentic" / "installation.yaml").is_file():
+            return candidate
+    raise AgenticError(".agentic/installation.yaml が見つかりません")
+
+
+def load_yaml(path: Path, required: bool = True) -> dict[str, Any]:
+    if not path.is_file():
+        if required:
+            raise AgenticError(f"必要なファイルがありません: {path}")
+        return {}
+    try:
+        value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as exc:
+        raise AgenticError(f"YAMLを読み込めません: {path}: {exc}") from exc
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise AgenticError(f"top level はmappingである必要があります: {path}")
+    return value
+
+
+def write_yaml(path: Path, value: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = yaml.safe_dump(value, allow_unicode=True, sort_keys=False, width=100)
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(path)
+
+
+def require_fields(value: dict[str, Any], fields: Iterable[str], source: Path) -> list[str]:
+    return [f"{source}: {field} がありません" for field in fields if value.get(field) in (None, "")]
+
+
+def as_list(value: Any) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def file_hash(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def semantic_hash(value: dict[str, Any], ignored: set[str] | None = None) -> str:
+    normalized = {key: item for key, item in value.items() if key not in (ignored or set())}
+    content = yaml.safe_dump(normalized, allow_unicode=True, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(content).hexdigest()
+
+
+def contract_files(root: Path) -> list[Path]:
+    base = root / "contracts"
+    return sorted(
+        path
+        for path in base.rglob("*.yaml")
+        if path.name != "catalog.yaml" and "_templates" not in path.parts
+    )
+
+
+def load_contracts(root: Path) -> tuple[dict[str, tuple[Path, dict[str, Any]]], list[str]]:
+    contracts: dict[str, tuple[Path, dict[str, Any]]] = {}
+    errors: list[str] = []
+    for path in contract_files(root):
+        try:
+            value = load_yaml(path)
+        except AgenticError as exc:
+            errors.append(str(exc))
+            continue
+        errors.extend(require_fields(value, ("schema_version", "id", "kind", "status", "version"), path))
+        contract_id = value.get("id")
+        if not isinstance(contract_id, str) or not contract_id:
+            continue
+        if contract_id in contracts:
+            errors.append(f"contract id が重複しています: {contract_id}")
+        contracts[contract_id] = (path, value)
+    return contracts, errors
+
+
+def contract_specific_errors(path: Path, value: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    kind = value.get("kind")
+    if value.get("status") not in {"proposed", "accepted", "deprecated", "superseded"}:
+        errors.append(f"{path}: status が不正です")
+    if kind == "feature":
+        errors.extend(require_fields(value, ("risk", "outcome", "governing_contracts"), path))
+        if not as_list(value.get("governing_contracts")):
+            errors.append(f"{path}: feature governing_contracts が空です")
+    elif kind == "operation":
+        errors.extend(require_fields(value, ("preconditions", "mutations", "postconditions", "transaction", "consistency"), path))
+        if not as_list(value.get("mutations")):
+            errors.append(f"{path}: operation mutations が空です")
+    elif kind == "data-invariants":
+        invariants = as_list(value.get("invariants"))
+        if not invariants:
+            errors.append(f"{path}: invariants が空です")
+        for invariant in invariants:
+            if not isinstance(invariant, dict) or not invariant.get("id") or not invariant.get("statement"):
+                errors.append(f"{path}: invariant には id と statement が必要です")
+    return errors
+
+
+def lint_contracts(root: Path) -> list[str]:
+    contracts, errors = load_contracts(root)
+    for path, value in contracts.values():
+        errors.extend(contract_specific_errors(path, value))
+        for contract_id in as_list(value.get("governing_contracts")):
+            if contract_id not in contracts:
+                errors.append(f"{path}: governing contract が存在しません: {contract_id}")
+    catalog = load_yaml(root / "contracts" / "catalog.yaml")
+    errors.extend(require_fields(catalog, ("schema_version", "contract_roots"), root / "contracts" / "catalog.yaml"))
+    return errors
+
+
+def change_paths(root: Path, change_id: str) -> tuple[Path, Path, Path]:
+    base = root / ".agentic" / "changes" / change_id
+    return base / "change.yaml", base / "contract-assessment.yaml", root / ".agentic" / "resolved" / f"{change_id}.lock.yaml"
+
+
+def load_change(root: Path, change_id: str) -> dict[str, Any]:
+    change_path, _, _ = change_paths(root, change_id)
+    change = load_yaml(change_path)
+    if change.get("id") != change_id:
+        raise AgenticError(f"change id が一致しません: {change_path}")
+    return change
+
+
+def values_for_match(value: Any) -> set[str]:
+    return {str(item) for item in as_list(value)}
+
+
+def applies(contract: dict[str, Any], affected: dict[str, Any]) -> bool:
+    if contract.get("kind") == "project":
+        return True
+    rules = contract.get("applies_to")
+    if not isinstance(rules, dict):
+        return False
+    for key in ("contexts", "entities", "capabilities", "operations", "interfaces"):
+        if values_for_match(rules.get(key)) & values_for_match(affected.get(key)):
+            return True
+    for pattern in values_for_match(rules.get("paths")):
+        if any(fnmatch.fnmatch(path, pattern) for path in values_for_match(affected.get("paths"))):
+            return True
+    return False
+
+
+def assessment_blockers(assessment: dict[str, Any]) -> list[str]:
+    blockers: list[str] = []
+    for key in ("contract_gaps", "conflicts", "platform_unknowns"):
+        if as_list(assessment.get(key)):
+            blockers.append(key)
+    unresolved = [
+        item
+        for item in as_list(assessment.get("decisions"))
+        if isinstance(item, dict) and item.get("status") not in {"resolved", "accepted"}
+    ]
+    if unresolved:
+        blockers.append("unresolved decisions")
+    if assessment.get("result") != "ready":
+        blockers.append("assessment result is not ready")
+    return blockers
+
+
+def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[str, Any]:
+    contracts, errors = load_contracts(root)
+    errors.extend(lint_contracts(root))
+    if errors:
+        raise AgenticError("contract lint に失敗しました:\n- " + "\n- ".join(sorted(set(errors))))
+
+    change_path, assessment_path, lock_path = change_paths(root, change_id)
+    change = load_yaml(change_path)
+    assessment = load_yaml(assessment_path)
+    blockers = assessment_blockers(assessment)
+    if blockers:
+        raise AgenticError("Contract Readiness Assessment が未解決です: " + ", ".join(blockers))
+
+    feature_id = change.get("feature_contract")
+    if not isinstance(feature_id, str) or feature_id not in contracts:
+        raise AgenticError("change.feature_contract が有効なcontractを参照していません")
+    feature = contracts[feature_id][1]
+    if feature.get("kind") != "feature":
+        raise AgenticError("change.feature_contract はfeature contractではありません")
+
+    selected: set[str] = {feature_id}
+    selected.update(str(item) for item in as_list(feature.get("governing_contracts")))
+    selected.update(
+        str(item.get("id"))
+        for item in as_list(assessment.get("governing_contracts"))
+        if isinstance(item, dict) and item.get("id")
+    )
+    affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
+    selected.update(contract_id for contract_id, (_, value) in contracts.items() if applies(value, affected))
+
+    unresolved: list[str] = []
+    resolved: list[dict[str, Any]] = []
+    for contract_id in sorted(selected):
+        entry = contracts.get(contract_id)
+        if entry is None:
+            unresolved.append(contract_id)
+            continue
+        path, value = entry
+        if value.get("status") != "accepted":
+            unresolved.append(f"{contract_id} ({value.get('status')})")
+            continue
+        resolved.append(
+            {
+                "id": contract_id,
+                "kind": value.get("kind"),
+                "version": value.get("version"),
+                "path": str(path.relative_to(root)),
+                "sha256": file_hash(path),
+            }
+        )
+    if unresolved:
+        raise AgenticError("解決できないcontractがあります: " + ", ".join(unresolved))
+
+    kinds = {item["kind"] for item in resolved}
+    data_change = bool(change.get("data_change"))
+    if data_change:
+        missing = {"data-invariants", "operation"} - kinds
+        if missing:
+            raise AgenticError("データ変更に必要なcontract kindがありません: " + ", ".join(sorted(missing)))
+
+    lock = {
+        "schema_version": 1,
+        "change": change_id,
+        "generated_at": date.today().isoformat(),
+        "change_sha256": semantic_hash(change, {"status"}),
+        "assessment_sha256": semantic_hash(assessment),
+        "contracts": resolved,
+        "unresolved": [],
+        "deviations": as_list(feature.get("deviations")),
+        "ready": True,
+    }
+    if write:
+        write_yaml(lock_path, lock)
+    return lock
+
+
+def verify_lock(root: Path, change_id: str) -> list[str]:
+    change_path, assessment_path, lock_path = change_paths(root, change_id)
+    lock = load_yaml(lock_path)
+    errors: list[str] = []
+    change = load_yaml(change_path)
+    assessment = load_yaml(assessment_path)
+    if lock.get("change_sha256") != semantic_hash(change, {"status"}):
+        errors.append("change.yaml の変更によりresolved lockがstaleです")
+    if lock.get("assessment_sha256") != semantic_hash(assessment):
+        errors.append("contract-assessment.yaml の変更によりresolved lockがstaleです")
+    for item in as_list(lock.get("contracts")):
+        if not isinstance(item, dict) or not item.get("path"):
+            errors.append("resolved contract entryが不正です")
+            continue
+        path = root / str(item["path"])
+        if not path.is_file() or item.get("sha256") != file_hash(path):
+            errors.append(f"contractの変更によりresolved lockがstaleです: {item.get('id')}")
+    return errors
+
+
+def active_changes(root: Path) -> list[dict[str, Any]]:
+    value = load_yaml(root / ".agentic" / "active-changes.yaml", required=False)
+    return [item for item in as_list(value.get("changes")) if isinstance(item, dict)]
+
+
+def operation_mutations(contracts: dict[str, tuple[Path, dict[str, Any]]]) -> tuple[dict[str, dict[str, set[str]]], dict[str, set[str]]]:
+    entities: dict[str, dict[str, set[str]]] = {}
+    operation_entities: dict[str, set[str]] = {}
+    for contract_id, (_, value) in contracts.items():
+        if value.get("kind") != "operation" or value.get("status") != "accepted":
+            continue
+        touched: set[str] = set()
+        for mutation in as_list(value.get("mutations")):
+            if not isinstance(mutation, dict) or not mutation.get("entity"):
+                continue
+            entity = str(mutation["entity"])
+            touched.add(entity)
+            entities.setdefault(entity, {"writers": set(), "actions": set()})["writers"].add(contract_id)
+            if mutation.get("action"):
+                entities[entity]["actions"].add(str(mutation["action"]))
+        operation_entities[contract_id] = touched
+    return entities, operation_entities
+
+
+def build_mutation_graph(root: Path, write: bool = True) -> dict[str, Any]:
+    contracts, errors = load_contracts(root)
+    if errors:
+        raise AgenticError("contractを読み込めません:\n- " + "\n- ".join(errors))
+    entities, operation_entities = operation_mutations(contracts)
+    changes = active_changes(root)
+    conflicts: list[dict[str, Any]] = []
+    for index, left in enumerate(changes):
+        if left.get("status") in {"complete", "cancelled"}:
+            continue
+        left_entities = set().union(*(operation_entities.get(str(op), set()) for op in as_list(left.get("operations"))))
+        for right in changes[index + 1 :]:
+            if right.get("status") in {"complete", "cancelled"}:
+                continue
+            right_entities = set().union(*(operation_entities.get(str(op), set()) for op in as_list(right.get("operations"))))
+            overlap = sorted(left_entities & right_entities)
+            if overlap:
+                conflicts.append({"changes": [left.get("id"), right.get("id")], "entities": overlap})
+    graph = {
+        "schema_version": 1,
+        "generated_at": date.today().isoformat(),
+        "entities": {
+            entity: {"writers": sorted(data["writers"]), "actions": sorted(data["actions"])}
+            for entity, data in sorted(entities.items())
+        },
+        "active_change_conflicts": conflicts,
+    }
+    if write:
+        write_yaml(root / ".agentic" / "generated" / "mutation-graph.yaml", graph)
+    return graph
+
+
+def mark_ready(root: Path, change_id: str) -> None:
+    change_path, _, _ = change_paths(root, change_id)
+    change = load_change(root, change_id)
+    errors = verify_lock(root, change_id)
+    if errors:
+        raise AgenticError("\n- ".join(errors))
+    graph = build_mutation_graph(root)
+    active = active_changes(root)
+    entry = next((item for item in active if item.get("id") == change_id), None)
+    if entry is None:
+        raise AgenticError("changeが.agentic/active-changes.yamlに登録されていません")
+    affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
+    declared_operations = values_for_match(affected.get("operations"))
+    active_operations = values_for_match(entry.get("operations"))
+    if change.get("data_change") and not declared_operations:
+        raise AgenticError("データ変更にaffected.operationsがありません")
+    if not declared_operations.issubset(active_operations):
+        raise AgenticError("active changeにOperation Contractの登録漏れがあります")
+    related = [
+        item
+        for item in as_list(graph.get("active_change_conflicts"))
+        if change_id in as_list(item.get("changes"))
+    ]
+    if related:
+        raise AgenticError("active changeとのmutation競合があります: " + str(related))
+    change["status"] = "ready"
+    write_yaml(change_path, change)
+    entry["status"] = "ready"
+    write_yaml(root / ".agentic" / "active-changes.yaml", {"schema_version": 1, "changes": active})
+
+
+def check_evidence(root: Path, change_id: str) -> list[str]:
+    base = root / "evidence" / change_id
+    index = load_yaml(base / "index.yaml")
+    change = load_change(root, change_id)
+    challenge_required = change.get("risk") in {"R2", "R3"}
+    challenge = load_yaml(base / "challenge.yaml", required=challenge_required)
+    errors: list[str] = verify_lock(root, change_id)
+    if index.get("change") != change_id or (challenge and challenge.get("change") != change_id):
+        errors.append("evidenceのchange idが一致しません")
+    if challenge and challenge.get("result") not in {"passed", "accepted-with-risk"}:
+        errors.append("Challenger結果が完了していません")
+    if challenge_required and challenge.get("independent_context") is not True:
+        errors.append("R2/R3には独立したChallengerが必要です")
+    requirements = [item for item in as_list(index.get("requirements")) if isinstance(item, dict)]
+    verified_ids = {str(item.get("id")) for item in requirements if item.get("status") == "verified"}
+    contracts, _ = load_contracts(root)
+    feature_id = change.get("feature_contract")
+    if isinstance(feature_id, str) and feature_id in contracts:
+        feature = contracts[feature_id][1]
+        for requirement_id in values_for_match(feature.get("evidence_requirements")):
+            if requirement_id not in verified_ids:
+                errors.append(f"Feature Contractのevidenceがありません: {requirement_id}")
+    for requirement in requirements:
+        if not isinstance(requirement, dict) or requirement.get("status") != "verified":
+            errors.append(f"未検証のevidenceがあります: {requirement}")
+    for risk in as_list(index.get("residual_risks")):
+        if not isinstance(risk, dict) or not risk.get("acceptor") or not risk.get("due"):
+            errors.append(f"残存リスクにacceptor/dueがありません: {risk}")
+    return errors
+
+
+def init_change(root: Path, change_id: str, title: str) -> None:
+    change_path, assessment_path, _ = change_paths(root, change_id)
+    if change_path.exists() or assessment_path.exists():
+        raise AgenticError(f"changeは既に存在します: {change_id}")
+    feature_id = f"features/{change_id}"
+    write_yaml(
+        change_path,
+        {
+            "schema_version": 1,
+            "id": change_id,
+            "title": title,
+            "status": "draft",
+            "risk": "R1",
+            "data_change": False,
+            "affected": {"contexts": [], "entities": [], "capabilities": [], "operations": [], "interfaces": [], "paths": []},
+            "feature_contract": feature_id,
+        },
+    )
+    write_yaml(
+        assessment_path,
+        {
+            "schema_version": 1,
+            "change": change_id,
+            "governing_contracts": [],
+            "decisions": [],
+            "contract_gaps": [],
+            "platform_unknowns": [],
+            "conflicts": [],
+            "result": "assessing",
+        },
+    )
+    feature_path = root / "contracts" / "features" / f"{change_id}.yaml"
+    write_yaml(
+        feature_path,
+        {
+            "schema_version": 2,
+            "id": feature_id,
+            "kind": "feature",
+            "status": "proposed",
+            "version": 1,
+            "risk": "R1",
+            "applies_to": {"contexts": [], "entities": [], "capabilities": [], "operations": [], "interfaces": []},
+            "governing_contracts": ["project/constitution"],
+            "outcome": "TODO",
+            "non_scope": [],
+            "introduced_decisions": [],
+            "deviations": [],
+            "unknowns": [],
+            "required_probes": [],
+            "evidence_requirements": [],
+        },
+    )
+    active_path = root / ".agentic" / "active-changes.yaml"
+    active_value = load_yaml(active_path, required=False) or {"schema_version": 1, "changes": []}
+    changes = [item for item in as_list(active_value.get("changes")) if isinstance(item, dict)]
+    if not any(item.get("id") == change_id for item in changes):
+        changes.append(
+            {
+                "id": change_id,
+                "status": "draft",
+                "owner": "unassigned",
+                "operations": [],
+                "depends_on": [],
+                "conflicts_with": [],
+            }
+        )
+    write_yaml(active_path, {"schema_version": 1, "changes": changes})
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(prog="agentic")
+    parser.add_argument("--root", type=Path, help="project root")
+    groups = parser.add_subparsers(dest="group", required=True)
+
+    contract = groups.add_parser("contract")
+    contract_commands = contract.add_subparsers(dest="command", required=True)
+    contract_commands.add_parser("lint")
+    resolve = contract_commands.add_parser("resolve")
+    resolve.add_argument("change_id")
+
+    mutation = groups.add_parser("mutation")
+    mutation_commands = mutation.add_subparsers(dest="command", required=True)
+    mutation_commands.add_parser("build")
+
+    change = groups.add_parser("change")
+    change_commands = change.add_subparsers(dest="command", required=True)
+    init = change_commands.add_parser("init")
+    init.add_argument("change_id")
+    init.add_argument("--title", required=True)
+    ready = change_commands.add_parser("ready")
+    ready.add_argument("change_id")
+
+    evidence = groups.add_parser("evidence")
+    evidence_commands = evidence.add_subparsers(dest="command", required=True)
+    check = evidence_commands.add_parser("check")
+    check.add_argument("change_id")
+
+    args = parser.parse_args()
+    root = args.root.resolve() if args.root else find_root(Path.cwd())
+
+    if args.group == "contract" and args.command == "lint":
+        errors = lint_contracts(root)
+        if errors:
+            raise AgenticError("\n- ".join(errors))
+        print("contract lint passed")
+    elif args.group == "contract" and args.command == "resolve":
+        lock = resolve_contracts(root, args.change_id)
+        print(f"resolved {len(lock['contracts'])} contracts")
+    elif args.group == "mutation" and args.command == "build":
+        graph = build_mutation_graph(root)
+        print(f"built mutation graph for {len(graph['entities'])} entities")
+    elif args.group == "change" and args.command == "init":
+        init_change(root, args.change_id, args.title)
+        print(f"initialized change {args.change_id}")
+    elif args.group == "change" and args.command == "ready":
+        mark_ready(root, args.change_id)
+        print(f"change {args.change_id} is ready")
+    elif args.group == "evidence" and args.command == "check":
+        errors = check_evidence(root, args.change_id)
+        if errors:
+            raise AgenticError("\n- ".join(errors))
+        print("evidence check passed")
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except AgenticError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc

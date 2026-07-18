@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agentic Challenger"
+  short_description: "Challenge contracts, state sequences, and evidence"
+  default_prompt: "Use $agentic-challenger to independently challenge this change against its resolved contracts."

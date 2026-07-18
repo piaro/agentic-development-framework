@@ -1,0 +1,12 @@
+# Failure Injection
+
+Failure Model の高影響シナリオを再現します。
+
+- timeout と遅延成功
+- 重複、順序逆転、並行更新
+- 外部サービス停止と rate limit
+- DB / queue / search の部分停止
+- credential 失効
+- migration 途中停止と rollback / resume
+
+実環境へ影響する試験は、対象、停止条件、復旧手順を明示して承認された環境だけで行います。

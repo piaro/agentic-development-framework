@@ -1,0 +1,10 @@
+# Platform Probes
+
+Platform の能力を小さく検証する実行物を置きます。
+
+- 製品コードから独立して実行できること
+- 成功条件と期待する失敗を明示すること
+- credential や秘密情報を保存しないこと
+- 対象環境、実行日、SDK / API version、結果を `platform-capabilities.yaml` に残すこと
+- mock の成功だけで接続性や実際の型変換を検証済みにしないこと
+- transaction、lock、timeout、再試行、重複、eventual consistencyを実環境相当で確認すること
