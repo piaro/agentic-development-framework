@@ -18,7 +18,15 @@ AIエージェントを前提に、現在有効な正しさを階層Contractと�
   --non-interactive
 ```
 
-`--dry-run`で変更予定だけを確認できます。通常は既存ファイルを上書きせず、CLIとinstallation metadataだけを更新します。v1から更新する場合は`--upgrade`を指定すると、kit管理のSkillと`AGENTS.md`管理ブロックも置き換えます。Contractやプロジェクト文書は置き換えません。
+`--dry-run`で変更予定だけを確認できます。通常は既存ファイルを上書きせず、CLIとinstallation metadataだけを更新します。導入済みRepositoryを更新する場合は、最新版のkitから次を実行します。
+
+```sh
+./bin/agentic-init --upgrade --target /path/to/project --non-interactive --dry-run
+./bin/agentic-init --upgrade --target /path/to/project --non-interactive
+/path/to/project/.agentic/bin/agentic --version
+```
+
+`--upgrade`は導入先の`.agentic/installation.yaml`からmode、level、project名を引き継ぎ、kit管理のCLI、Skill、`AGENTS.md`管理ブロック、installation metadataだけを更新します。Contract、Assessment、設定、プロジェクト文書は置き換えません。
 
 ## 情報の役割
 
@@ -53,14 +61,17 @@ Feature Contractは上位Contractを暗黙に上書きしません。所有権�
 ```
 
 1. `$agentic-change`が影響するContext、Entity、Capability、Operation、Interface、Pathを復元する。
-2. `$agentic-contract`が`.agentic/changes/<id>/contract-assessment.yaml`を作る。
-3. 未解決の全体判断、Contract不足、Platform未知、競合があれば開発を止める。
-4. `agentic contract resolve <id>`がaccepted Contractを固定する。
-5. `agentic change ready <id>`がfresh lockとMutation競合を確認する。
-6. `$agentic-builder`がresolved Contractに従って実装する。
-7. `$agentic-challenger`がraw diff、Mutation Graph、Operation Contract、証拠から独立反証する。
-8. `agentic evidence check <id>`で契約項目と証拠、残存リスクを検査する。
-9. 障害後は`$agentic-learning`で知識を上位Contract、probe、test、runtime checkerへ昇格する。
+2. `agentic contract candidates <id>`で単一軸一致を候補として列挙する。
+3. `$agentic-contract`が各候補を理由付きで`included`または`excluded`にし、`.agentic/changes/<id>/contract-assessment.yaml`を作る。
+4. 未判断候補、Contract coverage不足、未解決の全体判断、Platform未知、競合があれば開発を止める。
+5. `agentic contract resolve <id>`がaccepted Contractと除外判断を固定する。
+6. `agentic change ready <id>`がfresh lockとMutation競合を確認する。
+7. `$agentic-builder`がresolved Contractに従って実装する。
+8. `$agentic-challenger`がraw diff、Mutation Graph、Operation Contract、証拠から独立反証する。
+9. `agentic evidence check <id>`で契約項目と証拠、残存リスクを検査する。
+10. 障害後は`$agentic-learning`で知識を上位Contract、probe、test、runtime checkerへ昇格する。
+
+候補一致は意味的な関連を自動確定しません。Project、Featureの明示参照、Operation/APIの厳密一致は必須契約とし、それ以外のContext、Entity、Capability、Pathなどの一致はAssessment対象にします。除外には理由が必要で、候補の追加、適用条件の変更、除外契約の内容変更はresolved lockをstaleにします。
 
 ## Data integrity
 
@@ -79,6 +90,7 @@ Python 3.10以上とPyYAML 6系を使用します。
 ```sh
 python3 -m pip install -r .agentic/runtime/requirements.txt
 .agentic/bin/agentic contract lint
+.agentic/bin/agentic contract candidates <change-id>
 .agentic/bin/agentic contract resolve <change-id>
 .agentic/bin/agentic mutation build
 .agentic/bin/agentic change ready <change-id>

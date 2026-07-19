@@ -27,3 +27,12 @@
 - `blocked-conflict`: contracts or active mutations conflict
 
 Record options, impact, recommendation, and unknowns before asking a human to decide.
+
+## Contract candidate decisions
+
+Context, entity, capability, path, and similar overlaps discover candidates but do not prove semantic relevance. Record each candidate as:
+
+- `included`: the contract governs this change;
+- `excluded`: the overlap is incidental, with a specific reason.
+
+Operation identity and interface identity are structural requirements. Explicit Feature or Assessment references are also required. Do not use the CLI's mechanical matching as a substitute for repository analysis.

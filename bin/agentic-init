@@ -23,7 +23,7 @@ Options:
   --target PATH                    導入先
   --name NAME                      プロジェクト名
   --non-interactive                対話を行わない
-  --upgrade                        kit管理のSkillとAGENTSブロックを更新
+  --upgrade                        導入済み設定を使いkit管理物だけを更新
   --dry-run                        変更せず予定だけ表示
   -h, --help                       ヘルプ
 EOF
@@ -32,6 +32,19 @@ EOF
 fail() {
   printf 'error: %s\n' "$1" >&2
   exit 1
+}
+
+installation_field() {
+  field=$1
+  file=$2
+  awk -v wanted="$field" '
+    $1 == wanted ":" {
+      sub(/^[^:]*:[[:space:]]*/, "")
+      gsub(/^["'\'' ]+|["'\'' ]+$/, "")
+      print
+      exit
+    }
+  ' "$file"
 }
 
 prompt_mode() {
@@ -108,6 +121,28 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+if [ -z "$TARGET" ]; then
+  [ "$NON_INTERACTIVE" -eq 0 ] || fail "--target が必要です"
+  printf '導入先パス: '
+  read -r TARGET
+fi
+
+[ -n "$TARGET" ] || fail "導入先が空です"
+
+INSTALLATION="$TARGET/.agentic/installation.yaml"
+if [ "$UPGRADE" -eq 1 ]; then
+  [ -f "$INSTALLATION" ] || fail "--upgrade の対象に.agentic/installation.yamlがありません: $TARGET"
+  if [ -z "$MODE" ]; then
+    MODE=$(installation_field mode "$INSTALLATION")
+  fi
+  if [ -z "$LEVEL" ]; then
+    LEVEL=$(installation_field level "$INSTALLATION")
+  fi
+  if [ -z "$PROJECT_NAME" ]; then
+    PROJECT_NAME=$(installation_field project "$INSTALLATION")
+  fi
+fi
+
 if [ -z "$MODE" ]; then
   [ "$NON_INTERACTIVE" -eq 0 ] || fail "--mode が必要です"
   prompt_mode
@@ -128,16 +163,8 @@ case "$LEVEL" in
   *) fail "--level は lite, standard, system, critical のいずれかです" ;;
 esac
 
-if [ -z "$TARGET" ]; then
-  [ "$NON_INTERACTIVE" -eq 0 ] || fail "--target が必要です"
-  printf '導入先パス: '
-  read -r TARGET
-fi
-
-[ -n "$TARGET" ] || fail "導入先が空です"
-
 if [ "$MODE" = "new" ]; then
-  if [ -d "$TARGET" ] && [ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+  if [ "$UPGRADE" -ne 1 ] && [ -d "$TARGET" ] && [ -n "$(find "$TARGET" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
     fail "new の導入先は空である必要があります。既存プロジェクトには --mode adopt を使ってください"
   fi
 else
@@ -284,30 +311,34 @@ if [ "$DRY_RUN" -eq 0 ]; then
   mkdir -p "$TARGET"
 fi
 
-install_overlay "$KIT_ROOT/templates/common"
-install_overlay "$KIT_ROOT/templates/levels/lite"
+if [ "$UPGRADE" -eq 1 ]; then
+  render_template "$KIT_ROOT/templates/common/.agentic/installation.yaml.tmpl" "$INSTALLATION" 1
+else
+  install_overlay "$KIT_ROOT/templates/common"
+  install_overlay "$KIT_ROOT/templates/levels/lite"
 
-case "$LEVEL" in
-  standard|system|critical) install_overlay "$KIT_ROOT/templates/levels/standard" ;;
-esac
+  case "$LEVEL" in
+    standard|system|critical) install_overlay "$KIT_ROOT/templates/levels/standard" ;;
+  esac
 
-case "$LEVEL" in
-  system|critical) install_overlay "$KIT_ROOT/templates/levels/system" ;;
-esac
+  case "$LEVEL" in
+    system|critical) install_overlay "$KIT_ROOT/templates/levels/system" ;;
+  esac
 
-case "$LEVEL" in
-  critical) install_overlay "$KIT_ROOT/templates/levels/critical" ;;
-esac
+  case "$LEVEL" in
+    critical) install_overlay "$KIT_ROOT/templates/levels/critical" ;;
+  esac
 
-if [ "$MODE" = "new" ]; then
-  install_overlay "$KIT_ROOT/templates/new"
+  if [ "$MODE" = "new" ]; then
+    install_overlay "$KIT_ROOT/templates/new"
+  fi
 fi
 
 install_skill
 install_runtime
 install_agents_block
 
-if [ "$MODE" = "new" ]; then
+if [ "$MODE" = "new" ] && [ "$UPGRADE" -ne 1 ]; then
   if [ "$DRY_RUN" -eq 1 ]; then
     printf '[dry-run] git init %s\n' "$TARGET"
   elif command -v git >/dev/null 2>&1 && [ ! -d "$TARGET/.git" ]; then

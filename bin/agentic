@@ -29,6 +29,10 @@ class AgenticError(Exception):
     """Expected validation or workflow failure."""
 
 
+KIT_VERSION = "2.1.0"
+MATCH_KEYS = ("contexts", "entities", "capabilities", "operations", "interfaces")
+
+
 def find_root(start: Path) -> Path:
     current = start.resolve()
     for candidate in (current, *current.parents):
@@ -159,19 +163,207 @@ def values_for_match(value: Any) -> set[str]:
     return {str(item) for item in as_list(value)}
 
 
-def applies(contract: dict[str, Any], affected: dict[str, Any]) -> bool:
-    if contract.get("kind") == "project":
+def match_reasons(contract: dict[str, Any], affected: dict[str, Any]) -> set[str]:
+    """Return mechanical overlap facts without deciding semantic relevance."""
+    rules = contract.get("applies_to")
+    if not isinstance(rules, dict):
+        return set()
+    reasons: set[str] = set()
+    for key in MATCH_KEYS:
+        if values_for_match(rules.get(key)) & values_for_match(affected.get(key)):
+            reasons.add(key)
+    for pattern in values_for_match(rules.get("paths")):
+        if any(fnmatch.fnmatch(path, pattern) for path in values_for_match(affected.get("paths"))):
+            reasons.add("paths")
+    return reasons
+
+
+def strict_match(contract: dict[str, Any], affected: dict[str, Any], reasons: set[str]) -> bool:
+    """Identify structural identity matches that do not require a semantic choice."""
+    if contract.get("kind") == "feature":
+        return False
+    if contract.get("kind") == "operation" and "operations" in reasons:
         return True
+    return "interfaces" in reasons
+
+
+def selection_hash(
+    contracts: dict[str, tuple[Path, dict[str, Any]]], affected: dict[str, Any]
+) -> str:
+    """Hash contracts participating in discovery, including newly matching contracts."""
+    value = {
+        contract_id: {
+            "kind": contract.get("kind"),
+            "status": contract.get("status"),
+            "applies_to": contract.get("applies_to"),
+        }
+        for contract_id, (_, contract) in sorted(contracts.items())
+        if contract.get("kind") == "project" or match_reasons(contract, affected)
+    }
+    return semantic_hash(value)
+
+
+def expand_governing_contracts(
+    selected: set[str], contracts: dict[str, tuple[Path, dict[str, Any]]]
+) -> set[str]:
+    expanded = set(selected)
+    pending = list(selected)
+    while pending:
+        contract_id = pending.pop()
+        entry = contracts.get(contract_id)
+        if entry is None:
+            continue
+        for governing_id in values_for_match(entry[1].get("governing_contracts")):
+            if governing_id not in expanded:
+                expanded.add(governing_id)
+                pending.append(governing_id)
+    return expanded
+
+
+def contract_candidates(
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+    affected: dict[str, Any],
+    required: set[str],
+) -> dict[str, set[str]]:
+    return {
+        contract_id: reasons
+        for contract_id, (_, contract) in contracts.items()
+        if contract_id not in required
+        and contract.get("kind") != "project"
+        and (reasons := match_reasons(contract, affected))
+        and not strict_match(contract, affected, reasons)
+    }
+
+
+def assessed_candidates(assessment: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    return {
+        str(item["id"]): item
+        for item in as_list(assessment.get("contract_candidates"))
+        if isinstance(item, dict) and item.get("id")
+    }
+
+
+def candidate_errors(
+    candidates: dict[str, set[str]], assessment: dict[str, Any]
+) -> list[str]:
+    errors: list[str] = []
+    assessed = assessed_candidates(assessment)
+    assessed_ids = [
+        str(item["id"])
+        for item in as_list(assessment.get("contract_candidates"))
+        if isinstance(item, dict) and item.get("id")
+    ]
+    if len(assessed_ids) != len(set(assessed_ids)):
+        errors.append("contract_candidates の id が重複しています")
+    for contract_id, reasons in sorted(candidates.items()):
+        item = assessed.get(contract_id)
+        if item is None:
+            errors.append(
+                f"contract candidate が未判断です: {contract_id} "
+                f"(matched_by: {', '.join(sorted(reasons))})"
+            )
+            continue
+        decision = item.get("decision")
+        if decision not in {"included", "excluded"}:
+            errors.append(f"contract candidate の decision が不正です: {contract_id}")
+        if not isinstance(item.get("reason"), str) or not item["reason"].strip():
+            errors.append(f"contract candidate の判断理由がありません: {contract_id}")
+        recorded = values_for_match(item.get("matched_by"))
+        if recorded != reasons:
+            errors.append(
+                f"contract candidate の matched_by が古いか不正です: {contract_id}; "
+                f"expected {sorted(reasons)}"
+            )
+    for contract_id in sorted(set(assessed) - set(candidates)):
+        errors.append(f"contract candidate は現在の影響範囲に一致しません: {contract_id}")
+    return errors
+
+
+def candidate_report(root: Path, change_id: str) -> dict[str, Any]:
+    contracts, errors = load_contracts(root)
+    if errors:
+        raise AgenticError("contractを読み込めません:\n- " + "\n- ".join(errors))
+    change = load_change(root, change_id)
+    _, assessment_path, _ = change_paths(root, change_id)
+    assessment = load_yaml(assessment_path)
+    feature_id = change.get("feature_contract")
+    if not isinstance(feature_id, str) or feature_id not in contracts:
+        raise AgenticError("change.feature_contract が有効なcontractを参照していません")
+    feature = contracts[feature_id][1]
+    required = {feature_id}
+    required.update(values_for_match(feature.get("governing_contracts")))
+    required.update(
+        str(item.get("id"))
+        for item in as_list(assessment.get("governing_contracts"))
+        if isinstance(item, dict) and item.get("id")
+    )
+    affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
+    for contract_id, (_, contract) in contracts.items():
+        reasons = match_reasons(contract, affected)
+        if contract.get("kind") == "project" or strict_match(contract, affected, reasons):
+            required.add(contract_id)
+    required = expand_governing_contracts(required, contracts)
+    candidates = contract_candidates(contracts, affected, required)
+    assessed = assessed_candidates(assessment)
+    return {
+        "change": change_id,
+        "required_contracts": sorted(required),
+        "contract_candidates": [
+            {
+                "id": contract_id,
+                "matched_by": sorted(reasons),
+                "decision": assessed.get(contract_id, {}).get("decision", "pending"),
+                "reason": assessed.get(contract_id, {}).get("reason", ""),
+            }
+            for contract_id, reasons in sorted(candidates.items())
+        ],
+    }
+
+
+def contract_covers(
+    contract: dict[str, Any], key: str, value: str, *, kinds: set[str] | None = None
+) -> bool:
+    if kinds is not None and contract.get("kind") not in kinds:
+        return False
     rules = contract.get("applies_to")
     if not isinstance(rules, dict):
         return False
-    for key in ("contexts", "entities", "capabilities", "operations", "interfaces"):
-        if values_for_match(rules.get(key)) & values_for_match(affected.get(key)):
-            return True
-    for pattern in values_for_match(rules.get("paths")):
-        if any(fnmatch.fnmatch(path, pattern) for path in values_for_match(affected.get("paths"))):
-            return True
-    return False
+    if key == "paths":
+        return any(fnmatch.fnmatch(value, pattern) for pattern in values_for_match(rules.get(key)))
+    return value in values_for_match(rules.get(key))
+
+
+def coverage_errors(
+    selected: set[str],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+    affected: dict[str, Any],
+    data_change: bool,
+) -> list[str]:
+    selected_contracts = [
+        contracts[contract_id][1]
+        for contract_id in selected
+        if contract_id in contracts and contracts[contract_id][1].get("kind") != "feature"
+    ]
+    errors: list[str] = []
+    requirements = (
+        ("contexts", None, "対象領域"),
+        ("entities", None, "Entity"),
+        ("capabilities", {"capability"}, "Capability"),
+        ("operations", {"operation"}, "Operation"),
+        ("interfaces", None, "API/Interface"),
+    )
+    for key, kinds, label in requirements:
+        for value in sorted(values_for_match(affected.get(key))):
+            if not any(contract_covers(contract, key, value, kinds=kinds) for contract in selected_contracts):
+                errors.append(f"影響対象をcoverするcontractがありません: {label} {value}")
+    if data_change:
+        for entity in sorted(values_for_match(affected.get("entities"))):
+            if not any(
+                contract_covers(contract, "entities", entity, kinds={"data-invariants"})
+                for contract in selected_contracts
+            ):
+                errors.append(f"EntityをcoverするData Invariantがありません: {entity}")
+    return errors
 
 
 def assessment_blockers(assessment: dict[str, Any]) -> list[str]:
@@ -211,15 +403,37 @@ def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[st
     if feature.get("kind") != "feature":
         raise AgenticError("change.feature_contract はfeature contractではありません")
 
-    selected: set[str] = {feature_id}
-    selected.update(str(item) for item in as_list(feature.get("governing_contracts")))
-    selected.update(
+    required: set[str] = {feature_id}
+    required.update(str(item) for item in as_list(feature.get("governing_contracts")))
+    required.update(
         str(item.get("id"))
         for item in as_list(assessment.get("governing_contracts"))
         if isinstance(item, dict) and item.get("id")
     )
     affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
-    selected.update(contract_id for contract_id, (_, value) in contracts.items() if applies(value, affected))
+    for contract_id, (_, contract) in contracts.items():
+        reasons = match_reasons(contract, affected)
+        if contract.get("kind") == "project" or strict_match(contract, affected, reasons):
+            required.add(contract_id)
+    required = expand_governing_contracts(required, contracts)
+
+    candidates = contract_candidates(contracts, affected, required)
+    errors = candidate_errors(candidates, assessment)
+    if errors:
+        raise AgenticError("Contract候補のAssessmentが未完了です:\n- " + "\n- ".join(errors))
+
+    assessed = assessed_candidates(assessment)
+    selected = set(required)
+    selected.update(
+        contract_id
+        for contract_id in candidates
+        if assessed[contract_id].get("decision") == "included"
+    )
+    selected = expand_governing_contracts(selected, contracts)
+
+    errors = coverage_errors(selected, contracts, affected, bool(change.get("data_change")))
+    if errors:
+        raise AgenticError("影響対象のContract coverageが不足しています:\n- " + "\n- ".join(errors))
 
     unresolved: list[str] = []
     resolved: list[dict[str, Any]] = []
@@ -257,7 +471,17 @@ def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[st
         "generated_at": date.today().isoformat(),
         "change_sha256": semantic_hash(change, {"status"}),
         "assessment_sha256": semantic_hash(assessment),
+        "contract_selection_sha256": selection_hash(contracts, affected),
         "contracts": resolved,
+        "excluded_contracts": [
+            {
+                "id": contract_id,
+                "sha256": file_hash(contracts[contract_id][0]),
+                "reason": assessed[contract_id]["reason"],
+            }
+            for contract_id in sorted(candidates)
+            if assessed[contract_id].get("decision") == "excluded"
+        ],
         "unresolved": [],
         "deviations": as_list(feature.get("deviations")),
         "ready": True,
@@ -273,6 +497,12 @@ def verify_lock(root: Path, change_id: str) -> list[str]:
     errors: list[str] = []
     change = load_yaml(change_path)
     assessment = load_yaml(assessment_path)
+    contracts, contract_errors = load_contracts(root)
+    if contract_errors:
+        errors.extend(contract_errors)
+    affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
+    if not contract_errors and lock.get("contract_selection_sha256") != selection_hash(contracts, affected):
+        errors.append("contractの追加・削除・適用条件変更によりresolved lockがstaleです")
     if lock.get("change_sha256") != semantic_hash(change, {"status"}):
         errors.append("change.yaml の変更によりresolved lockがstaleです")
     if lock.get("assessment_sha256") != semantic_hash(assessment):
@@ -284,6 +514,13 @@ def verify_lock(root: Path, change_id: str) -> list[str]:
         path = root / str(item["path"])
         if not path.is_file() or item.get("sha256") != file_hash(path):
             errors.append(f"contractの変更によりresolved lockがstaleです: {item.get('id')}")
+    for item in as_list(lock.get("excluded_contracts")):
+        if not isinstance(item, dict) or not item.get("id"):
+            errors.append("excluded contract entryが不正です")
+            continue
+        entry = contracts.get(str(item["id"]))
+        if entry is None or item.get("sha256") != file_hash(entry[0]):
+            errors.append(f"除外したcontractの変更によりresolved lockがstaleです: {item.get('id')}")
     return errors
 
 
@@ -429,6 +666,7 @@ def init_change(root: Path, change_id: str, title: str) -> None:
             "schema_version": 1,
             "change": change_id,
             "governing_contracts": [],
+            "contract_candidates": [],
             "decisions": [],
             "contract_gaps": [],
             "platform_unknowns": [],
@@ -476,12 +714,15 @@ def init_change(root: Path, change_id: str, title: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(prog="agentic")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {KIT_VERSION}")
     parser.add_argument("--root", type=Path, help="project root")
     groups = parser.add_subparsers(dest="group", required=True)
 
     contract = groups.add_parser("contract")
     contract_commands = contract.add_subparsers(dest="command", required=True)
     contract_commands.add_parser("lint")
+    candidates = contract_commands.add_parser("candidates")
+    candidates.add_argument("change_id")
     resolve = contract_commands.add_parser("resolve")
     resolve.add_argument("change_id")
 
@@ -510,6 +751,9 @@ def main() -> int:
         if errors:
             raise AgenticError("\n- ".join(errors))
         print("contract lint passed")
+    elif args.group == "contract" and args.command == "candidates":
+        report = candidate_report(root, args.change_id)
+        print(yaml.safe_dump(report, allow_unicode=True, sort_keys=False, width=100), end="")
     elif args.group == "contract" and args.command == "resolve":
         lock = resolve_contracts(root, args.change_id)
         print(f"resolved {len(lock['contracts'])} contracts")

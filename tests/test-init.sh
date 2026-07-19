@@ -36,6 +36,8 @@ assert_file "$NEW_TARGET/.agents/skills/agentic-contract/SKILL.md"
 assert_file "$NEW_TARGET/.agents/skills/agentic-builder/SKILL.md"
 assert_file "$NEW_TARGET/.agents/skills/agentic-challenger/SKILL.md"
 assert_not_exists "$NEW_TARGET/contracts/data/invariants.yaml"
+"$KIT_ROOT/bin/agentic-init" --upgrade --target "$NEW_TARGET" --non-interactive >/dev/null
+assert_file "$NEW_TARGET/.git/HEAD"
 
 ADOPT_TARGET="$TMP_ROOT/existing"
 mkdir -p "$ADOPT_TARGET"
@@ -63,12 +65,17 @@ BLOCK_COUNT=$(grep -c '<!-- agentic-development:start -->' "$ADOPT_TARGET/AGENTS
 printf 'old skill\n' > "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
 "$KIT_ROOT/bin/agentic-init" --mode adopt --level standard --target "$ADOPT_TARGET" --non-interactive >/dev/null
 grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
-"$KIT_ROOT/bin/agentic-init" --mode adopt --level standard --target "$ADOPT_TARGET" --non-interactive --upgrade >/dev/null
+printf '\n# user-setting\n' >> "$ADOPT_TARGET/.agentic/config.yaml"
+"$KIT_ROOT/bin/agentic-init" --target "$ADOPT_TARGET" --non-interactive --upgrade --dry-run >/dev/null
+grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
+"$KIT_ROOT/bin/agentic-init" --target "$ADOPT_TARGET" --non-interactive --upgrade >/dev/null
 if grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"; then
   printf 'managed skill was not upgraded\n' >&2
   exit 1
 fi
 grep -q 'Feature Contractを上位Contractの代用にしない' "$ADOPT_TARGET/AGENTS.md"
+grep -q '^# user-setting$' "$ADOPT_TARGET/.agentic/config.yaml"
+"$ADOPT_TARGET/.agentic/bin/agentic" --version | grep -q '^agentic 2.1.0$'
 
 "$KIT_ROOT/bin/agentic-init" --mode adopt --level system --target "$ADOPT_TARGET" --non-interactive >/dev/null
 assert_file "$ADOPT_TARGET/contracts/capabilities/async-operation.yaml"
@@ -95,6 +102,10 @@ mkdir -p "$CLI_TARGET"
 sed -i.bak 's/status: proposed/status: accepted/' "$CLI_TARGET/contracts/project/constitution.yaml"
 rm "$CLI_TARGET/contracts/project/constitution.yaml.bak"
 sed -i.bak 's/status: proposed/status: accepted/' "$CLI_TARGET/contracts/data/invariants.yaml"
+rm "$CLI_TARGET/contracts/data/invariants.yaml.bak"
+sed -i.bak 's/contexts: \[\]/contexts: [widgets]/' "$CLI_TARGET/contracts/data/invariants.yaml"
+rm "$CLI_TARGET/contracts/data/invariants.yaml.bak"
+sed -i.bak 's/entities: \[\]/entities: [Widget]/' "$CLI_TARGET/contracts/data/invariants.yaml"
 rm "$CLI_TARGET/contracts/data/invariants.yaml.bak"
 
 mkdir -p "$CLI_TARGET/contracts/operations"
@@ -129,6 +140,31 @@ idempotency:
   duplicate_semantics: return-existing
 failure_points: [before-commit, after-commit]
 conflicts_with: []
+EOF
+
+mkdir -p "$CLI_TARGET/contracts/capabilities"
+cat > "$CLI_TARGET/contracts/capabilities/unrelated-suggestion.yaml" <<'EOF'
+schema_version: 2
+id: capabilities/unrelated-suggestion
+kind: capability
+status: accepted
+version: 1
+owners: [product]
+applies_to:
+  contexts: [widgets]
+  entities: []
+  capabilities: []
+  operations: []
+  interfaces: []
+  paths: []
+sources: []
+outcome: unrelated
+input_contract: []
+output_contract: []
+completion_semantics: unrelated
+failure_semantics: []
+compatibility: unrelated
+reference_implementations: []
 EOF
 
 "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract lint >/dev/null
@@ -211,11 +247,46 @@ changes:
     conflicts_with: []
 EOF
 
+"$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract candidates update-widget > "$TMP_ROOT/candidates.yaml"
+grep -q 'id: capabilities/unrelated-suggestion' "$TMP_ROOT/candidates.yaml"
+grep -q -- '- contexts' "$TMP_ROOT/candidates.yaml"
+if "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract resolve update-widget >/dev/null 2>&1; then
+  printf 'unassessed contract candidate was accepted\n' >&2
+  exit 1
+fi
+cat >> "$CLI_TARGET/.agentic/changes/update-widget/contract-assessment.yaml" <<'EOF'
+contract_candidates:
+  - id: capabilities/unrelated-suggestion
+    matched_by: [contexts]
+    decision: excluded
+    reason: Widget更新とは無関係なSuggestionである
+EOF
+
+"$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract resolve update-widget >/dev/null
+if sed -n '/^contracts:/,/^excluded_contracts:/p' "$CLI_TARGET/.agentic/resolved/update-widget.lock.yaml" | grep -q 'capabilities/unrelated-suggestion'; then
+  printf 'excluded candidate was selected\n' >&2
+  exit 1
+fi
+sed -i.bak 's/capabilities: \[\]/capabilities: [missing-capability]/' "$CLI_TARGET/.agentic/changes/update-widget/change.yaml"
+rm "$CLI_TARGET/.agentic/changes/update-widget/change.yaml.bak"
+if "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract resolve update-widget >/dev/null 2>&1; then
+  printf 'missing capability coverage was accepted\n' >&2
+  exit 1
+fi
+sed -i.bak 's/capabilities: \[missing-capability\]/capabilities: []/' "$CLI_TARGET/.agentic/changes/update-widget/change.yaml"
+rm "$CLI_TARGET/.agentic/changes/update-widget/change.yaml.bak"
 "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract resolve update-widget >/dev/null
 "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" mutation build >/dev/null
 grep -q '^  Widget:' "$CLI_TARGET/.agentic/generated/mutation-graph.yaml"
 "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" change ready update-widget >/dev/null
 grep -q '^status: ready$' "$CLI_TARGET/.agentic/changes/update-widget/change.yaml"
+
+printf '\n# changed after exclusion\n' >> "$CLI_TARGET/contracts/capabilities/unrelated-suggestion.yaml"
+if "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" change ready update-widget >/dev/null 2>&1; then
+  printf 'changed excluded contract did not stale the lock\n' >&2
+  exit 1
+fi
+"$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" contract resolve update-widget >/dev/null
 
 mkdir -p "$CLI_TARGET/evidence/update-widget"
 cat > "$CLI_TARGET/evidence/update-widget/index.yaml" <<'EOF'
