@@ -4,11 +4,13 @@
 
 - 現在有効な規範は`contracts/`、判断履歴は`decisions/`、利用案内・索引は`docs/agentic/`を参照する。
 - 新機能や大きな変更は`$agentic-change`から開始し、Contract Readinessが`ready`になるまで実装しない。
+- `reason`、Challenger finding、gap、コード、テストを仕様決定のauthorityとして扱わない。既存accepted Contract、Issue明示要求、記録された人の判断、accepted Decisionだけを参照し、不足時はDecision Requestで`blocked-contract-decision`にする。
 - Feature Contractを上位Contractの代用にしない。Project、Domain、Capability、Architecture、Data Invariant、Operation Contractを解決する。
 - `agentic contract candidates`の単一軸一致を関連確定とみなさず、各候補を理由付きで採用または除外する。未判断候補や影響対象のContract coverageが残る間は実装しない。
 - データ変更ではOperation Contractにmutation、transaction、consistency、idempotency、failure pointを記録し、Data Invariantを各操作後に検査する。
 - 外部 Platform の能力を推測で確定せず、probe または公式仕様で検証する。
 - 上位Contractから逸脱する場合は、理由をDecision、現在の例外をFeature Contractへ記録する。
-- R2以上は`$agentic-builder`と独立した`$agentic-challenger`を使い、resolved contract、raw diff、Mutation Graph、証拠から反証する。
+- resolve前は`$agentic-challenger`でIssue、authority、decision、Contractを反証する。findingはauthorityにせず、必要ならAssessmentとDecision Requestへ戻す。
+- R2以上は`$agentic-builder`と独立した実装後`$agentic-challenger`を使い、resolved contract、raw diff、Mutation Graph、証拠から反証する。
 - 高リスクな未確定判断だけを人へ上げ、包括的レビューを正しさの代替にしない。
 <!-- agentic-development:end -->

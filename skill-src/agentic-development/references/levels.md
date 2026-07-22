@@ -7,7 +7,8 @@
 個人開発、短期プロトタイプ、捨てられる検証に使う。
 
 - Project ContractとFeature Contract
-- Contract Readinessの手動判定
+- Contract decision authorityと一時的なDecision Request
+- 実装前Contract / Authority Challenge
 - Decisionによる判断履歴
 - 最小のユニットテスト
 

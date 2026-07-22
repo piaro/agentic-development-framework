@@ -28,6 +28,19 @@ AIエージェントを前提に、現在有効な正しさを階層Contractと�
 
 `--upgrade`は導入先の`.agentic/installation.yaml`からmode、level、project名を引き継ぎ、kit管理のCLI、Skill、`AGENTS.md`管理ブロック、installation metadataだけを更新します。Contract、Assessment、設定、プロジェクト文書は置き換えません。
 
+3.0.0ではContract decisionのauthorityと実装前Challengeを必須化しました。2.xからのupgrade後は、active changeに対して`agentic contract authority-check --all`を実行し、Assessmentを手動で移行してから再Challenge・再resolveしてください。旧resolved lockは新しいreadinessには使用できません。
+
+### 2.xから3.0.0への移行
+
+1. `--upgrade --dry-run`でKit管理物だけが更新されることを確認し、`--upgrade`を実行する。
+2. `agentic contract authority-check --all`でactive changeのAssessment、Feature対応、Challenge、lockを診断する。
+3. activeな`contract-assessment.yaml`をschema version 2へ更新し、resolved/accepted decisionへauthorityを追加する。意味を判断できないbackfillは行わず、Decision Requestにする。
+4. resolvedな仕様拡張decision IDをFeature Contractの`introduced_decisions`へ追加する。
+5. `agentic contract challenge-input <id>`の出力を基に実装前Challengeを行う。
+6. Challenge通過後に`contract resolve`と`change ready`を再実行する。
+
+completed/cancelled changeの履歴は移行対象外です。`--upgrade`は既存のAssessment、Contract、Decision、schema file、設定、docsを上書きしないため、新しい構造の強制は更新されたCLIが行います。
+
 ## 情報の役割
 
 | 場所 | 役割 |
@@ -62,16 +75,30 @@ Feature Contractは上位Contractを暗黙に上書きしません。所有権�
 
 1. `$agentic-change`が影響するContext、Entity、Capability、Operation、Interface、Pathを復元する。
 2. `agentic contract candidates <id>`で単一軸一致を候補として列挙する。
-3. `$agentic-contract`が各候補を理由付きで`included`または`excluded`にし、`.agentic/changes/<id>/contract-assessment.yaml`を作る。
-4. 未判断候補、Contract coverage不足、未解決の全体判断、Platform未知、競合があれば開発を止める。
-5. `agentic contract resolve <id>`がaccepted Contractと除外判断を固定する。
-6. `agentic change ready <id>`がfresh lockとMutation競合を確認する。
-7. `$agentic-builder`がresolved Contractに従って実装する。
-8. `$agentic-challenger`がraw diff、Mutation Graph、Operation Contract、証拠から独立反証する。
-9. `agentic evidence check <id>`で契約項目と証拠、残存リスクを検査する。
-10. 障害後は`$agentic-learning`で知識を上位Contract、probe、test、runtime checkerへ昇格する。
+3. `$agentic-contract`が候補、decision、authority、gapをAssessmentへ記録する。既存authorityで決められなければDecision Requestを作り、`blocked-contract-decision`にする。
+4. `$agentic-challenger`が実装前にIssue、authority、decision、Featureと上位Contractを反証する。findingはauthorityにしない。
+5. 未判断候補、authority不足、未解決Decision Request、Contract coverage不足、stale/blocked Challenge、Platform未知、競合があれば開発を止める。
+6. `agentic contract resolve <id>`がaccepted Contract、authority検証、Challenge結果、除外判断を固定する。
+7. `agentic change ready <id>`がfresh lockとMutation競合を確認する。
+8. `$agentic-builder`がresolved Contractに従って実装する。新しい仕様判断を発見したらAssessmentへ戻す。
+9. `$agentic-challenger`が実装後にraw diff、Mutation Graph、Operation Contract、証拠から独立反証する。
+10. `agentic evidence check <id>`で契約項目と証拠、残存リスクを検査する。
+11. 障害後は`$agentic-learning`で知識を上位Contract、probe、test、runtime checkerへ昇格する。incident findingだけで新仕様を決めない。
 
 候補一致は意味的な関連を自動確定しません。Project、Featureの明示参照、Operation/APIの厳密一致は必須契約とし、それ以外のContext、Entity、Capability、Pathなどの一致はAssessment対象にします。除外には理由が必要で、候補の追加、適用条件の変更、除外契約の内容変更はresolved lockをstaleにします。
+
+## Authority and Decision Requests
+
+`reason`は判断理由であり、仕様を決めるauthorityではありません。resolved/acceptedなAssessment decisionは、既存accepted Contractの明示clause、Issueの明示要求、記録された人の判断、既存accepted Decision recordのいずれかを参照します。Agent推論、Challenger finding、Contract gap、実装都合、コード、テストは証拠として記録できますが、単独のauthorityにはなりません。
+
+既存authorityから一意に決められない場合は、Assessment decisionを`needs-human-decision`にし、問い、選択肢、影響、推奨、必要な判断者を一時的なDecision Requestとして記録します。未解決中は`blocked-contract-decision`です。解決後の正本は`decisions/`の判断履歴と`contracts/`の現在値であり、後続artifactはDecision Requestへ依存しません。
+
+```sh
+.agentic/bin/agentic contract decisions <change-id>
+.agentic/bin/agentic contract decisions --all --format markdown
+.agentic/bin/agentic contract challenge-input <change-id>
+.agentic/bin/agentic contract authority-check --all
+```
 
 ## Data integrity
 
@@ -91,6 +118,9 @@ Python 3.10以上とPyYAML 6系を使用します。
 python3 -m pip install -r .agentic/runtime/requirements.txt
 .agentic/bin/agentic contract lint
 .agentic/bin/agentic contract candidates <change-id>
+.agentic/bin/agentic contract decisions <change-id>
+.agentic/bin/agentic contract challenge-input <change-id>
+.agentic/bin/agentic contract authority-check --all
 .agentic/bin/agentic contract resolve <change-id>
 .agentic/bin/agentic mutation build
 .agentic/bin/agentic change ready <change-id>
@@ -103,7 +133,7 @@ CLIはSchema、参照、status、hash、未解決事項、Mutation競合、証�
 
 | Level | 導入内容 |
 |---|---|
-| Lite | Project / Feature Contract、Decision、手動Readiness |
+| Lite | Project / Feature Contract、authority、Decision Request、実装前Challenge |
 | Standard | Domain / Capability / Architecture、Data Invariant、Operation Contract、適合性検査 |
 | System | resolver、Mutation Graph、active change競合、Platform probe、Stateful Challenger |
 | Critical | Threat / Failure Model、Failure Injection、runtime invariant、reconciliation、release evidence |

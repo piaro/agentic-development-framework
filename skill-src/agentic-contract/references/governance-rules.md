@@ -28,6 +28,21 @@
 
 Record options, impact, recommendation, and unknowns before asking a human to decide.
 
+## Authority and Decision Requests
+
+A reason explains a decision; authority permits it. A resolved or accepted Assessment decision must cite one of:
+
+- an explicit clause in an existing accepted Contract;
+- an explicit Issue requirement;
+- a recorded human decision;
+- an existing accepted Decision record.
+
+Agent inference, Challenger findings, contract gaps, implementation convenience, existing code, and tests are evidence only. They may open a Decision Request but cannot resolve it.
+
+Use `needs-human-decision` when existing authority cannot select the product or architecture rule. Keep the temporary question, discovery role/reference, options, impact, recommendation, and required decider in the Assessment. After resolution, keep durable rationale in `decisions/` and current truth in `contracts/`; downstream artifacts must not depend on the Decision Request.
+
+Before Contract resolution, require a fresh Contract / Authority Challenge. Its findings can block or reopen Assessment but cannot authorize a specification.
+
 ## Contract candidate decisions
 
 Context, entity, capability, path, and similar overlaps discover candidates but do not prove semantic relevance. Record each candidate as:
