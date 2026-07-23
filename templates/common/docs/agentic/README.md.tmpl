@@ -10,8 +10,14 @@
 
 1. `$agentic-change`で影響範囲を整理する。
 2. `$agentic-contract`でContract Readiness Assessmentを作る。
-3. `agentic contract lint`と`agentic contract resolve`を実行する。
-4. `agentic change ready`が成功してから`$agentic-builder`で実装する。
+3. decisionにはaccepted Contract、Issue明示要求、記録された人の判断、accepted Decisionのauthorityを記録する。不足時はDecision Requestを作り`blocked-contract-decision`にする。
+4. `$agentic-challenger`で実装前にauthorityとContractを反証し、`agentic contract challenge-input`のfresh hashを記録する。findingはauthorityにしない。
+5. `agentic contract lint`と`agentic contract resolve`を実行する。
+6. `agentic change ready`が成功してから`$agentic-builder`で実装する。
+
+Decision Requestは`.agentic/changes/<id>/contract-assessment.yaml`内の一時情報です。解決後の判断履歴は`decisions/`、現在値は`contracts/`へ置き、後続artifactからRequestを参照しません。
+
+2.xからupgradeしたRepositoryでは、`agentic contract authority-check --all`でactive changeを診断し、Assessment schema 2、Featureのdecision ID、実装前Challengeを手動でbackfillして再resolveします。completed/cancelledの履歴は移行せず、`--upgrade`でユーザーartifactを上書きしません。
 5. 独立した`$agentic-challenger`で反証し、`evidence/`へ結果を残す。
 
 Feature Contractから上位Contractを暗黙に変更しません。全体判断が未確定なら、変更をblockedにして先にContractを決定します。

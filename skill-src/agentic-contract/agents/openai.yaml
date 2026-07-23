@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentic Contract"
-  short_description: "Govern shared contracts and unresolved decisions"
+  short_description: "Govern contracts, authority, and human Decision Requests"
   default_prompt: "Use $agentic-contract to perform the Contract Readiness Assessment for this change."

@@ -24,7 +24,8 @@ description: Bootstrap or adopt the Agentic Development control plane in a new o
 - 類似機能を新しく設計する前に既存Contract、参照実装、共通能力を探す。異なる設計はDecisionとdeviationに残す。
 - SDK、DB、検索、ストリーミング、認証などの外部境界は、名称や型注釈から能力を推測しない。最小 probe または公式仕様で検証する。
 - 所有権、多重度、ライフサイクル、プロトコル、削除、互換性、アーキテクチャ境界をFeature内で暗黙に確定しない。
-- Builder と Challenger を分ける。Challenger は実装の説明ではなく、契約違反、反例、競合、部分失敗、再実行を独立に探す。
+- resolve前のContract / Authority Challengerと、実装後のStateful Challengerを区別する。前者は要求、authority、decision、Contractの不足を探し、後者はlock、diff、証拠から契約違反、競合、部分失敗、再実行を探す。
+- 不足や反例は仕様決定のauthorityにしない。既存authorityで決まらない選択は一時的なDecision Requestとして人へ提示し、確定後はDecisionとContractへ反映する。
 - Builder が検証条件を弱めて成功扱いにしない。契約変更は契約側の判断として記録する。
 - 完了は「コードがある」ではなく、契約、実装、証拠、残存リスクが揃った状態とする。
 

@@ -1,0 +1,14 @@
+id: CD-CREATE-RETRY
+statement: Require a request key for resource creation, persist its claim after resource deletion, add duplicate and expired-key errors, and commit the Resource, AuditRecord, and CreateRequestClaim atomically.
+scope: upper-contract
+effect: specification-extension
+status: resolved
+reason: A Challenger found a replay counterexample after the natural identifier changes.
+authorities:
+  - kind: challenger-finding
+    refs:
+      - artifact: expected-contract-challenge.yaml
+        locator: finding:GOV-AUTH-001
+resulting_contract_refs:
+  - contract: capabilities/resource-create-retry
+    locator: id:RESOURCE-CREATE-RETRY-001

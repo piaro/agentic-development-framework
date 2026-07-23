@@ -14,6 +14,7 @@ description: Implement a repository change only after Contract Readiness succeed
 ## Build
 
 - Implement the smallest change satisfying the resolved contracts.
+- If implementation exposes a missing specification, new entity, interface, protocol, lifecycle rule, external effect, or other unauthorized decision, stop and return the change to `$agentic-contract`. Do not use implementation convenience or a Challenger finding as authority.
 - Preserve Data Invariants after every transaction boundary and define convergence for derived or external stores.
 - Implement Operation Contract semantics for duplicate, retry, concurrency, cancellation, timeout, partial failure, and deletion.
 - Add evidence mapped to contract and clause ids.

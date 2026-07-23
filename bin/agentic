@@ -12,10 +12,12 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import hashlib
+import re
 import sys
 from datetime import date
 from pathlib import Path
 from typing import Any, Iterable
+from urllib.parse import urlparse
 
 try:
     import yaml
@@ -29,8 +31,44 @@ class AgenticError(Exception):
     """Expected validation or workflow failure."""
 
 
-KIT_VERSION = "2.1.0"
+KIT_VERSION = "3.0.0"
 MATCH_KEYS = ("contexts", "entities", "capabilities", "operations", "interfaces")
+AUTHORITY_KINDS = {
+    "accepted-contract",
+    "issue-requirement",
+    "human-decision",
+    "accepted-decision",
+}
+NON_AUTHORITY_KINDS = {
+    "agent-inference",
+    "challenger-finding",
+    "contract-gap",
+    "implementation-convenience",
+    "existing-code-only",
+    "test-only",
+}
+DECISION_STATUSES = {"pending", "needs-human-decision", "resolved", "accepted"}
+ASSESSMENT_RESULTS = {
+    "assessing",
+    "ready",
+    "blocked-contract-decision",
+    "blocked-platform-probe",
+    "blocked-conflict",
+}
+DECISION_SCOPES = {"feature-local", "upper-contract"}
+DECISION_EFFECTS = {
+    "contract-application",
+    "specification-extension",
+    "implementation-choice",
+    "risk-acceptance",
+}
+CHALLENGE_FINDING_TYPES = {
+    "authority-missing",
+    "authority-mismatch",
+    "authority-conflict",
+    "circular-authority",
+    "unrecorded-specification-extension",
+}
 
 
 def find_root(start: Path) -> Path:
@@ -71,6 +109,26 @@ def require_fields(value: dict[str, Any], fields: Iterable[str], source: Path) -
 
 def as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def nonempty_text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def is_web_reference(value: str) -> bool:
+    parsed = urlparse(value)
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def safe_repository_path(root: Path, value: str) -> Path | None:
+    if not nonempty_text(value) or is_web_reference(value):
+        return None
+    candidate = (root / value).resolve()
+    try:
+        candidate.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return candidate
 
 
 def file_hash(path: Path) -> str:
@@ -120,6 +178,11 @@ def contract_specific_errors(path: Path, value: dict[str, Any]) -> list[str]:
         errors.extend(require_fields(value, ("risk", "outcome", "governing_contracts"), path))
         if not as_list(value.get("governing_contracts")):
             errors.append(f"{path}: feature governing_contracts が空です")
+        introduced = value.get("introduced_decisions")
+        if not isinstance(introduced, list) or any(not nonempty_text(item) for item in introduced):
+            errors.append(f"{path}: introduced_decisionsは空でない文字列の配列である必要があります")
+        elif len(introduced) != len(set(introduced)):
+            errors.append(f"{path}: introduced_decisionsが重複しています")
     elif kind == "operation":
         errors.extend(require_fields(value, ("preconditions", "mutations", "postconditions", "transaction", "consistency"), path))
         if not as_list(value.get("mutations")):
@@ -149,6 +212,133 @@ def lint_contracts(root: Path) -> list[str]:
 def change_paths(root: Path, change_id: str) -> tuple[Path, Path, Path]:
     base = root / ".agentic" / "changes" / change_id
     return base / "change.yaml", base / "contract-assessment.yaml", root / ".agentic" / "resolved" / f"{change_id}.lock.yaml"
+
+
+def contract_challenge_path(root: Path, change_id: str) -> Path:
+    return root / ".agentic" / "changes" / change_id / "contract-challenge.yaml"
+
+
+def find_contract_by_artifact(
+    root: Path,
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+    artifact: str,
+) -> tuple[str, Path, dict[str, Any]] | None:
+    if artifact in contracts:
+        path, value = contracts[artifact]
+        return artifact, path, value
+    artifact_path = safe_repository_path(root, artifact)
+    if artifact_path is None:
+        return None
+    for contract_id, (path, value) in contracts.items():
+        if path.resolve() == artifact_path:
+            return contract_id, path, value
+    return None
+
+
+def contains_id(value: Any, wanted: str) -> bool:
+    if isinstance(value, dict):
+        if str(value.get("id", "")) == wanted:
+            return True
+        return any(contains_id(item, wanted) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_id(item, wanted) for item in value)
+    return False
+
+
+def json_pointer_exists(value: Any, pointer: str) -> bool:
+    if pointer == "":
+        return True
+    if not pointer.startswith("/"):
+        return False
+    current = value
+    for raw_part in pointer[1:].split("/"):
+        part = raw_part.replace("~1", "/").replace("~0", "~")
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        elif isinstance(current, list) and part.isdigit() and int(part) < len(current):
+            current = current[int(part)]
+        else:
+            return False
+    return True
+
+
+def yaml_locator_exists(value: dict[str, Any], locator: str) -> bool:
+    if locator.startswith("id:"):
+        return contains_id(value, locator.removeprefix("id:"))
+    if locator.startswith("pointer:"):
+        return json_pointer_exists(value, locator.removeprefix("pointer:"))
+    return False
+
+
+def markdown_locator_exists(path: Path, locator: str) -> bool:
+    if not path.is_file() or not locator.startswith("heading:"):
+        return False
+    wanted = locator.removeprefix("heading:").strip().casefold()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        heading = re.sub(r"^#+\s+", "", line).strip().casefold()
+        if heading == wanted and line.startswith("#"):
+            return True
+    return False
+
+
+def accepted_decision_record(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    return bool(
+        re.search(
+            r"(?im)^-\s*status:\s*accepted\s*$",
+            path.read_text(encoding="utf-8"),
+        )
+    )
+
+
+def authority_contract_ids(
+    root: Path,
+    assessment: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> set[str]:
+    selected: set[str] = set()
+    for decision in as_list(assessment.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        for authority in as_list(decision.get("authorities")):
+            if not isinstance(authority, dict) or authority.get("kind") != "accepted-contract":
+                continue
+            for ref in as_list(authority.get("refs")):
+                if not isinstance(ref, dict) or not nonempty_text(ref.get("artifact")):
+                    continue
+                entry = find_contract_by_artifact(root, contracts, str(ref["artifact"]))
+                if entry is not None:
+                    selected.add(entry[0])
+    return selected
+
+
+def authority_sources_hash(
+    root: Path,
+    assessment: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> str:
+    sources: dict[str, str] = {}
+    for decision in as_list(assessment.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        for authority in as_list(decision.get("authorities")):
+            if not isinstance(authority, dict):
+                continue
+            kind = authority.get("kind")
+            for ref in as_list(authority.get("refs")):
+                if not isinstance(ref, dict) or not nonempty_text(ref.get("artifact")):
+                    continue
+                artifact = str(ref["artifact"])
+                if kind == "accepted-contract":
+                    entry = find_contract_by_artifact(root, contracts, artifact)
+                    if entry is not None:
+                        sources[f"contract:{entry[0]}"] = semantic_hash(entry[2])
+                elif kind in {"human-decision", "accepted-decision"}:
+                    path = safe_repository_path(root, artifact)
+                    if path is not None and path.is_file():
+                        sources[f"decision:{path.relative_to(root.resolve())}"] = file_hash(path)
+    return semantic_hash(sources)
 
 
 def load_change(root: Path, change_id: str) -> dict[str, Any]:
@@ -297,6 +487,14 @@ def candidate_report(root: Path, change_id: str) -> dict[str, Any]:
         for item in as_list(assessment.get("governing_contracts"))
         if isinstance(item, dict) and item.get("id")
     )
+    required.update(
+        str(ref.get("contract"))
+        for decision in as_list(assessment.get("decisions"))
+        if isinstance(decision, dict)
+        for ref in as_list(decision.get("resulting_contract_refs"))
+        if isinstance(ref, dict) and ref.get("contract")
+    )
+    required.update(authority_contract_ids(root, assessment, contracts))
     affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
     for contract_id, (_, contract) in contracts.items():
         reasons = match_reasons(contract, affected)
@@ -366,6 +564,225 @@ def coverage_errors(
     return errors
 
 
+def decision_request_errors(decision: dict[str, Any]) -> list[str]:
+    decision_id = str(decision.get("id", "<unknown>"))
+    request = decision.get("request")
+    if not isinstance(request, dict):
+        return [f"decision {decision_id}: needs-human-decision には request が必要です"]
+    errors: list[str] = []
+    for field in ("question", "why_now", "required_decider"):
+        if not nonempty_text(request.get(field)):
+            errors.append(f"decision {decision_id}: request.{field} がありません")
+    discovered_by = request.get("discovered_by")
+    if not isinstance(discovered_by, dict):
+        errors.append(f"decision {decision_id}: request.discovered_by がありません")
+    else:
+        for field in ("role", "ref"):
+            if not nonempty_text(discovered_by.get(field)):
+                errors.append(f"decision {decision_id}: request.discovered_by.{field} がありません")
+    options = request.get("options")
+    option_ids: list[str] = []
+    if not isinstance(options, list) or len(options) < 2:
+        errors.append(f"decision {decision_id}: request.options には2件以上の選択肢が必要です")
+    else:
+        for option in options:
+            if not isinstance(option, dict):
+                errors.append(f"decision {decision_id}: request option がmappingではありません")
+                continue
+            option_id = option.get("id")
+            if not nonempty_text(option_id) or not nonempty_text(option.get("summary")):
+                errors.append(f"decision {decision_id}: request option には id と summary が必要です")
+                continue
+            option_ids.append(str(option_id))
+            impact = option.get("impact")
+            if not isinstance(impact, list) or not any(nonempty_text(item) for item in impact):
+                errors.append(f"decision {decision_id}: option {option_id} に impact がありません")
+        if len(option_ids) != len(set(option_ids)):
+            errors.append(f"decision {decision_id}: request option id が重複しています")
+    recommendation = request.get("recommendation")
+    if not isinstance(recommendation, dict) or not nonempty_text(recommendation.get("option")) or not nonempty_text(recommendation.get("reason")):
+        errors.append(f"decision {decision_id}: request.recommendation に option と reason が必要です")
+    elif str(recommendation["option"]) not in option_ids:
+        errors.append(f"decision {decision_id}: request.recommendation.option が選択肢にありません")
+    return errors
+
+
+def authority_errors(
+    root: Path,
+    decision: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> list[str]:
+    decision_id = str(decision.get("id", "<unknown>"))
+    authorities = decision.get("authorities")
+    if not isinstance(authorities, list) or not authorities:
+        return [
+            f"decision {decision_id}: resolved/accepted decisionにauthorityがありません; "
+            "reason、finding、gap、コード、テストはauthorityではありません"
+        ]
+    errors: list[str] = []
+    resulting = {
+        (str(item.get("contract")), str(item.get("locator")))
+        for item in as_list(decision.get("resulting_contract_refs"))
+        if isinstance(item, dict) and item.get("contract") and item.get("locator")
+    }
+    for authority in authorities:
+        if not isinstance(authority, dict):
+            errors.append(f"decision {decision_id}: authority entry がmappingではありません")
+            continue
+        kind = authority.get("kind")
+        if kind in NON_AUTHORITY_KINDS:
+            errors.append(f"decision {decision_id}: authority kind {kind} は認可源ではありません")
+            continue
+        if kind not in AUTHORITY_KINDS:
+            errors.append(f"decision {decision_id}: authority kind が不正です: {kind}")
+            continue
+        refs = authority.get("refs")
+        if not isinstance(refs, list) or not refs:
+            errors.append(f"decision {decision_id}: authority {kind} にrefがありません")
+            continue
+        if kind == "human-decision":
+            if not nonempty_text(authority.get("recorded_by")):
+                errors.append(f"decision {decision_id}: human-decision に recorded_by がありません")
+            try:
+                date.fromisoformat(str(authority.get("recorded_at", "")))
+            except ValueError:
+                errors.append(f"decision {decision_id}: human-decision の recorded_at が不正です")
+        for ref in refs:
+            if not isinstance(ref, dict):
+                errors.append(f"decision {decision_id}: authority ref がmappingではありません")
+                continue
+            artifact = ref.get("artifact")
+            locator = ref.get("locator")
+            if not nonempty_text(artifact) or not nonempty_text(locator):
+                errors.append(f"decision {decision_id}: authority refにartifact/locatorがありません")
+                continue
+            artifact_text = str(artifact)
+            locator_text = str(locator)
+            if kind == "accepted-contract":
+                entry = find_contract_by_artifact(root, contracts, artifact_text)
+                if entry is None:
+                    errors.append(f"decision {decision_id}: accepted-contractが存在しません: {artifact_text}")
+                    continue
+                contract_id, _, contract = entry
+                if contract.get("status") != "accepted":
+                    errors.append(f"decision {decision_id}: authority contractがacceptedではありません: {contract_id}")
+                if ref.get("version") != contract.get("version"):
+                    errors.append(f"decision {decision_id}: authority contract versionが一致しません: {contract_id}")
+                if not yaml_locator_exists(contract, locator_text):
+                    errors.append(f"decision {decision_id}: authority contract locatorを解決できません: {contract_id} {locator_text}")
+                if (contract_id, locator_text) in resulting:
+                    errors.append(f"decision {decision_id}: 新設・変更するclauseを自身のauthorityにはできません: {contract_id} {locator_text}")
+            elif kind == "issue-requirement":
+                if not is_web_reference(artifact_text) and not artifact_text.startswith("issue:"):
+                    errors.append(f"decision {decision_id}: issue-requirement artifactがIssue参照ではありません")
+            elif kind in {"human-decision", "accepted-decision"}:
+                if is_web_reference(artifact_text):
+                    if kind == "accepted-decision":
+                        errors.append(f"decision {decision_id}: accepted-decisionはrepository内recordを参照してください")
+                    continue
+                path = safe_repository_path(root, artifact_text)
+                decisions_root = (root / "decisions").resolve()
+                if path is None or not path.is_file():
+                    errors.append(f"decision {decision_id}: Decision recordが存在しません: {artifact_text}")
+                    continue
+                try:
+                    path.relative_to(decisions_root)
+                except ValueError:
+                    errors.append(f"decision {decision_id}: Decision recordはdecisions/配下に置いてください")
+                if not markdown_locator_exists(path, locator_text):
+                    errors.append(f"decision {decision_id}: Decision locatorを解決できません: {artifact_text} {locator_text}")
+                if not accepted_decision_record(path):
+                    errors.append(f"decision {decision_id}: Decision recordがacceptedではありません: {artifact_text}")
+    return errors
+
+
+def feature_decision_errors(
+    feature: dict[str, Any], decisions: list[dict[str, Any]]
+) -> list[str]:
+    errors: list[str] = []
+    introduced = feature.get("introduced_decisions")
+    if not isinstance(introduced, list) or any(not nonempty_text(item) for item in introduced):
+        return ["Feature Contract introduced_decisions は空でない文字列の配列である必要があります"]
+    introduced_ids = [str(item) for item in introduced]
+    if len(introduced_ids) != len(set(introduced_ids)):
+        errors.append("Feature Contract introduced_decisions が重複しています")
+    by_id = {str(item.get("id")): item for item in decisions if item.get("id")}
+    expected = {
+        decision_id
+        for decision_id, decision in by_id.items()
+        if decision.get("effect") == "specification-extension"
+        and decision.get("status") in {"resolved", "accepted"}
+    }
+    for decision_id in sorted(expected - set(introduced_ids)):
+        errors.append(f"仕様拡張decisionがFeature introduced_decisionsにありません: {decision_id}")
+    for decision_id in sorted(set(introduced_ids) - expected):
+        errors.append(f"Feature introduced_decisionsがresolvedな仕様拡張decisionを参照していません: {decision_id}")
+    return errors
+
+
+def assessment_structure_errors(
+    root: Path,
+    change_id: str,
+    assessment: dict[str, Any],
+    feature: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> list[str]:
+    errors: list[str] = []
+    if assessment.get("schema_version") != 2:
+        errors.append("contract-assessment.yaml はschema_version 2への移行が必要です")
+    if assessment.get("change") != change_id:
+        errors.append("contract-assessment.yaml のchange idが一致しません")
+    if assessment.get("result") not in ASSESSMENT_RESULTS:
+        errors.append("contract-assessment.yaml のresultが不正です")
+    for field in ("governing_contracts", "contract_candidates", "decisions", "contract_gaps", "platform_unknowns", "conflicts"):
+        if not isinstance(assessment.get(field), list):
+            errors.append(f"contract-assessment.yaml の{field}は配列である必要があります")
+    raw_decisions = assessment.get("decisions")
+    if not isinstance(raw_decisions, list):
+        return errors
+    decisions = [item for item in raw_decisions if isinstance(item, dict)]
+    if len(decisions) != len(raw_decisions):
+        errors.append("assessment decisionはmappingである必要があります")
+    ids: list[str] = []
+    for decision in decisions:
+        decision_id = decision.get("id")
+        if not nonempty_text(decision_id):
+            errors.append("assessment decisionにidがありません")
+            continue
+        ids.append(str(decision_id))
+        if not nonempty_text(decision.get("statement")):
+            errors.append(f"decision {decision_id}: statementがありません")
+        if decision.get("scope") not in DECISION_SCOPES:
+            errors.append(f"decision {decision_id}: scopeが不正です")
+        if decision.get("effect") not in DECISION_EFFECTS:
+            errors.append(f"decision {decision_id}: effectが不正です")
+        status = decision.get("status")
+        if status not in DECISION_STATUSES:
+            errors.append(f"decision {decision_id}: statusが不正です")
+        if status in {"resolved", "accepted", "needs-human-decision"} and not nonempty_text(decision.get("reason")):
+            errors.append(f"decision {decision_id}: reasonがありません")
+        if status in {"resolved", "accepted"}:
+            errors.extend(authority_errors(root, decision, contracts))
+            if decision.get("effect") == "specification-extension":
+                refs = decision.get("resulting_contract_refs")
+                if not isinstance(refs, list) or not refs:
+                    errors.append(f"decision {decision_id}: specification-extensionにresulting_contract_refsがありません")
+                else:
+                    for ref in refs:
+                        if not isinstance(ref, dict) or not nonempty_text(ref.get("contract")) or not nonempty_text(ref.get("locator")):
+                            errors.append(f"decision {decision_id}: resulting_contract_refにcontract/locatorがありません")
+                            continue
+                        entry = contracts.get(str(ref["contract"]))
+                        if entry is None or not yaml_locator_exists(entry[1], str(ref["locator"])):
+                            errors.append(f"decision {decision_id}: resulting contract locatorを解決できません: {ref}")
+        if status == "needs-human-decision":
+            errors.extend(decision_request_errors(decision))
+    if len(ids) != len(set(ids)):
+        errors.append("assessment decision idが重複しています")
+    errors.extend(feature_decision_errors(feature, decisions))
+    return errors
+
+
 def assessment_blockers(assessment: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     for key in ("contract_gaps", "conflicts", "platform_unknowns"):
@@ -378,9 +795,172 @@ def assessment_blockers(assessment: dict[str, Any]) -> list[str]:
     ]
     if unresolved:
         blockers.append("unresolved decisions")
+    if any(
+        isinstance(item, dict) and item.get("status") == "needs-human-decision"
+        for item in as_list(assessment.get("decisions"))
+    ):
+        blockers.append("human decision requests")
     if assessment.get("result") != "ready":
         blockers.append("assessment result is not ready")
     return blockers
+
+
+def challenge_required(change: dict[str, Any], assessment: dict[str, Any]) -> bool:
+    return change.get("risk") in {"R1", "R2", "R3"} or bool(as_list(assessment.get("decisions")))
+
+
+def review_contract_ids(
+    root: Path,
+    change: dict[str, Any],
+    assessment: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> set[str]:
+    selected: set[str] = set()
+    feature_id = change.get("feature_contract")
+    if isinstance(feature_id, str):
+        selected.add(feature_id)
+        if feature_id in contracts:
+            selected.update(values_for_match(contracts[feature_id][1].get("governing_contracts")))
+    selected.update(
+        str(item.get("id"))
+        for item in as_list(assessment.get("governing_contracts"))
+        if isinstance(item, dict) and item.get("id")
+    )
+    for decision in as_list(assessment.get("decisions")):
+        if not isinstance(decision, dict):
+            continue
+        selected.update(
+            str(item.get("contract"))
+            for item in as_list(decision.get("resulting_contract_refs"))
+            if isinstance(item, dict) and item.get("contract")
+        )
+    affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
+    for contract_id, (_, contract) in contracts.items():
+        if contract.get("kind") == "project" or match_reasons(contract, affected):
+            selected.add(contract_id)
+    selected.update(authority_contract_ids(root, assessment, contracts))
+    return expand_governing_contracts(selected, contracts)
+
+
+def contract_review_hash(
+    contract_ids: set[str], contracts: dict[str, tuple[Path, dict[str, Any]]]
+) -> str:
+    reviewed = {
+        contract_id: {
+            key: item
+            for key, item in contracts[contract_id][1].items()
+            if key != "status"
+        }
+        for contract_id in sorted(contract_ids)
+        if contract_id in contracts
+    }
+    return semantic_hash(reviewed)
+
+
+def challenge_input(
+    root: Path,
+    change_id: str,
+    change: dict[str, Any] | None = None,
+    assessment: dict[str, Any] | None = None,
+    contracts: dict[str, tuple[Path, dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    change_value = change or load_change(root, change_id)
+    _, assessment_path, _ = change_paths(root, change_id)
+    assessment_value = assessment or load_yaml(assessment_path)
+    contract_values = contracts or load_contracts(root)[0]
+    contract_ids = review_contract_ids(root, change_value, assessment_value, contract_values)
+    return {
+        "schema_version": 1,
+        "change": change_id,
+        "phase": "pre-implementation",
+        "challenger": "TODO",
+        "independent_context": False,
+        "review": {
+            "change_sha256": semantic_hash(change_value, {"status"}),
+            "assessment_sha256": semantic_hash(assessment_value, {"result"}),
+            "contracts_sha256": contract_review_hash(contract_ids, contract_values),
+            "authorities_sha256": authority_sources_hash(root, assessment_value, contract_values),
+        },
+        "reviewed_decisions": sorted(
+            str(item.get("id"))
+            for item in as_list(assessment_value.get("decisions"))
+            if isinstance(item, dict) and item.get("id")
+        ),
+        "result": "pending",
+        "findings": [],
+    }
+
+
+def contract_challenge_errors(
+    root: Path,
+    change_id: str,
+    change: dict[str, Any],
+    assessment: dict[str, Any],
+    contracts: dict[str, tuple[Path, dict[str, Any]]],
+) -> list[str]:
+    if not challenge_required(change, assessment):
+        return []
+    path = contract_challenge_path(root, change_id)
+    try:
+        challenge = load_yaml(path)
+    except AgenticError as exc:
+        return [str(exc)]
+    errors: list[str] = []
+    if challenge.get("schema_version") != 1:
+        errors.append("contract-challenge.yaml のschema_versionが不正です")
+    if challenge.get("change") != change_id or challenge.get("phase") != "pre-implementation":
+        errors.append("contract-challenge.yaml のchange/phaseが一致しません")
+    if not nonempty_text(challenge.get("challenger")) or challenge.get("challenger") == "TODO":
+        errors.append("実装前Challengerが記録されていません")
+    if change.get("risk") in {"R2", "R3"} and challenge.get("independent_context") is not True:
+        errors.append("R2/R3の実装前Challengeには独立contextが必要です")
+    expected = challenge_input(root, change_id, change, assessment, contracts)
+    review = challenge.get("review")
+    if not isinstance(review, dict):
+        errors.append("contract-challenge.yaml にreview hashがありません")
+    else:
+        for field, expected_hash in expected["review"].items():
+            if review.get(field) != expected_hash:
+                errors.append(f"実装前Challengeがstaleです: {field}")
+    reviewed = challenge.get("reviewed_decisions")
+    if (
+        not isinstance(reviewed, list)
+        or len(reviewed) != len({str(item) for item in reviewed})
+        or {str(item) for item in reviewed} != set(expected["reviewed_decisions"])
+    ):
+        errors.append("実装前ChallengeがAssessment decisionを網羅していません")
+    findings = challenge.get("findings")
+    if not isinstance(findings, list):
+        errors.append("contract-challenge.yaml のfindingsは配列である必要があります")
+        findings = []
+    finding_ids: list[str] = []
+    decision_ids = set(expected["reviewed_decisions"])
+    for finding in findings:
+        if not isinstance(finding, dict):
+            errors.append("実装前Challenge findingはmappingである必要があります")
+            continue
+        if not nonempty_text(finding.get("id")):
+            errors.append("実装前Challenge findingにidがありません")
+        else:
+            finding_ids.append(str(finding["id"]))
+        if finding.get("type") not in CHALLENGE_FINDING_TYPES:
+            errors.append(f"実装前Challenge finding typeが不正です: {finding.get('type')}")
+        if finding.get("severity") not in {"blocking", "warning"}:
+            errors.append(f"実装前Challenge finding severityが不正です: {finding.get('severity')}")
+        if finding.get("type") != "unrecorded-specification-extension" and str(finding.get("decision", "")) not in decision_ids:
+            errors.append(f"実装前Challenge findingが有効なdecisionを参照していません: {finding.get('id')}")
+    if len(finding_ids) != len(set(finding_ids)):
+        errors.append("実装前Challenge finding idが重複しています")
+    blocking = [
+        item
+        for item in findings
+        if isinstance(item, dict) and item.get("severity") == "blocking"
+    ]
+    if blocking:
+        errors.append("実装前Challengeにblocking findingがあります")
+    if challenge.get("result") != "passed":
+        errors.append("実装前Challengeがpassedではありません")
+    return errors
 
 
 def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[str, Any]:
@@ -392,16 +972,25 @@ def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[st
     change_path, assessment_path, lock_path = change_paths(root, change_id)
     change = load_yaml(change_path)
     assessment = load_yaml(assessment_path)
-    blockers = assessment_blockers(assessment)
-    if blockers:
-        raise AgenticError("Contract Readiness Assessment が未解決です: " + ", ".join(blockers))
-
     feature_id = change.get("feature_contract")
     if not isinstance(feature_id, str) or feature_id not in contracts:
         raise AgenticError("change.feature_contract が有効なcontractを参照していません")
     feature = contracts[feature_id][1]
     if feature.get("kind") != "feature":
         raise AgenticError("change.feature_contract はfeature contractではありません")
+    errors = assessment_structure_errors(root, change_id, assessment, feature, contracts)
+    if errors:
+        raise AgenticError("Contract Readiness Assessment の構造が不正です:\n- " + "\n- ".join(errors))
+    blockers = assessment_blockers(assessment)
+    if blockers:
+        raise AgenticError(
+            "Contract Readiness Assessment が未解決です: "
+            + ", ".join(blockers)
+            + "; change statusとassessment resultはblocked-contract-decisionにしてください"
+        )
+    errors = contract_challenge_errors(root, change_id, change, assessment, contracts)
+    if errors:
+        raise AgenticError("実装前Contract Challengeに失敗しました:\n- " + "\n- ".join(errors))
 
     required: set[str] = {feature_id}
     required.update(str(item) for item in as_list(feature.get("governing_contracts")))
@@ -410,6 +999,14 @@ def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[st
         for item in as_list(assessment.get("governing_contracts"))
         if isinstance(item, dict) and item.get("id")
     )
+    required.update(
+        str(ref.get("contract"))
+        for decision in as_list(assessment.get("decisions"))
+        if isinstance(decision, dict)
+        for ref in as_list(decision.get("resulting_contract_refs"))
+        if isinstance(ref, dict) and ref.get("contract")
+    )
+    required.update(authority_contract_ids(root, assessment, contracts))
     affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
     for contract_id, (_, contract) in contracts.items():
         reasons = match_reasons(contract, affected)
@@ -466,11 +1063,15 @@ def resolve_contracts(root: Path, change_id: str, write: bool = True) -> dict[st
             raise AgenticError("データ変更に必要なcontract kindがありません: " + ", ".join(sorted(missing)))
 
     lock = {
-        "schema_version": 1,
+        "schema_version": 2,
+        "authority_model_version": 1,
         "change": change_id,
         "generated_at": date.today().isoformat(),
         "change_sha256": semantic_hash(change, {"status"}),
         "assessment_sha256": semantic_hash(assessment),
+        "contract_challenge_sha256": semantic_hash(load_yaml(contract_challenge_path(root, change_id)))
+        if challenge_required(change, assessment)
+        else None,
         "contract_selection_sha256": selection_hash(contracts, affected),
         "contracts": resolved,
         "excluded_contracts": [
@@ -498,8 +1099,15 @@ def verify_lock(root: Path, change_id: str) -> list[str]:
     change = load_yaml(change_path)
     assessment = load_yaml(assessment_path)
     contracts, contract_errors = load_contracts(root)
+    if lock.get("schema_version") != 2 or lock.get("authority_model_version") != 1:
+        errors.append("resolved lockはauthority model検証済みのschema_version 2へ再resolveしてください")
     if contract_errors:
         errors.extend(contract_errors)
+    feature_id = change.get("feature_contract")
+    if not contract_errors and isinstance(feature_id, str) and feature_id in contracts:
+        feature = contracts[feature_id][1]
+        errors.extend(assessment_structure_errors(root, change_id, assessment, feature, contracts))
+        errors.extend(contract_challenge_errors(root, change_id, change, assessment, contracts))
     affected = change.get("affected") if isinstance(change.get("affected"), dict) else {}
     if not contract_errors and lock.get("contract_selection_sha256") != selection_hash(contracts, affected):
         errors.append("contractの追加・削除・適用条件変更によりresolved lockがstaleです")
@@ -507,6 +1115,10 @@ def verify_lock(root: Path, change_id: str) -> list[str]:
         errors.append("change.yaml の変更によりresolved lockがstaleです")
     if lock.get("assessment_sha256") != semantic_hash(assessment):
         errors.append("contract-assessment.yaml の変更によりresolved lockがstaleです")
+    if challenge_required(change, assessment):
+        challenge_path = contract_challenge_path(root, change_id)
+        if not challenge_path.is_file() or lock.get("contract_challenge_sha256") != semantic_hash(load_yaml(challenge_path)):
+            errors.append("contract-challenge.yaml の変更によりresolved lockがstaleです")
     for item in as_list(lock.get("contracts")):
         if not isinstance(item, dict) or not item.get("path"):
             errors.append("resolved contract entryが不正です")
@@ -642,6 +1254,118 @@ def check_evidence(root: Path, change_id: str) -> list[str]:
     return errors
 
 
+def repository_change_ids(root: Path) -> list[str]:
+    base = root / ".agentic" / "changes"
+    if not base.is_dir():
+        return []
+    return sorted(path.name for path in base.iterdir() if path.is_dir())
+
+
+def active_workflow_change_ids(root: Path) -> list[str]:
+    active_path = root / ".agentic" / "active-changes.yaml"
+    if not active_path.is_file():
+        return repository_change_ids(root)
+    return sorted(
+        str(item.get("id"))
+        for item in active_changes(root)
+        if item.get("id") and item.get("status") not in {"complete", "cancelled"}
+    )
+
+
+def pending_decision_requests(root: Path, change_ids: list[str]) -> list[tuple[str, dict[str, Any]]]:
+    requests: list[tuple[str, dict[str, Any]]] = []
+    for change_id in change_ids:
+        _, assessment_path, _ = change_paths(root, change_id)
+        assessment = load_yaml(assessment_path)
+        for decision in as_list(assessment.get("decisions")):
+            if isinstance(decision, dict) and decision.get("status") == "needs-human-decision":
+                requests.append((change_id, decision))
+    return requests
+
+
+def format_decision_requests(requests: list[tuple[str, dict[str, Any]]], markdown: bool) -> str:
+    blocks: list[str] = []
+    for change_id, decision in requests:
+        decision_id = str(decision.get("id", "<unknown>"))
+        request = decision.get("request") if isinstance(decision.get("request"), dict) else {}
+        options = [item for item in as_list(request.get("options")) if isinstance(item, dict)]
+        recommendation = request.get("recommendation") if isinstance(request.get("recommendation"), dict) else {}
+        discovered = request.get("discovered_by") if isinstance(request.get("discovered_by"), dict) else {}
+        discovery = str(discovered.get("role", "未指定"))
+        if discovered.get("ref"):
+            discovery += f" ({discovered['ref']})"
+        if markdown:
+            lines = [
+                f"## [{decision_id}] {request.get('question', decision.get('statement', ''))}",
+                "",
+                f"- Change: `{change_id}`",
+                f"- 判断者: {request.get('required_decider', '未指定')}",
+                f"- 発見元: {discovery}",
+                f"- 必要な理由: {request.get('why_now', decision.get('reason', ''))}",
+                "",
+                "### 選択肢",
+                "",
+            ]
+            for option in options:
+                lines.append(f"- **{option.get('id')} — {option.get('summary')}**")
+                for impact in as_list(option.get("impact")):
+                    lines.append(f"  - {impact}")
+            lines.extend(
+                [
+                    "",
+                    "### 推奨（authorityではありません）",
+                    "",
+                    f"{recommendation.get('option', '未指定')} — {recommendation.get('reason', '')}",
+                ]
+            )
+        else:
+            lines = [
+                f"[{decision_id}] {request.get('question', decision.get('statement', ''))}",
+                f"Change: {change_id}",
+                f"判断が必要な理由: {request.get('why_now', decision.get('reason', ''))}",
+                f"発見元: {discovery}",
+                "選択肢:",
+            ]
+            for option in options:
+                lines.append(f"  {option.get('id')}. {option.get('summary')}")
+                for impact in as_list(option.get("impact")):
+                    lines.append(f"     - {impact}")
+            lines.extend(
+                [
+                    f"推奨（authorityではありません）: {recommendation.get('option', '未指定')} — {recommendation.get('reason', '')}",
+                    f"判断者: {request.get('required_decider', '未指定')}",
+                ]
+            )
+        blocks.append("\n".join(lines))
+    return "\n\n".join(blocks)
+
+
+def authority_audit(root: Path, change_ids: list[str]) -> list[str]:
+    contracts, contract_errors = load_contracts(root)
+    findings = list(contract_errors)
+    for change_id in change_ids:
+        try:
+            change = load_change(root, change_id)
+            _, assessment_path, lock_path = change_paths(root, change_id)
+            assessment = load_yaml(assessment_path)
+        except AgenticError as exc:
+            findings.append(f"{change_id}: {exc}")
+            continue
+        feature_id = change.get("feature_contract")
+        if not isinstance(feature_id, str) or feature_id not in contracts:
+            findings.append(f"{change_id}: feature contractを解決できません")
+            continue
+        for error in assessment_structure_errors(root, change_id, assessment, contracts[feature_id][1], contracts):
+            findings.append(f"{change_id}: {error}")
+        for error in contract_challenge_errors(root, change_id, change, assessment, contracts):
+            findings.append(f"{change_id}: {error}")
+        if lock_path.is_file():
+            lock = load_yaml(lock_path)
+            if lock.get("schema_version") != 2 or lock.get("authority_model_version") != 1:
+                findings.append(f"{change_id}: legacy resolved lockは再resolveが必要です")
+    return findings
+
+
 def init_change(root: Path, change_id: str, title: str) -> None:
     change_path, assessment_path, _ = change_paths(root, change_id)
     if change_path.exists() or assessment_path.exists():
@@ -663,7 +1387,7 @@ def init_change(root: Path, change_id: str, title: str) -> None:
     write_yaml(
         assessment_path,
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "change": change_id,
             "governing_contracts": [],
             "contract_candidates": [],
@@ -672,6 +1396,25 @@ def init_change(root: Path, change_id: str, title: str) -> None:
             "platform_unknowns": [],
             "conflicts": [],
             "result": "assessing",
+        },
+    )
+    write_yaml(
+        contract_challenge_path(root, change_id),
+        {
+            "schema_version": 1,
+            "change": change_id,
+            "phase": "pre-implementation",
+            "challenger": "TODO",
+            "independent_context": False,
+            "review": {
+                "change_sha256": "TODO",
+                "assessment_sha256": "TODO",
+                "contracts_sha256": "TODO",
+                "authorities_sha256": "TODO",
+            },
+            "reviewed_decisions": [],
+            "result": "pending",
+            "findings": [],
         },
     )
     feature_path = root / "contracts" / "features" / f"{change_id}.yaml"
@@ -723,6 +1466,15 @@ def main() -> int:
     contract_commands.add_parser("lint")
     candidates = contract_commands.add_parser("candidates")
     candidates.add_argument("change_id")
+    challenge = contract_commands.add_parser("challenge-input")
+    challenge.add_argument("change_id")
+    decisions = contract_commands.add_parser("decisions")
+    decisions.add_argument("change_id", nargs="?")
+    decisions.add_argument("--all", action="store_true", dest="all_changes")
+    decisions.add_argument("--format", choices=("text", "markdown"), default="text")
+    authority_check = contract_commands.add_parser("authority-check")
+    authority_check.add_argument("change_id", nargs="?")
+    authority_check.add_argument("--all", action="store_true", dest="all_changes")
     resolve = contract_commands.add_parser("resolve")
     resolve.add_argument("change_id")
 
@@ -754,6 +1506,26 @@ def main() -> int:
     elif args.group == "contract" and args.command == "candidates":
         report = candidate_report(root, args.change_id)
         print(yaml.safe_dump(report, allow_unicode=True, sort_keys=False, width=100), end="")
+    elif args.group == "contract" and args.command == "challenge-input":
+        report = challenge_input(root, args.change_id)
+        print(yaml.safe_dump(report, allow_unicode=True, sort_keys=False, width=100), end="")
+    elif args.group == "contract" and args.command == "decisions":
+        if bool(args.change_id) == bool(args.all_changes):
+            raise AgenticError("change_id または --all のどちらか一方を指定してください")
+        change_ids = active_workflow_change_ids(root) if args.all_changes else [args.change_id]
+        requests = pending_decision_requests(root, change_ids)
+        if not requests:
+            print("pending decision requests: 0")
+        else:
+            print(format_decision_requests(requests, args.format == "markdown"))
+    elif args.group == "contract" and args.command == "authority-check":
+        if bool(args.change_id) == bool(args.all_changes):
+            raise AgenticError("change_id または --all のどちらか一方を指定してください")
+        change_ids = active_workflow_change_ids(root) if args.all_changes else [args.change_id]
+        findings = authority_audit(root, change_ids)
+        if findings:
+            raise AgenticError("authority migration/checkに失敗しました:\n- " + "\n- ".join(findings))
+        print(f"authority check passed for {len(change_ids)} changes")
     elif args.group == "contract" and args.command == "resolve":
         lock = resolve_contracts(root, args.change_id)
         print(f"resolved {len(lock['contracts'])} contracts")
