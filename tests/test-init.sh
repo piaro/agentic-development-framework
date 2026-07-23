@@ -86,6 +86,29 @@ grep -q '^# user-setting$' "$ADOPT_TARGET/.agentic/config.yaml"
 grep -q '^legacy-user-content: keep-me$' "$ADOPT_TARGET/.agentic/changes/legacy-change/contract-assessment.yaml"
 "$ADOPT_TARGET/.agentic/bin/agentic" --version | grep -q '^agentic 3.0.0$'
 
+LEGACY_TARGET="$TMP_ROOT/upgrade-v2.1"
+mkdir -p "$LEGACY_TARGET"
+"$KIT_ROOT/bin/agentic-init" --mode adopt --level lite --target "$LEGACY_TARGET" --name legacy --non-interactive >/dev/null
+sed -i.bak 's/kit_version: "3.0.0"/kit_version: "2.1.0"/' "$LEGACY_TARGET/.agentic/installation.yaml"
+rm "$LEGACY_TARGET/.agentic/installation.yaml.bak"
+mkdir -p "$LEGACY_TARGET/contracts/features"
+cp "$KIT_ROOT/tests/fixtures/upgrade-v2.1/legacy-feature.yaml" "$LEGACY_TARGET/contracts/features/legacy-feature.yaml"
+
+"$KIT_ROOT/bin/agentic-init" --target "$LEGACY_TARGET" --non-interactive --upgrade >/dev/null
+"$LEGACY_TARGET/.agentic/bin/agentic" --version | grep -q '^agentic 3.0.0$'
+if "$LEGACY_TARGET/.agentic/bin/agentic" --root "$LEGACY_TARGET" contract lint >"$TMP_ROOT/legacy-lint.out" 2>"$TMP_ROOT/legacy-lint.err"; then
+  printf '2.1形式のFeature Contractが手動移行なしでlintを通過しました\n' >&2
+  exit 1
+fi
+grep -q 'introduced_decisionsは空でない文字列の配列である必要があります' "$TMP_ROOT/legacy-lint.err"
+grep -q '^  - id: LEGACY-DEC-001$' "$LEGACY_TARGET/contracts/features/legacy-feature.yaml"
+
+sed -i.bak '/^introduced_decisions:/,/^deviations:/c\
+introduced_decisions: [LEGACY-DEC-001]\
+deviations: []' "$LEGACY_TARGET/contracts/features/legacy-feature.yaml"
+rm "$LEGACY_TARGET/contracts/features/legacy-feature.yaml.bak"
+"$LEGACY_TARGET/.agentic/bin/agentic" --root "$LEGACY_TARGET" contract lint >/dev/null
+
 "$KIT_ROOT/bin/agentic-init" --mode adopt --level system --target "$ADOPT_TARGET" --non-interactive >/dev/null
 assert_file "$ADOPT_TARGET/contracts/capabilities/async-operation.yaml"
 assert_file "$ADOPT_TARGET/tests/scenarios/README.md"

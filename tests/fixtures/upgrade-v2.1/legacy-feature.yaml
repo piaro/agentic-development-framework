@@ -1,0 +1,29 @@
+schema_version: 2
+id: features/legacy-feature
+kind: feature
+status: accepted
+version: 1
+owners: [test]
+applies_to:
+  contexts: []
+  entities: []
+  capabilities: []
+  operations: []
+  interfaces: []
+sources: []
+risk: R1
+governing_contracts:
+  - project/constitution
+outcome: legacy feature
+non_scope: []
+completion_semantics: complete
+failure_semantics: {}
+introduced_decisions:
+  - id: LEGACY-DEC-001
+    statement: 2.1形式の導入判断
+    classification: feature-local
+deviations: []
+unknowns: []
+required_probes: []
+evidence_requirements: []
+residual_risks: []
