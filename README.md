@@ -388,7 +388,7 @@ CLIは意味判断を自動化しません。候補の採否、authorityが要�
 5. `agentic contract challenge-input <id>`を基に実装前Challengeをやり直す。
 6. Challenge通過後に`contract resolve`と`change ready`を再実行する。
 
-旧resolved lockは3.0.0のreadinessには使用できません。completed / cancelled changeの履歴は移行対象外です。
+旧resolved lockは3.0.0のreadinessには使用できません。completed / cancelled changeのAssessmentとresolved lockは移行対象外です。一方、accepted Feature Contractは完了済みchangeに由来していても`contract lint`の対象です。旧形式の`introduced_decisions`がobject配列なら、既存のdecision IDだけを保持した文字列配列へ手動で変換します。
 
 ## Shell・CLI・エージェント・人の責務
 
