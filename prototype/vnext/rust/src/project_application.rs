@@ -327,10 +327,16 @@ impl ProjectApplicationService {
         key: &IssuedActionKey,
         contract: Value,
         expected_digest: Option<&str>,
+        expected_clause_digests: Option<&BTreeMap<String, String>>,
     ) -> Result<RecordWriteResponse, ServiceError> {
+        if expected_digest.is_some() && expected_clause_digests.is_some() {
+            return Err(ServiceError::invalid_argument(
+                "expected_digest and expected_clause_digests are mutually exclusive",
+            ));
+        }
         let entry = self.issued_entry(key)?;
         assert_action(&entry, Some("record-human-decision"), None)?;
-        assert_record_change(&contract, key, "Contract")?;
+        assert_contract_scope(&contract, key)?;
         let contract_id = required_record_id(&contract, "Contract")?.to_owned();
         let authority_refs = contract
             .get("clauses")
@@ -364,9 +370,15 @@ impl ProjectApplicationService {
                 false,
             ));
         }
-        application
-            .upsert_contract(contract, expected_digest)
-            .map_err(application_error)?;
+        if let Some(expected_clause_digests) = expected_clause_digests {
+            application
+                .upsert_contract_clauses(contract, expected_clause_digests)
+                .map_err(application_error)?;
+        } else {
+            application
+                .upsert_contract(contract, expected_digest)
+                .map_err(application_error)?;
+        }
         self.register_output(key, &contract_id)?;
         Ok(RecordWriteResponse {
             schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
@@ -610,6 +622,20 @@ fn assert_record_change(
     Ok(())
 }
 
+fn assert_contract_scope(contract: &Value, key: &IssuedActionKey) -> Result<(), ServiceError> {
+    if contract
+        .get("change_id")
+        .is_some_and(|change_id| change_id.as_str() != Some(key.change_id.as_str()))
+    {
+        return Err(service_error(
+            "ACTION_NOT_ALLOWED",
+            "Contract change_id does not match the issued Action",
+            false,
+        ));
+    }
+    Ok(())
+}
+
 fn required_record_id<'a>(record: &'a Value, label: &str) -> Result<&'a str, ServiceError> {
     record["id"].as_str().ok_or_else(|| {
         service_error(
@@ -700,3 +726,46 @@ impl fmt::Display for ServiceError {
 }
 
 impl std::error::Error for ServiceError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn contract_scope_accepts_shared_and_matching_change_contracts() {
+        let key = IssuedActionKey {
+            change_id: "change.place-order".to_owned(),
+            action_id: "action.test".to_owned(),
+            context_digest: "sha256:test".to_owned(),
+        };
+
+        assert_contract_scope(&json!({"id": "contract.shared"}), &key).unwrap();
+        assert_contract_scope(
+            &json!({
+                "id": "contract.local",
+                "change_id": "change.place-order"
+            }),
+            &key,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn contract_scope_rejects_another_change_contract() {
+        let key = IssuedActionKey {
+            change_id: "change.place-order".to_owned(),
+            action_id: "action.test".to_owned(),
+            context_digest: "sha256:test".to_owned(),
+        };
+
+        let error = assert_contract_scope(
+            &json!({
+                "id": "contract.other",
+                "change_id": "change.retry-order-events"
+            }),
+            &key,
+        )
+        .unwrap_err();
+        assert_eq!(error.code, "ACTION_NOT_ALLOWED");
+    }
+}

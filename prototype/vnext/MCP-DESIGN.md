@@ -293,11 +293,16 @@ Input:
 
 ### 10.5 `agentic_apply_contract`
 
-InputにはContract Recordと`expected_digest`を必須とします。
+InputにはContract Recordと`expected_digest`を必須とし、条項単位で更新する場合は
+`expected_digest: null`と`expected_clause_digests`を渡します。後者は
+`{条項ID: 読取り時の条項digest}`のmappingです。
 
 - 発行Actionが`record-human-decision`でなければ拒否する。
 - Contract変更が、同じActionで記録したDecisionまたはContext内の既存Decisionをauthorityとして参照することを検査する。
-- `expected_digest`省略、現在digestとの不一致を拒否する。
+- `expected_digest`と`expected_clause_digests`の同時指定を拒否する。
+- 全体更新では`expected_digest`省略、現在digestとの不一致を拒否する。
+- 条項更新では`contract.clauses`をpatchとして扱う。変更する既存条項はpayloadとdigestの両方へ含め、削除する条項はdigestだけへ含める。対象外の条項はどちらにも含めない。
+- 対象条項が先に変更されていればstaleとして拒否する。対象外の条項が変更されていても最新版を保持して機械的に併合する。Contract metadataは併合せず、全体更新を要求する。
 - 新規Contractは`expected_digest: null`を明示し、同じIDが既に存在すれば拒否する。
 - Agentが任意のShared Contractを汎用編集するToolにはしない。
 
@@ -403,7 +408,8 @@ Agentが入力を修正できるSchema・domain errorと、server再起動が必
 ## 14. Concurrencyとretry
 
 - write Toolは`(change_id, action_id, context_digest)`単位でsession内mutexを取得する。
-- Decision／Contract更新は`expected_digest`を要求し、現在値をlock内で再読込みする。
+- DecisionとContract全体の更新は`expected_digest`を要求する。Contract条項更新は`expected_clause_digests`を要求し、いずれも現在値をlock内で再読込みする。
+- 同じContractでも別条項の並行更新は最新版を保持してatomicに併合し、同じ条項の並行更新はstaleとして拒否する。
 - ResultとEvidenceはexclusive createを維持する。
 - 同一内容のretryは成功済み結果を返し、異なる内容の二重提出は拒否する。
 - 複数MCP process間の競合はFilesystem Storeのlockとexclusive createで解決する。

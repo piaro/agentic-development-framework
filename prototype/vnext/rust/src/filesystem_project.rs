@@ -4,7 +4,8 @@
 //! tracking and revision checks belong to a separate Repository Adapter.
 
 use crate::application::{
-    ProjectStore, ProjectStoreError, validate_contract_update, validate_decision_update,
+    ProjectStore, ProjectStoreError, merge_contract_clause_update, validate_contract_update,
+    validate_decision_update,
 };
 use crate::contract_health::{ContractHealthReport, build_contract_health_report};
 use crate::kernel::ProjectSnapshot;
@@ -12,7 +13,7 @@ use crate::project::build_project_snapshot;
 use crate::schema::SchemaRegistry;
 use regex::Regex;
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
@@ -29,7 +30,7 @@ const DISALLOWED_SOURCE_ROOTS: [&str; 5] = [
     ".agentic/logs",
     ".agentic/tmp",
 ];
-pub const FILESYSTEM_PROJECT_PROTOCOL_VERSION: &str = "2";
+pub const FILESYSTEM_PROJECT_PROTOCOL_VERSION: &str = "3";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -344,6 +345,41 @@ impl<'a> FileProjectStore<'a> {
             }
         };
         self.write_atomic(&path, contract, format)
+    }
+
+    pub fn upsert_contract_clauses(
+        &mut self,
+        contract: &Value,
+        expected_clause_digests: &BTreeMap<String, String>,
+    ) -> Result<(), FileProjectError> {
+        self.schema_registry
+            .validate("contract", contract)
+            .map_err(|error| file_error(error.to_string()))?;
+        let _lock = self.acquire_contract_update_lock()?;
+        let record_id = safe_id(required_string(contract, "id", "contract")?)?;
+        let existing_path = self.record_path(&self.contract_root, record_id, "contract")?;
+        let existing = existing_path
+            .as_ref()
+            .map(|path| self.load_document(path, "contract"))
+            .transpose()?;
+        let merged =
+            merge_contract_clause_update(existing.as_ref(), contract, expected_clause_digests)
+                .map_err(|error| file_error(error.to_string()))?;
+        self.schema_registry
+            .validate("contract", &merged)
+            .map_err(|error| file_error(error.to_string()))?;
+
+        let (path, format) = if let Some(path) = existing_path {
+            let format = if path.extension().and_then(|value| value.to_str()) == Some("md") {
+                FileFormat::Markdown("contract")
+            } else {
+                FileFormat::Yaml
+            };
+            (path, format)
+        } else {
+            unreachable!("clause-scoped updates require an existing Contract")
+        };
+        self.write_atomic(&path, &merged, format)
     }
 
     pub fn upsert_decision(
@@ -1025,6 +1061,15 @@ impl ProjectStore for FileProjectStore<'_> {
         expected_digest: Option<&str>,
     ) -> Result<(), ProjectStoreError> {
         FileProjectStore::upsert_contract(self, contract, expected_digest)
+            .map_err(|error| ProjectStoreError::new(error.to_string()))
+    }
+
+    fn upsert_contract_clauses(
+        &mut self,
+        contract: &Value,
+        expected_clause_digests: &BTreeMap<String, String>,
+    ) -> Result<(), ProjectStoreError> {
+        FileProjectStore::upsert_contract_clauses(self, contract, expected_clause_digests)
             .map_err(|error| ProjectStoreError::new(error.to_string()))
     }
 

@@ -13,6 +13,7 @@ use rmcp::{
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -76,6 +77,8 @@ pub struct ContractToolInput {
     pub context_digest: String,
     pub contract: Value,
     pub expected_digest: Value,
+    #[serde(default)]
+    pub expected_clause_digests: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -278,7 +281,7 @@ impl AgenticMcpServer {
     /// Update a Contract bound to an issued Human-decision recording Action.
     #[tool(
         name = "agentic_apply_contract",
-        description = "Apply a Contract update with optimistic concurrency control.",
+        description = "Apply a Contract update using either whole-record or clause-scoped optimistic concurrency control.",
         annotations(
             title = "Agentic Apply Contract",
             read_only_hint = false,
@@ -291,10 +294,16 @@ impl AgenticMcpServer {
     ) -> Result<Json<RecordWriteResponse>, ServiceError> {
         let key = IssuedActionKey::from(&input);
         let expected_digest = parse_expected_digest(&input.expected_digest)?;
+        let expected_clause_digests = input.expected_clause_digests.as_ref();
         self.service
             .lock()
             .await
-            .apply_contract(&key, input.contract, expected_digest)
+            .apply_contract(
+                &key,
+                input.contract,
+                expected_digest,
+                expected_clause_digests,
+            )
             .map(Json)
     }
 

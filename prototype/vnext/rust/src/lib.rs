@@ -48,6 +48,7 @@ mod swift_detection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1318,7 +1319,17 @@ pub fn verify_filesystem_project_suite(
     let base: Value = read_json(&resolve_inside(&root, &case_set.base_case)?)?;
     let result_case: Value = read_json(&resolve_inside(&root, &case_set.result_case)?)?;
     let scenario: Value = read_json(&resolve_inside(&root, &case_set.scenario_case)?)?;
-    let project = &base["input"]["project"];
+    let mut project = base["input"]["project"].clone();
+    project["changes"]
+        .as_array_mut()
+        .ok_or_else(|| GoldenError::Mismatch("Project Changes must be an array".to_owned()))?
+        .push(
+            case_set
+                .shared_contract_concurrency
+                .clause_updates
+                .second_change
+                .clone(),
+        );
     let repository = project["repository"].clone();
     let change_id = base["change_id"]
         .as_str()
@@ -1340,7 +1351,7 @@ pub fn verify_filesystem_project_suite(
         };
         let mut store = filesystem_project::FileProjectStore::initialize(
             temporary.path(),
-            project,
+            &project,
             format,
             &registry,
         )
@@ -1361,7 +1372,7 @@ pub fn verify_filesystem_project_suite(
 
         match filesystem_project::FileProjectStore::initialize(
             temporary.path(),
-            project,
+            &project,
             format,
             &registry,
         ) {
@@ -1550,6 +1561,128 @@ pub fn verify_filesystem_project_suite(
             return Err(GoldenError::Mismatch(format!(
                 "{}: stale update changed Shared Contract: {}",
                 format_case.document_format, current_shared
+            )));
+        }
+
+        let clause_updates = &concurrency.clause_updates;
+        store
+            .upsert_contract(&clause_updates.initial, None)
+            .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        let second_change_id = clause_updates.second_change["id"]
+            .as_str()
+            .ok_or_else(|| GoldenError::Mismatch("second Change ID is missing".to_owned()))?;
+        for visible_change_id in [change_id, second_change_id] {
+            let snapshot = store
+                .snapshot(visible_change_id)
+                .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+            if !snapshot
+                .contracts
+                .iter()
+                .any(|contract| contract["id"] == clause_updates.initial["id"])
+            {
+                return Err(GoldenError::Mismatch(format!(
+                    "{}: Shared Contract is not visible to {visible_change_id}",
+                    format_case.document_format
+                )));
+            }
+        }
+        let clause_digests = clause_updates.initial["clauses"]
+            .as_array()
+            .ok_or_else(|| {
+                GoldenError::Mismatch("clause update fixture clauses must be an array".to_owned())
+            })?
+            .iter()
+            .map(|clause| {
+                let clause_id = clause["id"].as_str().ok_or_else(|| {
+                    GoldenError::Mismatch("clause update fixture ID is missing".to_owned())
+                })?;
+                let digest = canonical_digest(clause)
+                    .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+                Ok((clause_id.to_owned(), digest))
+            })
+            .collect::<Result<BTreeMap<_, _>, GoldenError>>()?;
+        let first_expected = BTreeMap::from([(
+            clause_updates.first_clause_id.clone(),
+            clause_digests
+                .get(&clause_updates.first_clause_id)
+                .ok_or_else(|| GoldenError::Mismatch("first clause digest is missing".to_owned()))?
+                .clone(),
+        )]);
+        let second_expected = BTreeMap::from([(
+            clause_updates.second_clause_id.clone(),
+            clause_digests
+                .get(&clause_updates.second_clause_id)
+                .ok_or_else(|| GoldenError::Mismatch("second clause digest is missing".to_owned()))?
+                .clone(),
+        )]);
+        let mut first_clause_writer = filesystem_project::FileProjectStore::open(
+            temporary.path(),
+            repository.clone(),
+            &registry,
+        )
+        .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        let mut second_clause_writer = filesystem_project::FileProjectStore::open(
+            temporary.path(),
+            repository.clone(),
+            &registry,
+        )
+        .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        first_clause_writer
+            .upsert_contract_clauses(&clause_updates.first_update, &first_expected)
+            .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        second_clause_writer
+            .upsert_contract_clauses(&clause_updates.non_overlapping_update, &second_expected)
+            .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        match second_clause_writer
+            .upsert_contract_clauses(&clause_updates.conflicting_update, &first_expected)
+        {
+            Err(error) if error.to_string().contains(&clause_updates.stale_error) => {}
+            Err(error) => {
+                return Err(GoldenError::Mismatch(format!(
+                    "{}: unexpected same-clause conflict error: {error}",
+                    format_case.document_format
+                )));
+            }
+            Ok(()) => {
+                return Err(GoldenError::Mismatch(format!(
+                    "{}: stale same-clause update was accepted",
+                    format_case.document_format
+                )));
+            }
+        }
+        let snapshot = store
+            .snapshot(change_id)
+            .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
+        let merged_contract = snapshot
+            .contracts
+            .iter()
+            .find(|contract| contract["id"] == clause_updates.initial["id"])
+            .ok_or_else(|| {
+                GoldenError::Mismatch("clause-merged Shared Contract disappeared".to_owned())
+            })?;
+        let merged_texts = merged_contract["clauses"]
+            .as_array()
+            .ok_or_else(|| GoldenError::Mismatch("merged clauses must be an array".to_owned()))?
+            .iter()
+            .filter_map(|clause| {
+                Some((
+                    clause["id"].as_str()?.to_owned(),
+                    clause["text"].as_str()?.to_owned(),
+                ))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if merged_texts
+            .get(&clause_updates.first_clause_id)
+            .map(String::as_str)
+            != Some(&clause_updates.expected_first_text)
+            || merged_texts
+                .get(&clause_updates.second_clause_id)
+                .map(String::as_str)
+                != Some(&clause_updates.expected_second_text)
+        {
+            return Err(GoldenError::Mismatch(format!(
+                "{}: non-overlapping clause updates were not preserved: {merged_contract}",
+                format_case.document_format
             )));
         }
     }
@@ -2725,6 +2858,21 @@ struct SharedContractConcurrencyCase {
     missing_digest_error: String,
     stale_error: String,
     expected_text: String,
+    clause_updates: SharedContractClauseUpdateCase,
+}
+
+#[derive(Deserialize)]
+struct SharedContractClauseUpdateCase {
+    second_change: Value,
+    initial: Value,
+    first_clause_id: String,
+    second_clause_id: String,
+    first_update: Value,
+    non_overlapping_update: Value,
+    conflicting_update: Value,
+    stale_error: String,
+    expected_first_text: String,
+    expected_second_text: String,
 }
 
 #[derive(Deserialize)]

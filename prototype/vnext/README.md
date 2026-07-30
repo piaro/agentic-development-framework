@@ -45,7 +45,7 @@ Project Snapshot
 - Git管理Recordを模したFilesystem Project Storeとプロセス再起動後のState再現
 - Shared Contract・Decisionの新規既定rootを`contracts/`・`decisions/`へ分離
 - Resultの排他的追記とContract・Decisionの原子的更新
-- 読取り時digestと排他lockによるShared Contractのstale更新拒否
+- 読取り時digestと排他lockによるShared Contractのstale更新拒否、および別条項の安全な並行更新
 - 削除・破損から再生成できる`.agentic/cache/`へのwrite-through
 - cleanな実Git cloneからの`ready-to-merge`再現
 - Git revision、tracked artifact、未commit変更を検査するCI Evaluator
@@ -465,7 +465,7 @@ sources:
 - cacheはwrite-throughのみです。検証済みcache readによる高速化は未実装です。
 - cleanなlocal Git cloneでのCI再現まで実装済みです。remote CI status、shallow clone、submodule、複数Repositoryは未実装です。
 - build phaseと解析root、Binding RecordはProject manifestへ明示します。risk factとcoverageはRust AdapterがGitとsourceから生成します。
-- MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract更新は`expected_digest`による楽観的lockを使い、新規作成では`null`を明示します。remote MCP、複数Projectを扱う単一process、未提出Actionのprocess再起動を跨ぐresumeは未実装です。
+- MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。remote MCP、複数Projectを扱う単一process、未提出Actionのprocess再起動を跨ぐresumeは未実装です。
 - 現行`bin/agentic`、Schema、Skill、導入処理の挙動は変更しません。
 
 したがって、このPrototypeのResult形式やModule APIを互換性のある公開仕様として利用しないでください。

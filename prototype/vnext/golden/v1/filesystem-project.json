@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "filesystem_project_protocol_version": "2",
+  "filesystem_project_protocol_version": "3",
   "schema_root": "../../schemas/v1",
   "base_case": "application-initial.json",
   "result_case": "result-submission.json",
@@ -53,7 +53,76 @@
     },
     "missing_digest_error": "Shared Contract update requires expected digest",
     "stale_error": "stale Contract update",
-    "expected_text": "先に確定した並行更新規範"
+    "expected_text": "先に確定した並行更新規範",
+    "clause_updates": {
+      "second_change": {
+        "schema_version": "1",
+        "id": "change.retry-order-events",
+        "title": "注文作成イベントの再試行を追加する",
+        "intent": "Place orderと同じShared Contractを参照して再試行する"
+      },
+      "initial": {
+        "schema_version": "1",
+        "id": "contract.shared-clause-concurrency",
+        "applies_to": [
+          "data.orders"
+        ],
+        "clauses": [
+          {
+            "id": "place-order",
+            "text": "注文受付の初期規範"
+          },
+          {
+            "id": "retry-order",
+            "text": "再試行の初期規範"
+          }
+        ]
+      },
+      "first_clause_id": "place-order",
+      "second_clause_id": "retry-order",
+      "first_update": {
+        "schema_version": "1",
+        "id": "contract.shared-clause-concurrency",
+        "applies_to": [
+          "data.orders"
+        ],
+        "clauses": [
+          {
+            "id": "place-order",
+            "text": "注文受付は一度だけ確定する"
+          }
+        ]
+      },
+      "non_overlapping_update": {
+        "schema_version": "1",
+        "id": "contract.shared-clause-concurrency",
+        "applies_to": [
+          "data.orders"
+        ],
+        "clauses": [
+          {
+            "id": "retry-order",
+            "text": "再試行は同じ注文IDを維持する"
+          }
+        ]
+      },
+      "conflicting_update": {
+        "schema_version": "1",
+        "id": "contract.shared-clause-concurrency",
+        "applies_to": [
+          "data.orders"
+        ],
+        "clauses": [
+          {
+            "id": "place-order",
+            "text": "古い版を基に注文受付を変更する"
+          }
+        ]
+      },
+      "stale_error": "stale Contract clause update",
+      "expected_first_text": "注文受付は一度だけ確定する",
+      "expected_second_text": "再試行は同じ注文IDを維持する"
+    }
   },
   "formats": [
     {

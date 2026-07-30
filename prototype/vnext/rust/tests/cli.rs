@@ -954,6 +954,14 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
         assert!(tool["inputSchema"].is_object());
         assert!(tool["outputSchema"].is_object());
     }
+    let contract_tool = tools
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some("agentic_apply_contract"))
+        .unwrap();
+    assert!(
+        contract_tool["inputSchema"]["properties"]["expected_clause_digests"].is_object(),
+        "Contract tool must expose clause-scoped optimistic locking"
+    );
 
     let next_call = json!({
         "jsonrpc": "2.0",

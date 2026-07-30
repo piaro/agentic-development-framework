@@ -50,6 +50,11 @@ pub trait ProjectStore {
         contract: &Value,
         expected_digest: Option<&str>,
     ) -> Result<(), ProjectStoreError>;
+    fn upsert_contract_clauses(
+        &mut self,
+        contract: &Value,
+        expected_clause_digests: &BTreeMap<String, String>,
+    ) -> Result<(), ProjectStoreError>;
     fn update_repository(&mut self, repository: Value) -> Result<(), ProjectStoreError>;
 }
 
@@ -236,6 +241,16 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             .map_err(|error| application_error(error.to_string()))
     }
 
+    pub fn upsert_contract_clauses(
+        &mut self,
+        contract: Value,
+        expected_clause_digests: &BTreeMap<String, String>,
+    ) -> Result<(), ApplicationError> {
+        self.store
+            .upsert_contract_clauses(&contract, expected_clause_digests)
+            .map_err(|error| application_error(error.to_string()))
+    }
+
     pub fn update_repository(&mut self, repository: Value) -> Result<(), ApplicationError> {
         self.store
             .update_repository(repository)
@@ -393,6 +408,27 @@ impl ProjectStore for InMemoryProjectStore<'_> {
         self.upsert_record("contracts", "contract", contract)
     }
 
+    fn upsert_contract_clauses(
+        &mut self,
+        contract: &Value,
+        expected_clause_digests: &BTreeMap<String, String>,
+    ) -> Result<(), ProjectStoreError> {
+        self.schema_registry
+            .validate("contract", contract)
+            .map_err(|error| project_store_error(error.to_string()))?;
+        let existing = self
+            .project
+            .get("contracts")
+            .and_then(Value::as_array)
+            .and_then(|contracts| {
+                contracts
+                    .iter()
+                    .find(|candidate| candidate["id"] == contract["id"])
+            });
+        let merged = merge_contract_clause_update(existing, contract, expected_clause_digests)?;
+        self.upsert_record("contracts", "contract", &merged)
+    }
+
     fn update_repository(&mut self, repository: Value) -> Result<(), ProjectStoreError> {
         let project = self
             .project
@@ -435,6 +471,146 @@ pub(crate) fn validate_contract_update(
     if expected != current {
         return Err(project_store_error(format!(
             "stale Contract update: {contract_id}: expected {expected}, current {current}"
+        )));
+    }
+    Ok(())
+}
+
+/// Mechanically merges a clause-scoped Contract update.
+///
+/// `proposed.clauses` is treated as a clause patch. Existing clauses included
+/// in the patch require their base digest; an expected clause omitted from the
+/// patch is deleted. Clauses outside the patch are preserved, so concurrent
+/// updates to them do not conflict. An update to the same clause is rejected
+/// as stale. Contract metadata requires the existing whole-record digest path
+/// and is never merged here.
+pub(crate) fn merge_contract_clause_update(
+    existing: Option<&Value>,
+    proposed: &Value,
+    expected_clause_digests: &BTreeMap<String, String>,
+) -> Result<Value, ProjectStoreError> {
+    let contract_id = proposed["id"]
+        .as_str()
+        .ok_or_else(|| project_store_error("Contract ID must be a string"))?;
+    if expected_clause_digests.is_empty() {
+        return Err(project_store_error(format!(
+            "clause-scoped Contract update requires expected clause digests: {contract_id}"
+        )));
+    }
+    let existing = existing.ok_or_else(|| {
+        project_store_error(format!(
+            "stale Contract clause update: {contract_id}: current record is missing"
+        ))
+    })?;
+
+    let existing_object = existing
+        .as_object()
+        .ok_or_else(|| project_store_error("Contract must be an object"))?;
+    let proposed_object = proposed
+        .as_object()
+        .ok_or_else(|| project_store_error("Contract must be an object"))?;
+    let mut existing_metadata = existing_object.clone();
+    let mut proposed_metadata = proposed_object.clone();
+    existing_metadata.remove("clauses");
+    proposed_metadata.remove("clauses");
+    if existing_metadata != proposed_metadata {
+        return Err(project_store_error(format!(
+            "clause-scoped Contract update cannot change metadata: {contract_id}"
+        )));
+    }
+
+    let current_clauses = contract_clause_map(existing, contract_id)?;
+    let proposed_clauses = contract_clause_map(proposed, contract_id)?;
+    for clause_id in expected_clause_digests.keys() {
+        if !current_clauses.contains_key(clause_id.as_str()) {
+            return Err(project_store_error(format!(
+                "stale Contract clause update: {contract_id}#{clause_id}: current clause is missing"
+            )));
+        }
+    }
+
+    let mut merged_clauses = Vec::new();
+    for current_clause in existing["clauses"]
+        .as_array()
+        .expect("contract_clause_map validated clauses")
+    {
+        let clause_id = current_clause["id"]
+            .as_str()
+            .expect("contract_clause_map validated clause IDs");
+        let Some(proposed_clause) = proposed_clauses.get(clause_id).copied() else {
+            if let Some(expected) = expected_clause_digests.get(clause_id) {
+                assert_current_clause_digest(contract_id, clause_id, current_clause, expected)?;
+                continue;
+            }
+            merged_clauses.push(current_clause.clone());
+            continue;
+        };
+        let proposed_digest = canonical_digest(proposed_clause)
+            .map_err(|error| project_store_error(error.to_string()))?;
+        let Some(expected) = expected_clause_digests.get(clause_id) else {
+            return Err(project_store_error(format!(
+                "Contract clause update requires expected digest: {contract_id}#{clause_id}"
+            )));
+        };
+
+        if proposed_digest == *expected {
+            // The caller did not edit this clause; preserve a concurrent update.
+            merged_clauses.push(current_clause.clone());
+        } else {
+            assert_current_clause_digest(contract_id, clause_id, current_clause, expected)?;
+            merged_clauses.push(proposed_clause.clone());
+        }
+    }
+
+    for proposed_clause in proposed["clauses"]
+        .as_array()
+        .expect("contract_clause_map validated clauses")
+    {
+        let clause_id = proposed_clause["id"]
+            .as_str()
+            .expect("contract_clause_map validated clause IDs");
+        if !current_clauses.contains_key(clause_id) {
+            merged_clauses.push(proposed_clause.clone());
+        }
+    }
+
+    let mut merged = existing.clone();
+    merged["clauses"] = Value::Array(merged_clauses);
+    Ok(merged)
+}
+
+fn contract_clause_map<'a>(
+    contract: &'a Value,
+    contract_id: &str,
+) -> Result<BTreeMap<&'a str, &'a Value>, ProjectStoreError> {
+    let clauses = contract["clauses"]
+        .as_array()
+        .ok_or_else(|| project_store_error("Contract clauses must be an array"))?;
+    let mut by_id = BTreeMap::new();
+    for clause in clauses {
+        let clause_id = clause["id"]
+            .as_str()
+            .ok_or_else(|| project_store_error("Contract clause ID must be a string"))?;
+        if by_id.insert(clause_id, clause).is_some() {
+            return Err(project_store_error(format!(
+                "duplicate Contract clause ID: {contract_id}#{clause_id}"
+            )));
+        }
+    }
+    Ok(by_id)
+}
+
+fn assert_current_clause_digest(
+    contract_id: &str,
+    clause_id: &str,
+    current_clause: &Value,
+    expected: &str,
+) -> Result<(), ProjectStoreError> {
+    let current =
+        canonical_digest(current_clause).map_err(|error| project_store_error(error.to_string()))?;
+    if current != expected {
+        return Err(project_store_error(format!(
+            "stale Contract clause update: {contract_id}#{clause_id}: expected {expected}, current {current}"
         )));
     }
     Ok(())
@@ -585,5 +761,70 @@ mod tests {
         let stale =
             validate_contract_update(Some(&update), &initial, Some(&initial_digest)).unwrap_err();
         assert!(stale.to_string().contains("stale Contract update"));
+    }
+
+    #[test]
+    fn clause_scoped_updates_merge_different_clauses_and_reject_same_clause() {
+        let initial = json!({
+            "schema_version": "1",
+            "id": "contract.shared-concurrency",
+            "applies_to": ["data.orders"],
+            "clauses": [
+                {"id": "place-order", "text": "place initial"},
+                {"id": "retry-order", "text": "retry initial"}
+            ]
+        });
+        let place_digest = canonical_digest(&initial["clauses"][0]).unwrap();
+        let retry_digest = canonical_digest(&initial["clauses"][1]).unwrap();
+        let place_expected = BTreeMap::from([("place-order".to_owned(), place_digest)]);
+        let retry_expected = BTreeMap::from([("retry-order".to_owned(), retry_digest)]);
+        let place_update = json!({
+            "schema_version": "1",
+            "id": "contract.shared-concurrency",
+            "applies_to": ["data.orders"],
+            "clauses": [{"id": "place-order", "text": "place updated"}]
+        });
+        let retry_update = json!({
+            "schema_version": "1",
+            "id": "contract.shared-concurrency",
+            "applies_to": ["data.orders"],
+            "clauses": [{"id": "retry-order", "text": "retry updated"}]
+        });
+
+        let after_place =
+            merge_contract_clause_update(Some(&initial), &place_update, &place_expected).unwrap();
+        let after_both =
+            merge_contract_clause_update(Some(&after_place), &retry_update, &retry_expected)
+                .unwrap();
+        assert_eq!(after_both["clauses"][0]["text"], "place updated");
+        assert_eq!(after_both["clauses"][1]["text"], "retry updated");
+
+        let stale =
+            merge_contract_clause_update(Some(&after_place), &place_update, &place_expected)
+                .unwrap_err();
+        assert!(stale.to_string().contains("stale Contract clause update"));
+    }
+
+    #[test]
+    fn clause_scoped_update_cannot_change_contract_metadata() {
+        let initial = json!({
+            "schema_version": "1",
+            "id": "contract.shared-concurrency",
+            "applies_to": ["data.orders"],
+            "clauses": [{"id": "policy", "text": "initial"}]
+        });
+        let update = json!({
+            "schema_version": "1",
+            "id": "contract.shared-concurrency",
+            "applies_to": ["data.orders", "messaging.order-events"],
+            "clauses": [{"id": "policy", "text": "updated"}]
+        });
+        let expected = BTreeMap::from([(
+            "policy".to_owned(),
+            canonical_digest(&initial["clauses"][0]).unwrap(),
+        )]);
+
+        let error = merge_contract_clause_update(Some(&initial), &update, &expected).unwrap_err();
+        assert!(error.to_string().contains("cannot change metadata"));
     }
 }

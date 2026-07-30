@@ -13,7 +13,7 @@
 
 **根本設計の層**では、フレームワークが何を保証しているのか、その保証を成り立たせる部分がどこにあるのかが、目的と食い違っている。最も重いのは次の2点である。
 
-- Shared Contractの変更間再利用とlost update防止は追加されたが、進行中Changeどうしの事前競合検出と条項競合の解決経路は未決定である
+- Shared Contractの変更間再利用、lost update防止、条項競合の保存時検出は追加されたが、進行中Changeどうしの事前競合検出と同一条項競合のHuman解決経路は未決定である
 - Signal依存の制御の起点となる検出処理はcoverage未報告を停止できるようになったが、観測対象自体の記載漏れと、実装上の対象を導入先IDへ対応付ける規則は未解決である
 
 **個別設計と実装の層**では、通常のbuild後に工程全体をやり直す状態になる問題が最も重い。
@@ -22,7 +22,7 @@
 
 ## 2. 根本設計への指摘
 
-### 2.1 Shared Contractの再利用とlost update防止は確認できたが、active change競合は扱っていない
+### 2.1 Shared Contractの再利用と条項単位のlost update防止は確認できたが、active change競合は扱っていない
 
 2.1 が挙げる問題の層は4つあり、3番目の「全体整合性の喪失」、つまり判断が変更・セッション・担当者を越えて伝播しないことが、このフレームワークの主目的である。2章の冒頭も「AIエージェントや複数の開発者が並行して変更を行う開発」を前提に置いている。
 
@@ -37,7 +37,7 @@
 | Change Contractの隔離 | `change_id`付きContractとDecisionは、別ChangeのSnapshotおよびGenerated Contextへ入らないことを確認した |
 | 判断の再利用 | Change Aで人が確定した内容をShared Contractへ記録し、Change BがそのContractを根拠に人への再質問なしでChallengerまで進む縦断テストを追加した |
 | Kernelの視野 | 一回の評価対象は依然として1 Changeと、それに適用される共有Recordである。ほかの進行中のChange本体は見えない |
-| Shared Contractのlost update | 更新時に読取り時のContract digestを要求し、正本の排他lock内で現在値と比較する。先に更新された場合は後続更新をstaleとして拒否する |
+| Shared Contractのlost update | 全体更新は読取り時のContract digest、条項更新は読取り時の条項digestを要求し、正本の排他lock内で比較する。同じ条項の後続更新はstaleとして拒否し、別条項の更新は両方を保持する |
 | 並行する変更どうしの事前競合 | 未実装である。1282行の`active changes`は「Change群からKernelが生成する索引」とあるだけで、競合検出の意味論ではない |
 
 これにより、変更をまたぐ問題を次の2つに分けて扱う必要があることが明確になった。
@@ -46,7 +46,8 @@
 |---|---|
 | 確定した判断を後続Changeへ伝播する | Shared Contractで表現・再利用できることを確認済み |
 | 同時進行のChangeによるShared Contractの上書き消失を防ぐ | digestによる楽観的並行制御で確認済み |
-| 同じ条項への異なる変更案を検出し、人へ戻す | 未解決 |
+| 同じ条項への異なる変更案を検出する | 保存時のstale拒否を実装済み |
+| 同じ条項への異なる変更案を人へ戻す | 専用のActionと表示は未解決 |
 
 現行KitはSystem Levelに「active change競合」を持っていたが、vNextではまだ対応する制御がない。README 95行を参照。
 
@@ -56,9 +57,11 @@
 - その再利用範囲を選んだ根拠と決定権限
 - Sharedへ記録する場合の対象Contractと条項ID
 
-Shared Contract更新時に読み取ったContract digestを要求する楽観的並行制御を実装した。Python・Rust双方で、Project Adapterが排他lock内で現在値を再読込みし、digest一致時だけatomic replaceする。digestの省略と不一致は正本を書き換えず拒否し、同じ旧digestを基にした二つの更新では先に保存された一件だけが残る。
+Shared Contract全体の更新では、読み取ったContract digestを要求する楽観的並行制御を実装した。Python・Rust双方で、Project Adapterが排他lock内で現在値を再読込みし、digest一致時だけatomic replaceする。digestの省略と不一致は正本を書き換えず拒否し、同じ旧digestを基にした二つの全体更新では先に保存された一件だけが残る。
 
-残る設計判断は、stale拒否後の意味的な解決である。現状は呼出し側が最新Snapshotから再評価するところまでを規則とし、条項単位の自動mergeは行わない。同じ条項へ異なる変更案がある場合にHuman Authorityへ戻す経路と、保存を試みる前にactive Changeの重なりを表示する索引は、別途設計する必要がある。
+RustのFilesystem StoreとMCP Adapterには条項単位の楽観的並行制御も追加した。変更・削除対象の条項digestを比較し、同じ条項が変わっていればstaleとして拒否する。別条項だけが変わっている場合は、その最新版を保持してatomicに併合する。これは条項IDとdigestだけに基づく機械的な併合であり、同じ条項の意味的な自動mergeやContract metadataの併合は行わない。2つのChangeから同じShared Contractが見えること、別条項の並行更新が失われないこと、同じ条項のstale更新が正本を書き換えないことをYAML・Markdown双方のgolden testで固定した。
+
+残る設計判断は、stale拒否後にHuman Authorityへ戻す専用経路と、保存を試みる前にactive Changeの重なりを表示する索引である。現状は呼出し側が最新Snapshotから再評価する。
 
 ### 2.2 検出処理の入力が、フレームワークの統制外にある
 
@@ -432,7 +435,7 @@ CIと別セッションから参照できるという要件は、通常のブラ
 
 根本設計の層を先に置く。
 
-1. 変更が2件あるfixtureと、`change_id`を持たないShared Contractを1件用意する。変更Aが確定した規範を変更Bが読み、人への再質問が発生しないことを検証する。同じ条項に触れる並行変更の意味論を決める。2.1
+1. （保存時制御までRust版で対応済み）変更が2件あるfixtureと、`change_id`を持たないShared Contractを用意し、変更Aが確定した規範を変更Bが再利用できることを検証する。別条項の並行更新は機械的に併合し、同じ条項はstaleとして拒否する。残るのはactive Changeの事前競合索引と、拒否後にHuman Authorityへ戻すActionである。2.1
 2. （Rust版の最初の縦断実装まで対応済み）コードからの物理観測と、symbol・resource単位のBinding Recordを分離する。Bindingにはownerと承認Decisionを持たせ、source、Binding、Decisionの変更を検出根拠の鮮度へ反映する。対応言語・frameworkを増やす際はcoverageをfail-closedのまま拡張する。2.2
 3. （Rust版で対応済み）signalの`not-applicable`判定を候補ごとにChallengerへ確認させ、支持されなければ`confirmed`へ戻す。旧`excluded`値は廃止する。実在するsignalに対するRequirement省略は未実装のままfail closedとし、将来追加する場合も決定権限・適用範囲・期限を持つDecision経路として分離する。2.4
 4. （Rust版で対応済み）各Requirementを「証拠で裏付けられる」と「形式しか検査できない」に分類する。標準Ruleでは実装検証の2件だけを`evidence-backed`とし、分析・設計・Challengeは`attestation`として保証範囲を明示する。CI／runner由来の保証は署名付きEvidenceを導入するまで対象外とする。2.3
