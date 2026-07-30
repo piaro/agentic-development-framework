@@ -128,7 +128,7 @@ Binding Recordはartifact単位の`applies_to`ではなく、関数名と物理r
 
 この実装ではLLMを解析器として使わない。LLMはBinding Recordの候補作成を支援できるが、通常評価が再実行のたびに意味写像を推測する構成にはしない。現時点のlanguage-specific DetectorはPythonの限定したmethod群だけであり、alias、動的dispatch、framework固有API、他言語はDetectorを追加してcoverage範囲を広げる必要がある。
 
-その後、Observation Schema v4で言語非依存の観測形式とDetector登録表を追加し、Pythonに加えてJava、JavaScript、JSX、TypeScript、TSXを同じGit Adapterへ接続した。Kotlin、Go、Rustなどの主要source拡張子もinventory対象とし、Detector未実装の言語を初期観測から黙って除外しない。framework固有APIは`resource.method`単位のBindingへ`db_write`または`message_publish`、owner、承認Decisionを記録することで追加できる。これによりSQLAlchemyの`session.execute`、Djangoの`model.save`、Spring Dataの`repository.save`を導入先の判断で分類できるが、alias、動的dispatch、query内容の意味解析は引き続きcoverage外としてfail closedに扱う。
+その後、Observation Schema v4で言語非依存の観測形式とDetector登録表を追加し、Pythonに加えてJava、Go、JavaScript、JSX、TypeScript、TSXを同じGit Adapterへ接続した。Kotlin、Rustなどの主要source拡張子もinventory対象とし、Detector未実装の言語を初期観測から黙って除外しない。framework固有APIは`resource.method`単位のBindingへ`db_write`または`message_publish`、owner、承認Decisionを記録することで追加できる。これによりSQLAlchemyの`session.execute`、Djangoの`model.save`、Spring Dataの`repository.save`を導入先の判断で分類できるが、alias、動的dispatch、query内容の意味解析は引き続きcoverage外としてfail closedに扱う。
 
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 

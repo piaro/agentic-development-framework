@@ -170,6 +170,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "class Service { void save() { orders.insert(null); } }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/publish.go"),
+        "package service\nfunc PublishOrder(order Order) { events.Publish(order) }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -212,6 +217,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(java["detector_status"], "supported");
     assert_eq!(java["symbols"][0], "save");
     assert_eq!(java["resources"][0], "orders");
+    let go = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/publish.go")
+        .unwrap();
+    assert_eq!(go["language"], "go");
+    assert_eq!(go["detector_status"], "supported");
+    assert_eq!(go["symbols"][0], "PublishOrder");
+    assert_eq!(go["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -616,8 +629,50 @@ fn java_artifact_runs_through_the_real_project_loader() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
+        project.root.join("src/order_service.rs"),
+        "fn place_order() {}\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.order-service-rust",
+            "path": "src/order_service.rs",
+            "language": "rust",
+            "bindings": {
+                "symbols": {},
+                "resources": {},
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "declare rust source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "blocked-detection");
+    assert!(
+        output["diagnostics"][0]
+            .as_str()
+            .unwrap()
+            .contains("unsupported-language")
+    );
+}
+
+#[test]
+fn go_artifact_runs_through_the_real_project_loader() {
+    let project = TestProject::new();
+    fs::write(
         project.root.join("src/order_service.go"),
-        "package service\n",
+        "package service\n\nfunc PlaceOrder(order Order) {\n    orders.Insert(order)\n}\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -630,8 +685,20 @@ fn declared_inventory_only_language_reports_unsupported_language() {
             "path": "src/order_service.go",
             "language": "go",
             "bindings": {
-                "symbols": {},
-                "resources": {},
+                "symbols": {
+                    "PlaceOrder": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "resources": {
+                    "orders": {
+                        "logical_ref": "data.orders",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
                 "methods": {},
             },
         }));
@@ -645,13 +712,8 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
     assert_success(&output);
     let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "blocked-detection");
-    assert!(
-        output["diagnostics"][0]
-            .as_str()
-            .unwrap()
-            .contains("unsupported-language")
-    );
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]

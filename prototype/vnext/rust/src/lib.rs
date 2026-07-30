@@ -16,6 +16,7 @@ pub mod explain;
 pub mod filesystem_project;
 pub mod framework_lock;
 pub mod git_repository;
+mod go_detection;
 mod java_detection;
 pub mod kernel;
 pub mod mcp_server;

@@ -5,6 +5,7 @@
 //! project inventory can report unsupported source instead of silently
 //! excluding it.
 
+use crate::go_detection::observe_go;
 use crate::java_detection::observe_java;
 use crate::python_detection::observe_python;
 use crate::script_detection::{observe_javascript, observe_jsx, observe_tsx, observe_typescript};
@@ -28,8 +29,12 @@ pub struct SourceObservation {
 
 pub fn classify_method(method: &str) -> SourceObservationKind {
     match method {
-        "insert" | "update" | "delete" => SourceObservationKind::DbWrite,
-        "publish" | "send_message" => SourceObservationKind::MessagePublish,
+        "insert" | "Insert" | "update" | "Update" | "delete" | "Delete" => {
+            SourceObservationKind::DbWrite
+        }
+        "publish" | "Publish" | "send_message" | "sendMessage" | "SendMessage" => {
+            SourceObservationKind::MessagePublish
+        }
         _ => SourceObservationKind::OtherMethodCall,
     }
 }
@@ -94,7 +99,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "go",
         extensions: &["go"],
-        observe: None,
+        observe: Some(observe_go),
     },
     LanguageDetector {
         language: "rust",
@@ -167,7 +172,8 @@ mod tests {
     fn registry_separates_supported_detectors_from_inventory_only_languages() {
         assert!(detector_for_language("typescript").unwrap().is_supported());
         assert!(detector_for_language("java").unwrap().is_supported());
-        assert!(!detector_for_language("go").unwrap().is_supported());
+        assert!(detector_for_language("go").unwrap().is_supported());
+        assert!(!detector_for_language("rust").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
