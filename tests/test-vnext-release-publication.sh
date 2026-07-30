@@ -94,6 +94,8 @@ case "$NATIVE_TARGET" in
 esac
 test -s "$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX"
 test -s "$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX.build.json"
+"$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX" --version |
+  grep -q "$SOURCE_REVISION"
 
 verify_candidate() {
   AGENTIC_RELEASE_CI_BINARY=$BINARY \
@@ -128,6 +130,23 @@ path.write_text(json.dumps(value))
 PY
 if verify_candidate "$TAMPERED_RECEIPT" >/dev/null 2>&1; then
   echo "Candidate verifier accepted a false archive digest" >&2
+  exit 1
+fi
+
+TAMPERED_TRUST=$TEST_ROOT/tampered-trust
+cp -R "$CANDIDATE" "$TAMPERED_TRUST"
+python3 - "$TAMPERED_TRUST/distribution-trust.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+value = json.loads(path.read_text())
+value["keys"][0]["status"] = "revoked"
+path.write_text(json.dumps(value))
+PY
+if verify_candidate "$TAMPERED_TRUST" >/dev/null 2>&1; then
+  echo "Candidate verifier accepted a revoked bootstrap trust key" >&2
   exit 1
 fi
 
@@ -190,6 +209,7 @@ publish_with_state "$PUBLISHED_STATE" >/dev/null
 test "$(cat "$PUBLISHED_STATE/releases/$RELEASE_TAG/state")" = "published"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/framework-release.tar"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/candidate-framework.lock"
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/distribution-trust.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publish-receipt.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publication-record.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/SHA256SUMS"
@@ -215,6 +235,14 @@ if FAKE_GH_FAIL_ATTESTATION=agentic-vnext-rust-x86_64-unknown-linux-gnu \
   exit 1
 fi
 test ! -e "$FAILED_ATTESTATION_STATE/releases"
+
+FAILED_TRUST_ATTESTATION_STATE=$TEST_ROOT/failed-trust-attestation-state
+if FAKE_GH_FAIL_ATTESTATION=distribution-trust.json \
+  publish_with_state "$FAILED_TRUST_ATTESTATION_STATE" >/dev/null 2>&1; then
+  echo "Publication accepted Distribution Trust without valid provenance" >&2
+  exit 1
+fi
+test ! -e "$FAILED_TRUST_ATTESTATION_STATE/releases"
 
 WRONG_TAG_STATE=$TEST_ROOT/wrong-tag-state
 if AGENTIC_RELEASE_CI_BINARY=$BINARY \

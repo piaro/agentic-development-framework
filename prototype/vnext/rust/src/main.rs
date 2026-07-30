@@ -7,6 +7,10 @@ use agentic_vnext_rust::delivery::{
 };
 use agentic_vnext_rust::mcp_server::run_stdio_server;
 use agentic_vnext_rust::project_runtime::LoadedProject;
+use agentic_vnext_rust::project_setup::{
+    ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
+    observation_draft,
+};
 use agentic_vnext_rust::release_publisher::{
     PublishOptions, publish_release, signing_seed_from_environment,
 };
@@ -28,6 +32,18 @@ fn main() -> ExitCode {
         usage();
         return ExitCode::from(2);
     };
+    if matches!(command, "--help" | "-h" | "help") {
+        print!("{}", usage_text());
+        return ExitCode::SUCCESS;
+    }
+    if matches!(command, "--version" | "-V" | "version") {
+        println!(
+            "agentic {} (revision {})",
+            env!("CARGO_PKG_VERSION"),
+            option_env!("AGENTIC_BUILD_SOURCE_REVISION").unwrap_or("unknown")
+        );
+        return ExitCode::SUCCESS;
+    }
     if command == "mcp" {
         let options = match parse_mcp_command(&arguments[2..]) {
             Ok(options) => options,
@@ -37,6 +53,10 @@ fn main() -> ExitCode {
                 return ExitCode::from(2);
             }
         };
+        if let Err(error) = ensure_project_initialized(&options.project_root) {
+            eprintln!("{error}");
+            return ExitCode::FAILURE;
+        }
         return match run_stdio_server(options.project_root, options.release) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
@@ -75,6 +95,46 @@ fn main() -> ExitCode {
             }
         };
         return match run_binary_command(&options) {
+            Ok(output) => {
+                println!("{output}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "project" {
+        let options = match parse_project_management_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                project_management_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_project_management_command(&options) {
+            Ok(output) => {
+                print!("{output}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "change" {
+        let options = match parse_change_management_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                change_management_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_change_management_command(&options) {
             Ok(output) => {
                 println!("{output}");
                 ExitCode::SUCCESS
@@ -785,6 +845,211 @@ struct McpCommand {
     release: Option<PathBuf>,
 }
 
+enum ProjectManagementOperation {
+    Init {
+        candidate_root: Option<PathBuf>,
+        analysis_roots: Vec<String>,
+    },
+    Observe {
+        analysis_roots: Vec<String>,
+        format: ProjectDraftFormat,
+    },
+}
+
+struct ProjectManagementCommand {
+    project_root: PathBuf,
+    operation: ProjectManagementOperation,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ProjectDraftFormat {
+    Yaml,
+    Json,
+}
+
+struct ChangeManagementCommand {
+    project_root: PathBuf,
+    change_id: String,
+    title: String,
+    intent: String,
+}
+
+fn parse_project_management_command(
+    arguments: &[String],
+) -> Result<ProjectManagementCommand, String> {
+    let operation = arguments
+        .first()
+        .ok_or_else(|| "project requires an operation".to_owned())?;
+    let mut project_root = PathBuf::from(".");
+    let mut candidate_root = None;
+    let mut analysis_roots = Vec::new();
+    let mut format = ProjectDraftFormat::Yaml;
+    let mut format_provided = false;
+    let mut index = 1;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--project" => {
+                project_root = PathBuf::from(flag_value(arguments, &mut index, "--project")?);
+            }
+            "--candidate-dir" => {
+                candidate_root = Some(PathBuf::from(flag_value(
+                    arguments,
+                    &mut index,
+                    "--candidate-dir",
+                )?));
+            }
+            "--analysis-root" => {
+                analysis_roots
+                    .push(flag_value(arguments, &mut index, "--analysis-root")?.to_owned());
+            }
+            "--format" => {
+                format_provided = true;
+                format = match flag_value(arguments, &mut index, "--format")? {
+                    "yaml" => ProjectDraftFormat::Yaml,
+                    "json" => ProjectDraftFormat::Json,
+                    other => return Err(format!("unsupported project output format: {other}")),
+                };
+            }
+            other => return Err(format!("unknown project argument: {other}")),
+        }
+        index += 1;
+    }
+    let operation = match operation.as_str() {
+        "init" => {
+            if format_provided {
+                return Err("project init does not accept --format".to_owned());
+            }
+            ProjectManagementOperation::Init {
+                candidate_root,
+                analysis_roots,
+            }
+        }
+        "observe" => {
+            if candidate_root.is_some() {
+                return Err("project observe does not accept --candidate-dir".to_owned());
+            }
+            ProjectManagementOperation::Observe {
+                analysis_roots,
+                format,
+            }
+        }
+        other => return Err(format!("unsupported project operation: {other}")),
+    };
+    Ok(ProjectManagementCommand {
+        project_root,
+        operation,
+    })
+}
+
+fn run_project_management_command(options: &ProjectManagementCommand) -> Result<String, String> {
+    match &options.operation {
+        ProjectManagementOperation::Init {
+            candidate_root,
+            analysis_roots,
+        } => {
+            let candidate_root = candidate_root
+                .clone()
+                .map(Ok)
+                .unwrap_or_else(default_candidate_root)
+                .map_err(|error| error.to_string())?;
+            let receipt = initialize_project(&ProjectInitOptions {
+                project_root: &options.project_root,
+                candidate_root: &candidate_root,
+                analysis_roots,
+            })
+            .map_err(|error| error.to_string())?;
+            let files = receipt
+                .created_files
+                .iter()
+                .map(|path| {
+                    path.strip_prefix(&receipt.project_root)
+                        .unwrap_or(path)
+                        .display()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
+            Ok(format!(
+                "Project initialized with Framework Release {}.\nCreated: {}\nNext: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --project {} and complete the reviewed bindings and accepted Decisions.\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
+                receipt.release_id,
+                files,
+                receipt.project_root.display(),
+                receipt.project_root.display()
+            ))
+        }
+        ProjectManagementOperation::Observe {
+            analysis_roots,
+            format,
+        } => {
+            let value = observation_draft(&options.project_root, analysis_roots)
+                .map_err(|error| error.to_string())?;
+            match format {
+                ProjectDraftFormat::Yaml => {
+                    serde_yaml::to_string(&value).map_err(|error| error.to_string())
+                }
+                ProjectDraftFormat::Json => serde_json::to_string_pretty(&value)
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string()),
+            }
+        }
+    }
+}
+
+fn parse_change_management_command(
+    arguments: &[String],
+) -> Result<ChangeManagementCommand, String> {
+    if arguments.first().map(String::as_str) != Some("init") {
+        return Err("change requires the init operation".to_owned());
+    }
+    let change_id = arguments
+        .get(1)
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| "change init requires a Change ID".to_owned())?
+        .clone();
+    let mut project_root = PathBuf::from(".");
+    let mut title = None;
+    let mut intent = None;
+    let mut index = 2;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--project" => {
+                project_root = PathBuf::from(flag_value(arguments, &mut index, "--project")?);
+            }
+            "--title" => {
+                title = Some(flag_value(arguments, &mut index, "--title")?.to_owned());
+            }
+            "--intent" => {
+                intent = Some(flag_value(arguments, &mut index, "--intent")?.to_owned());
+            }
+            other => return Err(format!("unknown change init argument: {other}")),
+        }
+        index += 1;
+    }
+    Ok(ChangeManagementCommand {
+        project_root,
+        change_id,
+        title: title.ok_or_else(|| "change init requires --title <title>".to_owned())?,
+        intent: intent.ok_or_else(|| "change init requires --intent <intent>".to_owned())?,
+    })
+}
+
+fn run_change_management_command(options: &ChangeManagementCommand) -> Result<String, String> {
+    let path = initialize_change(
+        &options.project_root,
+        &options.change_id,
+        &options.title,
+        &options.intent,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(format!(
+        "Change {} initialized at {}\nNext: review, git add, and commit the Change.\nNext: agentic next {} --project {}",
+        options.change_id,
+        path.display(),
+        options.change_id,
+        options.project_root.display()
+    ))
+}
+
 fn parse_mcp_command(arguments: &[String]) -> Result<McpCommand, String> {
     let mut project_root = PathBuf::from(".");
     let mut release = None;
@@ -909,6 +1174,7 @@ fn parse_repository_command(
 }
 
 fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String, String> {
+    ensure_project_initialized(&options.project_root)?;
     let project = LoadedProject::load(
         &options.project_root,
         options.release.as_deref(),
@@ -923,9 +1189,9 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
     let mut application = project.application().map_err(|error| error.to_string())?;
     match command {
         "next" => {
-            let response = application
-                .next(&options.change_id)
-                .map_err(|error| error.to_string())?;
+            let response = application.next(&options.change_id).map_err(|error| {
+                actionable_project_error(&error.to_string(), &options.change_id)
+            })?;
             match options.format {
                 OutputFormat::Text => Ok(render_next_text(&options.change_id, &response)),
                 OutputFormat::Json => serde_json::to_string_pretty(&next_response_value(
@@ -937,9 +1203,9 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
             }
         }
         "explain" => {
-            let report = application
-                .explain(&options.change_id)
-                .map_err(|error| error.to_string())?;
+            let report = application.explain(&options.change_id).map_err(|error| {
+                actionable_project_error(&error.to_string(), &options.change_id)
+            })?;
             match options.format {
                 OutputFormat::Text => Ok(report.render_text()),
                 OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
@@ -952,6 +1218,7 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
 }
 
 fn run_contract_health(options: &RepositoryCommand) -> Result<String, String> {
+    ensure_project_initialized(&options.project_root)?;
     let project = LoadedProject::load(
         &options.project_root,
         options.release.as_deref(),
@@ -975,55 +1242,60 @@ fn run_contract_health(options: &RepositoryCommand) -> Result<String, String> {
     }
 }
 
+fn ensure_project_initialized(project_root: &std::path::Path) -> Result<(), String> {
+    let config = project_root.join(".agentic/config.yaml");
+    if config.is_file() {
+        Ok(())
+    } else {
+        Err(format!(
+            "Project is not initialized: {} is missing.\nNext: agentic project init --project {}",
+            config.display(),
+            project_root.display()
+        ))
+    }
+}
+
+fn actionable_project_error(error: &str, change_id: &str) -> String {
+    if error.contains("unknown change:") {
+        format!("{error}\nNext: agentic change init {change_id} --title <title> --intent <intent>")
+    } else {
+        error.to_owned()
+    }
+}
+
 fn usage() {
-    eprintln!(
-        "usage:\n  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
-         agentic-vnext-rust release build <source-root> \
-         --lock <base-lock> --source-id <id> --key-id <id> \
-         [--expected-public-key <64-hex-public-key>] \
-         --output <archive> --lock-output <candidate-lock> \
-         [--rules <path>] [--schemas <path>] [--format <text|json>] \
-         [--project <root>]\n  \
-         agentic-vnext-rust release fetch <candidate-lock> \
-         [--project <root>]\n  \
-         agentic-vnext-rust release install <bundle-root> \
-         --lock <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release install-archive <archive> \
-         --lock <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release switch <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release rollback <backup-lock> [--project <root>]\n  \
-         agentic-vnext-rust binary <install|update> <candidate-directory> \
-         --tag <release-tag> --source-revision <git-sha> \
-         --install-root <path> [--format <text|json>]\n  \
-         agentic-vnext-rust binary <status|rollback> \
-         --install-root <path> [--format <text|json>]\n  \
-         agentic-vnext-rust <next|explain> <change-id> \
-         [--project <root>] [--release <root>] \
-         [--format <text|json>] [--require-clean]\n  \
-         agentic-vnext-rust contract-health \
-         [--project <root>] [--release <root>] \
-         [--format <text|json>] [--require-clean]\n  \
-         agentic-vnext-rust mcp \
-         [--project <root>] [--release <root>]\n  \
-         agentic-vnext-rust \
-         <verify-canonicalization|verify-schema|verify-rules|verify-detection|verify-kernel|verify-context|verify-project|verify-lock|verify-submission|verify-application|verify-store|verify-persistent|verify-explain> \
-         <golden-root>"
-    );
+    eprint!("{}", usage_text());
+}
+
+fn usage_text() -> &'static str {
+    "Agentic Development Kit\n\
+\n\
+usage:\n\
+  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
+  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>]\n\
+  agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
+  agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  agentic contract-health [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  agentic mcp [--project <root>] [--release <root>]\n\
+  agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
+  agentic binary <install|update|status|rollback> ...\n\
+  agentic --help\n\
+  agentic --version\n"
 }
 
 fn mcp_usage() {
     eprintln!(
-        "usage:\n  agentic-vnext-rust mcp \
+        "usage:\n  agentic mcp \
          [--project <root>] [--release <root>]"
     );
 }
 
 fn binary_usage() {
     eprintln!(
-        "usage:\n  agentic-vnext-rust binary <install|update> <candidate-directory> \
+        "usage:\n  agentic binary <install|update> <candidate-directory> \
          --tag <release-tag> --source-revision <git-sha> \
          --install-root <path> [--format <text|json>]\n  \
-         agentic-vnext-rust binary <status|rollback> \
+         agentic binary <status|rollback> \
          --install-root <path> [--format <text|json>]"
     );
 }
@@ -1031,26 +1303,26 @@ fn binary_usage() {
 fn release_usage() {
     eprintln!(
         "usage:\n  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
-         agentic-vnext-rust release build <source-root> \
+         agentic release build <source-root> \
          --lock <base-lock> --source-id <id> --key-id <id> \
          [--expected-public-key <64-hex-public-key>] \
          --output <archive> --lock-output <candidate-lock> \
          [--rules <path>] [--schemas <path>] [--format <text|json>] \
          [--project <root>]\n  \
-         agentic-vnext-rust release fetch <candidate-lock> \
+         agentic release fetch <candidate-lock> \
          [--project <root>]\n  \
-         agentic-vnext-rust release install <bundle-root> \
+         agentic release install <bundle-root> \
          --lock <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release install-archive <archive> \
+         agentic release install-archive <archive> \
          --lock <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release switch <candidate-lock> [--project <root>]\n  \
-         agentic-vnext-rust release rollback <backup-lock> [--project <root>]"
+         agentic release switch <candidate-lock> [--project <root>]\n  \
+         agentic release rollback <backup-lock> [--project <root>]"
     );
 }
 
 fn project_usage(command: &str) {
     eprintln!(
-        "usage: agentic-vnext-rust {command} <change-id> \
+        "usage: agentic {command} <change-id> \
          [--project <root>] [--release <root>] \
          [--format <text|json>] [--require-clean]"
     );
@@ -1058,8 +1330,20 @@ fn project_usage(command: &str) {
 
 fn repository_usage(command: &str) {
     eprintln!(
-        "usage: agentic-vnext-rust {command} \
+        "usage: agentic {command} \
          [--project <root>] [--release <root>] \
          [--format <text|json>] [--require-clean]"
+    );
+}
+
+fn project_management_usage() {
+    eprintln!(
+        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>]"
+    );
+}
+
+fn change_management_usage() {
+    eprintln!(
+        "usage: agentic change init <change-id> --title <title> --intent <intent> [--project <root>]"
     );
 }

@@ -2799,13 +2799,13 @@ Application
 Prototype CLIは次の形で実行する。
 
 ```text
-agentic-vnext-rust next <change-id>
+agentic next <change-id>
   [--project <root>]
   [--release <offline-release-root>]
   [--format text|json]
   [--require-clean]
 
-agentic-vnext-rust explain <change-id>
+agentic explain <change-id>
   [同じoption]
 ```
 
@@ -2941,7 +2941,7 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 1. 指定runが`.github/workflows/vnext-release.yml`の`workflow_dispatch`実行である
 2. runが同じRepositoryの既定branchを対象に完了し、成功している
 3. 固定名`agentic-vnext-release-candidate`と`agentic-vnext-release-binaries`のArtifactが指定runから取得できる
-4. Artifactが署名済みtar、候補Framework lock、Publish Receiptの三fileだけを持つ
+4. Artifactが署名済みtar、候補Framework lock、Distribution Trust、Publish Receiptの四fileだけを持つ
 5. Publish Receiptのarchive digest・公開鍵・出力file名が実fileと一致する
 6. tarと候補lockが、取得元ID、署名鍵ID、署名、全file、Rule、Schema、protocolの検証を通る
 7. 5種類のbinary、build record、`SHA256SUMS`が同じsource revisionと一致する
@@ -2958,13 +2958,14 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 |---|---|
 | `framework-release.tar` | Ed25519署名済みFramework配布物 |
 | `candidate-framework.lock` | Release artifact、取得元、署名鍵、runtime protocolを固定する導入候補 |
+| `distribution-trust.json` | 初回導入で使う公開鍵、許可source、鍵status。binaryとは別にArtifact Attestationを検証する |
 | `publish-receipt.json` | Publisherが生成したartifact・archive digestと公開鍵 |
 | `SHA256SUMS` | 5種類のnative binaryのSHA-256一覧 |
 | `agentic-vnext-rust-<target>[.exe]` | 対象OS・CPU上でnative buildしたRust CLI |
 | `<binary>.build.json` | binaryのtarget、source revision、Rust version、size、digest |
 | `publication-record.json` | 公開workflowが生成した候補run、source revision、tag、各公開asset digestの来歴 |
 
-upload直後にdraftから全assetを別directoryへdownloadし、元fileとbyte単位で比較する。さらにdownloadした三つのFramework候補fileを利用者と同じ`release install-archive`経路で再検証し、binary集合もchecksum、build record、attestationで再検証する。すべて成功した場合だけdraftを公開状態へ変更する。upload、download、照合のいずれかが失敗した場合はdraftのまま停止し、調査情報を失わないよう自動削除も`--clobber`による再uploadも行わない。
+upload直後にdraftから全assetを別directoryへdownloadし、元fileとbyte単位で比較する。さらにdownloadした四つのFramework候補fileを利用者と同じ`release install-archive`・Distribution Trust検証経路で再検証し、binary集合もchecksum、build record、attestationで再検証する。すべて成功した場合だけdraftを公開状態へ変更する。upload、download、照合のいずれかが失敗した場合はdraftのまま停止し、調査情報を失わないよう自動削除も`--clobber`による再uploadも行わない。
 
 Publication Recordは公開操作の追跡情報であり、署名済みmanifestの代替ではない。改変されたPublication Recordだけで不正なReleaseを正当化できず、利用者は引き続きTrust Store、Framework lock、Release署名を検証する。公開完了後もTrust Storeと導入先Framework lockは自動更新せず、別のreview可能な変更として扱う。
 
@@ -2996,30 +2997,35 @@ Artifact Attestationは公開RepositoryではSigstore Public Good Instanceと透
 
 #### 14.22.7 CLI binaryのbootstrap、更新、rollback
 
-通常利用者はRustやPythonを導入せず、公開済みnative binaryを実行する。初回導入のPOSIX `sh`・PowerShell scriptは、Release tagを利用者から明示的に受け取り、現在のOS・CPUに対応する次の4 assetだけを一時directoryへ取得する。
+通常利用者はRustやPythonを導入せず、公開済みnative binaryを実行する。初回導入のPOSIX `sh`・PowerShell scriptは、Release tagを利用者から明示的に受け取り、現在のOS・CPUに対応する次の8 assetを一時directoryへ取得する。
 
 - `agentic-vnext-rust-<target>[.exe]`
 - `<binary>.build.json`
 - `SHA256SUMS`
 - `publication-record.json`
+- `distribution-trust.json`
+- `candidate-framework.lock`
+- `framework-release.tar`
+- `publish-receipt.json`
 
-bootstrap scriptはdraft Releaseを拒否し、checksumだけを根拠に取得したbinaryを実行しない。binaryとchecksumの両方が同じ配布先で置換された場合、checksumの一致だけでは改変を検出できないためである。実行前にGitHub CLIのArtifact Attestation検証を行い、Repository、`.github/workflows/vnext-release.yml`、Releaseが指す40桁のsource revision、既定branch、GitHub-hosted runnerを固定する。検証を実行できない、または一致しない場合は導入を停止し、検証省略optionは設けない。
+bootstrap scriptはdraft Releaseを拒否し、checksumやRelease内の公開鍵だけを根拠に取得したbinary・Frameworkを信頼しない。実行前にbinaryと`distribution-trust.json`のGitHub Artifact Attestation検証を個別に行い、Repository、`.github/workflows/vnext-release.yml`、Releaseが指す40桁のsource revision、既定branch、GitHub-hosted runnerを固定する。検証を実行できない、または一致しない場合は導入を停止し、検証省略optionは設けない。
 
-attestation検証済みbinaryは、4 assetについて次を再検証する。
+attestation検証済みbinaryは、8 assetについて次を再検証する。
 
 1. Publication RecordのRelease tagとsource revisionが利用者の指定と一致する
-2. Publication Recordに記録されたbinary、Build Record、`SHA256SUMS`のdigestが実fileと一致する
+2. Publication Recordに記録されたbinary、Build Record、`SHA256SUMS`、Framework候補、Distribution Trustのdigestが実fileと一致する
 3. Build Recordのtarget、source revision、size、digest、固定Rust toolchainがbinaryと一致する
 4. `SHA256SUMS`の対象binary digestが一致する
-5. assetがsymlinkや特殊fileではなく通常fileである
+5. Distribution TrustのRelease ID、署名鍵、公開鍵、許可sourceがPublication Recordと一致する
+6. assetがsymlinkや特殊fileではなく通常fileである
 
-ここでattestationは実行binaryの来歴を保証し、Publication Recordとchecksumは同じRelease内のfile間整合性と追跡情報を検査する。後者を前者の代替にはしない。
+ここでattestationは実行binaryと公開鍵policyの来歴をそれぞれ保証し、Publication Recordとchecksumは同じRelease内のfile間整合性と追跡情報を検査する。後者を前者の代替にはしない。
 
 導入先の実体は次のとおりである。
 
 | 実体 | 保存期間・Git管理 | 内容と必要な理由 |
 |---|---|---|
-| `<install-root>/releases/<tag>/` | 永続・Git管理しない | 検証済みの4 asset。tagごとに不変とし、実行中binaryを更新時に上書きしない |
+| `<install-root>/releases/<tag>/` | 永続・Git管理しない | 検証済みの8 asset。tagごとに不変とし、実行中binaryを更新時に上書きしない。Project初期化は同じdirectoryのFramework候補とDistribution Trustを使う |
 | `<install-root>/active` | 永続・Git管理しない | 1行目に現在tag、2行目に直前tagを持つruntime状態。2値を一つのfileで置換し、更新とrollbackを一回のactivation変更にする |
 | `<install-root>/bin/agentic[.cmd]` | 永続・Git管理しない | `active`の1行目を読み、対応するversioned binaryを起動するKit管理launcher |
 | `<install-root>/.binary-install.lock` | 永続・Git管理しない | OSのfile lockを取得するための空file。同じ導入先への並行更新を拒否する |

@@ -21,6 +21,10 @@ jobs:
   build-candidate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
     env:
       AGENTIC_RELEASE_SIGNING_KEY_HEX: ${{ secrets.AGENTIC_RELEASE_SIGNING_KEY_HEX }}
       AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
@@ -48,6 +52,11 @@ jobs:
 
       - name: Build and verify signed Release candidate
         run: sh prototype/vnext/scripts/release-ci.sh
+
+      - name: Attest distribution trust provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/vnext/distribution-trust.json
 
       # This workflow deliberately stops at a reviewable CI artifact. Publishing
       # to an external Release endpoint belongs to a separately approved job.

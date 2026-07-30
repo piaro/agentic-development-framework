@@ -53,6 +53,7 @@ if ! command -v "$GH_CLI" >/dev/null 2>&1; then
 fi
 
 export AGENTIC_RELEASE_TAG=$RELEASE_TAG
+export AGENTIC_RELEASE_SOURCE_REVISION=$SOURCE_REVISION
 METADATA=$("$SCRIPT_DIR/verify-release-candidate.sh" "$CANDIDATE_DIR")
 BINARY_METADATA=$("$SCRIPT_DIR/verify-release-binaries.sh" \
   "$BINARY_DIR" "$SOURCE_REVISION")
@@ -112,6 +113,7 @@ record = {
     "signer_public_key": metadata["signer_public_key"],
     "asset_digests": {
         "candidate-framework.lock": digest(candidate, "candidate-framework.lock"),
+        "distribution-trust.json": digest(candidate, "distribution-trust.json"),
         "framework-release.tar": digest(candidate, "framework-release.tar"),
         "publish-receipt.json": digest(candidate, "publish-receipt.json"),
     },
@@ -148,6 +150,7 @@ PY
 "$GH_CLI" release create "$RELEASE_TAG" \
   "$CANDIDATE_DIR/framework-release.tar" \
   "$CANDIDATE_DIR/candidate-framework.lock" \
+  "$CANDIDATE_DIR/distribution-trust.json" \
   "$CANDIDATE_DIR/publish-receipt.json" \
   "$BINARY_DIR/SHA256SUMS" \
   "$BINARY_DIR/agentic-vnext-rust-aarch64-apple-darwin" \
@@ -175,6 +178,7 @@ mkdir -p "$DOWNLOADED"
   --dir "$DOWNLOADED" \
   --pattern framework-release.tar \
   --pattern candidate-framework.lock \
+  --pattern distribution-trust.json \
   --pattern publish-receipt.json \
   --pattern SHA256SUMS \
   --pattern agentic-vnext-rust-aarch64-apple-darwin \
@@ -191,6 +195,7 @@ mkdir -p "$DOWNLOADED"
 
 cmp "$CANDIDATE_DIR/framework-release.tar" "$DOWNLOADED/framework-release.tar"
 cmp "$CANDIDATE_DIR/candidate-framework.lock" "$DOWNLOADED/candidate-framework.lock"
+cmp "$CANDIDATE_DIR/distribution-trust.json" "$DOWNLOADED/distribution-trust.json"
 cmp "$CANDIDATE_DIR/publish-receipt.json" "$DOWNLOADED/publish-receipt.json"
 cmp "$PUBLICATION_RECORD" "$DOWNLOADED/publication-record.json"
 for asset in \
@@ -213,6 +218,7 @@ DOWNLOADED_CANDIDATE=$WORK_ROOT/downloaded-candidate
 mkdir -p "$DOWNLOADED_CANDIDATE"
 cp "$DOWNLOADED/framework-release.tar" "$DOWNLOADED_CANDIDATE/framework-release.tar"
 cp "$DOWNLOADED/candidate-framework.lock" "$DOWNLOADED_CANDIDATE/candidate-framework.lock"
+cp "$DOWNLOADED/distribution-trust.json" "$DOWNLOADED_CANDIDATE/distribution-trust.json"
 cp "$DOWNLOADED/publish-receipt.json" "$DOWNLOADED_CANDIDATE/publish-receipt.json"
 "$SCRIPT_DIR/verify-release-candidate.sh" "$DOWNLOADED_CANDIDATE" >/dev/null
 DOWNLOADED_BINARIES=$WORK_ROOT/downloaded-binaries

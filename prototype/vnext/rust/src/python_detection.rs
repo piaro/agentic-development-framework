@@ -7,14 +7,14 @@
 use tree_sitter::{Node, Parser};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) enum PythonObservationKind {
+pub enum PythonObservationKind {
     DbWrite,
     MessagePublish,
     OtherMethodCall,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(crate) struct PythonObservation {
+pub struct PythonObservation {
     pub kind: PythonObservationKind,
     pub symbol: String,
     pub resource: String,
@@ -22,7 +22,7 @@ pub(crate) struct PythonObservation {
     pub line: usize,
 }
 
-pub(crate) fn observe_python(source: &str) -> Result<Vec<PythonObservation>, String> {
+pub fn observe_python(source: &str) -> Result<Vec<PythonObservation>, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())

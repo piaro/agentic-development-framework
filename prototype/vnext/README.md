@@ -116,18 +116,39 @@ Contractへ状態を書き戻さず、未検証を合格扱いしません。
 Applicationは、現在選択されたRequirementのsubjectと一致する`stale`／`failed`条項だけに、組込みの`contract-clause-revalidated` Requirementを追加します。これは`before-merge`の`evidence-backed`なBuilder作業です。Contextには対象条項とhealth findingを含め、無関係な条項と`unverified`条項はこの経路ではChangeを停止しません。現在入力に対する成功Evidenceを提出すると再検証は解決します。Repository全体を定期CIで停止する基準は、別の運用ポリシーとして扱います。
 
 ```sh
-agentic-vnext-rust contract-health --project . --format text
-agentic-vnext-rust contract-health --project . --format json --require-clean
+agentic contract-health --project . --format text
+agentic contract-health --project . --format json --require-clean
 ```
 
 ## 実行
 
 Repository rootで実行します。正準実装と受入テストはRust版です。`agentic_vnext/`のPython実装は過去の設計探索用参照であり、新しい設計の実装・同等性確認の対象にはしません。
 
+公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
+
+```sh
+agentic project init --project /path/to/project
+agentic change init change.example \
+  --title "変更タイトル" \
+  --intent "変更の意図" \
+  --project /path/to/project
+```
+
+生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandでPython上の物理関数・resourceを列挙できます。
+
+```sh
+agentic project observe \
+  --project /path/to/project \
+  --analysis-root src \
+  --format yaml
+```
+
+この出力はBinding Recordの下書きであり、論理ID、owner、`authority_ref`を作りません。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。
+
 Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナリを`mcp` subcommandで起動すると、`next`、`submit`、`explain`、`contract-health`と、発行Actionに限定されたEvidence、Decision、Contract書込みToolを利用できます。Tool契約と信頼境界は[`MCP-DESIGN.md`](MCP-DESIGN.md)、固定I/O Schemaは`schemas/mcp/v1/`にあります。既存CLIは人向け診断、CI、Release・binary管理の補助経路として残します。
 
 ```sh
-agentic-vnext-rust mcp --project .
+agentic mcp --project .
 ```
 
 MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`agentic_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`agentic_next`を再実行してください。
@@ -199,13 +220,15 @@ schemas/v1/
 
 署名済みRelease manifest v2は、Release ID、取得元ID、assetの相対path、全fileのSHA-256、署名鍵ID、Ed25519署名を持ちます。Framework lock v2はmanifestの署名対象部分のdigest、取得元ID、署名鍵IDを固定します。導入Projectは公開鍵と、その鍵に許可する取得元IDを`.agentic/trusted-release-keys.yaml`でGit管理します。`source_id`はURLやlocal pathではなく、配布経路を表す安定した論理IDです。
 
+公開鍵の初回信頼には`distribution-trust.json`を使います。このfileはRelease archiveやPublish Receiptとは独立してGitHub Artifact Attestationを付け、bootstrapが実行binaryと同じRepository、workflow、source revision、source refに固定して検証します。`publish-receipt.json`や`publication-record.json`内の公開鍵だけを信頼起点にはしません。
+
 公開鍵設定v2は鍵ごとに`active`、`retired`、`revoked`を指定します。`active`だけが新しいReleaseのinstall・switchに使えます。`retired`は既存Releaseの通常実行とrollbackだけに使えます。`revoked`は既にcacheへ導入済みのReleaseも含めて拒否します。rotation時は新旧鍵を一時的に`active`で併存させ、新鍵Releaseへの切替後に旧鍵を`retired`へ変更します。rollback期間終了後、または鍵侵害時に`revoked`へ変更します。
 
 新しいReleaseは、候補lockを有効化する前に導入します。
 
 ```sh
 AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
-agentic-vnext-rust release build /path/to/release-source \
+agentic release build /path/to/release-source \
   --lock /path/to/base-framework.lock \
   --source-id remote:official \
   --key-id framework.release.2026 \
@@ -214,21 +237,21 @@ agentic-vnext-rust release build /path/to/release-source \
   --lock-output /path/to/candidate-framework.lock \
   --format json
 
-agentic-vnext-rust release fetch /path/to/candidate-framework.lock \
+agentic release fetch /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic-vnext-rust release install /path/to/offline-bundle \
+agentic release install /path/to/offline-bundle \
   --lock /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic-vnext-rust release install-archive /path/to/prototype-vnext-dev.tar \
+agentic release install-archive /path/to/prototype-vnext-dev.tar \
   --lock /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic-vnext-rust release switch /path/to/candidate-framework.lock \
+agentic release switch /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic-vnext-rust release rollback /path/to/project/.agentic/cache/framework-lock-backups/<digest>.yaml \
+agentic release rollback /path/to/project/.agentic/cache/framework-lock-backups/<digest>.yaml \
   --project /path/to/project
 ```
 
@@ -269,6 +292,7 @@ Repositoryには`vnext-release` Environmentを作成し、required reviewer、se
 ```text
 framework-release.tar
 candidate-framework.lock
+distribution-trust.json
 publish-receipt.json
 SHA256SUMS
 agentic-vnext-rust-<target>[.exe]
@@ -304,7 +328,7 @@ WindowsではPowerShell版を使います。
   -InstallRoot "$env:LOCALAPPDATA\Agentic"
 ```
 
-どちらもGitHub CLIを必要とします。Releaseのsource revisionと既定branchを取得し、Repository、候補生成workflow、source revision、source ref、GitHub-hosted runnerを固定してArtifact Attestationを検証してからbinaryを実行します。checksumだけを信頼するmodeや検証省略optionはありません。
+どちらもGitHub CLIを必要とします。Releaseのsource revisionと既定branchを取得し、Repository、候補生成workflow、source revision、source ref、GitHub-hosted runnerを固定して、実行binaryと`distribution-trust.json`のArtifact Attestationをそれぞれ検証してからbinaryを実行します。checksumやRelease内の公開鍵だけを信頼するmode、検証省略optionはありません。
 
 検証済みbinaryは、導入先の`releases/<tag>/`へ不変のassetを保存し、`active`という2行の機械管理fileに現在tagと直前tagを記録します。`bin/agentic`または`bin/agentic.cmd`は現在tagのbinaryを起動します。CLI binaryの更新とProjectごとのFramework Release更新は別操作です。
 
@@ -319,7 +343,7 @@ agentic binary update /path/to/downloaded-assets \
 agentic binary rollback --install-root /path/to/agentic
 ```
 
-bootstrapは公開assetの取得とattestation検証を含みます。`binary update`へdirectoryを直接渡す場合は、呼出し側が同じattestation検証を済ませる必要があります。binary manager自身はdirectoryのfile間整合性を再検証しますが、GitHubへ接続してattestationを取得しません。
+bootstrapは公開assetの取得とattestation検証を含みます。`binary update`または`project init --candidate-dir`へdirectoryを直接渡す場合は、呼出し側がbinaryと`distribution-trust.json`のattestation検証を済ませる必要があります。binary manager自身はdirectoryのfile間整合性、Trust BundleとPublication Recordの一致を再検証しますが、GitHubへ接続してattestationを取得しません。
 
 remote取得元は`.agentic/release-sources.yaml`でGit管理します。
 
@@ -349,7 +373,7 @@ sources:
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response v1とExplain Report v1 |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
-| `schemas/delivery/v2/` | 署名済みRelease、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
+| `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
 | `rust/` | build済みバイナリ移行を検証するRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
 | `agentic_vnext/application.py` | `next`と`submit`のModule呼出順を管理 |

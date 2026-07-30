@@ -29,6 +29,7 @@ OUTPUT=$TEST_ROOT/output
 run_release_ci "$OUTPUT" "$PUBLIC_KEY"
 test -s "$OUTPUT/framework-release.tar"
 test -s "$OUTPUT/candidate-framework.lock"
+test -s "$OUTPUT/distribution-trust.json"
 test -s "$OUTPUT/publish-receipt.json"
 
 # A rerun must not replace an already reviewed candidate.
@@ -48,6 +49,7 @@ if run_release_ci "$WRONG_OUTPUT" \
 fi
 test ! -e "$WRONG_OUTPUT/framework-release.tar"
 test ! -e "$WRONG_OUTPUT/candidate-framework.lock"
+test ! -e "$WRONG_OUTPUT/distribution-trust.json"
 test ! -e "$WRONG_OUTPUT/publish-receipt.json"
 
 # The CI secret is mandatory and must not silently fall back to a development

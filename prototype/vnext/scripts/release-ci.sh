@@ -20,6 +20,7 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 if [ -e "$OUTPUT_DIR/framework-release.tar" ] ||
   [ -e "$OUTPUT_DIR/candidate-framework.lock" ] ||
+  [ -e "$OUTPUT_DIR/distribution-trust.json" ] ||
   [ -e "$OUTPUT_DIR/publish-receipt.json" ]; then
   echo "Release CI outputs already exist in $OUTPUT_DIR" >&2
   exit 2
@@ -51,6 +52,15 @@ build_release() {
     --output "$destination/framework-release.tar" \
     --lock-output "$destination/candidate-framework.lock" \
     --format json >"$destination/publish-receipt.json"
+  release_id=$(python3 -c \
+    'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' \
+    "$destination/publish-receipt.json")
+  python3 "$SCRIPT_DIR/build-distribution-trust.py" \
+    "$release_id" \
+    "$SIGNER_KEY_ID" \
+    "$PUBLIC_KEY" \
+    "$SOURCE_ID" \
+    "$destination/distribution-trust.json"
 }
 
 # Two independent builds must be byte-for-byte identical. This catches
@@ -59,6 +69,7 @@ build_release "$WORK_ROOT/first"
 build_release "$WORK_ROOT/second"
 cmp "$WORK_ROOT/first/framework-release.tar" "$WORK_ROOT/second/framework-release.tar"
 cmp "$WORK_ROOT/first/candidate-framework.lock" "$WORK_ROOT/second/candidate-framework.lock"
+cmp "$WORK_ROOT/first/distribution-trust.json" "$WORK_ROOT/second/distribution-trust.json"
 
 export AGENTIC_RELEASE_CI_BINARY=$BINARY
 export AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID
@@ -76,6 +87,7 @@ mkdir -p "$OUTPUT_DIR"
 build_release "$OUTPUT_DIR"
 cmp "$WORK_ROOT/first/framework-release.tar" "$OUTPUT_DIR/framework-release.tar"
 cmp "$WORK_ROOT/first/candidate-framework.lock" "$OUTPUT_DIR/candidate-framework.lock"
+cmp "$WORK_ROOT/first/distribution-trust.json" "$OUTPUT_DIR/distribution-trust.json"
 "$SCRIPT_DIR/verify-release-archive.sh" \
   "$OUTPUT_DIR/framework-release.tar" \
   "$OUTPUT_DIR/candidate-framework.lock"

@@ -12,6 +12,214 @@ use std::process::{ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::thread;
 
 #[test]
+fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
+    let help = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .arg("--help")
+        .output()
+        .unwrap();
+    assert_success(&help);
+    assert!(help.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&help.stdout).contains("agentic project init"));
+
+    let version = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert_success(&version);
+    assert!(version.stderr.is_empty());
+    assert!(String::from_utf8_lossy(&version.stdout).starts_with("agentic 0.1.0"));
+
+    let root = temporary_test_root("uninitialized");
+    fs::create_dir_all(&root).unwrap();
+    run_git(&root, &["init", "--quiet"]);
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["next", "change.example", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!next.status.success());
+    let stderr = String::from_utf8_lossy(&next.stderr);
+    assert!(stderr.contains("Project is not initialized"));
+    assert!(stderr.contains("agentic project init"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_and_change_init_connect_an_empty_repository_to_next() {
+    let release = TestProject::new();
+    let candidate = release.root.join("bootstrap-candidate");
+    fs::create_dir(&candidate).unwrap();
+    fs::copy(
+        release.root.join(".agentic/framework.lock"),
+        candidate.join("candidate-framework.lock"),
+    )
+    .unwrap();
+    fs::write(
+        candidate.join("framework-release.tar"),
+        tar_release(&release.release_root),
+    )
+    .unwrap();
+    let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+    let trust = json!({
+        "schema_version": "1",
+        "release_id": "prototype-vnext-dev",
+        "keys": [{
+            "id": "test.framework.release",
+            "algorithm": "ed25519",
+            "public_key": encode_hex(&signing_key.verifying_key().to_bytes()),
+            "allowed_sources": ["offline:test-fixture"],
+            "status": "active",
+        }],
+    });
+    fs::write(
+        candidate.join("distribution-trust.json"),
+        serde_json::to_vec_pretty(&trust).unwrap(),
+    )
+    .unwrap();
+
+    let root = temporary_test_root("project-init");
+    fs::create_dir_all(&root).unwrap();
+    run_git(&root, &["init", "--quiet"]);
+    run_git(&root, &["config", "user.email", "cli@example.test"]);
+    run_git(&root, &["config", "user.name", "CLI Fixture"]);
+    run_git(
+        &root,
+        &["commit", "--quiet", "--allow-empty", "-m", "initial"],
+    );
+    let initialized = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["project", "init", "--project"])
+        .arg(&root)
+        .arg("--candidate-dir")
+        .arg(&candidate)
+        .output()
+        .unwrap();
+    assert_success(&initialized);
+    assert!(root.join(".agentic/config.yaml").is_file());
+    assert!(root.join(".agentic/framework.lock").is_file());
+    assert!(root.join(".agentic/repository-observation.yaml").is_file());
+    assert!(root.join(".agentic/trusted-release-keys.yaml").is_file());
+    assert!(
+        root.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml")
+            .is_file()
+    );
+
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["project", "init", "--project"])
+        .arg(&root)
+        .arg("--candidate-dir")
+        .arg(&candidate)
+        .output()
+        .unwrap();
+    assert!(!repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stderr).contains("would overwrite"));
+
+    let change = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "change",
+            "init",
+            "change.example",
+            "--title",
+            "Example",
+            "--intent",
+            "Exercise the initialized project",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&change);
+    run_git(
+        &root,
+        &[
+            "add",
+            ".agentic/config.yaml",
+            ".agentic/framework.lock",
+            ".agentic/repository-observation.yaml",
+            ".agentic/trusted-release-keys.yaml",
+            ".agentic/cache/.gitignore",
+            ".agentic/changes/change.example/change.yaml",
+        ],
+    );
+    run_git(&root, &["commit", "--quiet", "-m", "initialize agentic"]);
+
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["next", "change.example", "--require-clean", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&next);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_observe_reports_physical_identities_without_inventing_bindings() {
+    let root = temporary_test_root("project-observe");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::write(
+        root.join("src/orders.py"),
+        "def save(order):\n    orders.insert(order)\n",
+    )
+    .unwrap();
+    run_git(&root, &["init", "--quiet"]);
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(draft["kind"], "repository-observation-draft");
+    assert_eq!(draft["artifacts"][0]["symbols"][0], "save");
+    assert_eq!(draft["artifacts"][0]["resources"][0], "orders");
+    assert!(draft["artifacts"][0].get("logical_ref").is_none());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn project_commands_refuse_symlinked_project_paths() {
+    use std::os::unix::fs::symlink;
+
+    let root = temporary_test_root("project-symlink");
+    let outside = temporary_test_root("project-symlink-outside");
+    fs::create_dir_all(&root).unwrap();
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("config.yaml"), "schema_version: \"1\"\n").unwrap();
+    symlink(&outside, root.join(".agentic")).unwrap();
+    run_git(&root, &["init", "--quiet"]);
+
+    let change = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "change",
+            "init",
+            "change.example",
+            "--title",
+            "Example",
+            "--intent",
+            "Must remain inside the repository",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!change.status.success());
+    assert!(String::from_utf8_lossy(&change.stderr).contains("symlinked project path"));
+    assert!(!outside.join("changes/change.example/change.yaml").exists());
+
+    let _ = fs::remove_file(root.join(".agentic"));
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_dir_all(outside);
+}
+
+#[test]
 fn project_next_explain_and_contract_health_share_the_real_project_loader() {
     let project = TestProject::new();
     let next = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -709,6 +917,7 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
         "signer_public_key": "4".repeat(64),
         "asset_digests": {
             "candidate-framework.lock": format!("sha256:{}", "5".repeat(64)),
+            "distribution-trust.json": format!("sha256:{}", "6".repeat(64)),
             "framework-release.tar": format!("sha256:{}", "6".repeat(64)),
             "publish-receipt.json": format!("sha256:{}", "7".repeat(64)),
         },
@@ -737,6 +946,22 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
         },
     });
     validate_delivery_schema(&record, "publication-record.schema.json");
+}
+
+#[test]
+fn distribution_trust_schema_pins_the_release_key_and_source_policy() {
+    let trust = json!({
+        "schema_version": "1",
+        "release_id": "prototype-vnext-dev",
+        "keys": [{
+            "id": "test.framework.release",
+            "algorithm": "ed25519",
+            "public_key": "4".repeat(64),
+            "allowed_sources": ["remote:test-fixture"],
+            "status": "active",
+        }],
+    });
+    validate_delivery_schema(&trust, "distribution-trust.schema.json");
 }
 
 #[test]
@@ -978,7 +1203,8 @@ fn clean_mode_rejects_ignored_untracked_authoritative_records() {
     ]);
     assert!(!output.status.success());
     assert!(
-        String::from_utf8_lossy(&output.stderr).contains("ls-files"),
+        String::from_utf8_lossy(&output.stderr)
+            .contains("required project input is not tracked by Git"),
         "unexpected stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
@@ -991,6 +1217,16 @@ fn assert_success(output: &Output) {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn temporary_test_root(label: &str) -> PathBuf {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+    std::env::temp_dir().join(format!(
+        "agentic-vnext-{label}-{}-{}",
+        std::process::id(),
+        SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ))
 }
 
 struct TestProject {

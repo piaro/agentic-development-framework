@@ -55,7 +55,11 @@ impl GitRepositoryAdapter {
 
     pub fn observe(&self) -> Result<Value, GitRepositoryError> {
         self.assert_repository_state()?;
-        let revision = self.git(&["rev-parse", "HEAD"])?;
+        let revision = self.git(&["rev-parse", "HEAD"]).map_err(|_| {
+            git_error(
+                "Git repository has no initial commit.\nNext: review the generated Agentic files, then git add and commit them.",
+            )
+        })?;
         let manifest = self.read_manifest()?;
         let phase = manifest
             .get("phase")
@@ -284,6 +288,11 @@ impl GitRepositoryAdapter {
     fn assert_tracked(&self, relative: &str) -> Result<(), GitRepositoryError> {
         self.git(&["ls-files", "--error-unmatch", "--", relative])
             .map(|_| ())
+            .map_err(|_| {
+                git_error(format!(
+                    "required project input is not tracked by Git: {relative}\nNext: git add {relative} and commit the reviewed file."
+                ))
+            })
     }
 
     fn relative_string(&self, path: &Path) -> Result<String, GitRepositoryError> {
@@ -344,7 +353,7 @@ fn analysis_roots(value: &Value) -> Result<Vec<String>, GitRepositoryError> {
 fn is_under_analysis_root(path: &str, roots: &[String]) -> bool {
     roots
         .iter()
-        .any(|root| path == root || path.starts_with(&format!("{root}/")))
+        .any(|root| root == "." || path == root || path.starts_with(&format!("{root}/")))
 }
 
 fn artifact_bindings(value: &Value) -> Result<ArtifactBinding, GitRepositoryError> {

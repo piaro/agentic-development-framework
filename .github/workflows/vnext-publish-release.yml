@@ -86,6 +86,7 @@ jobs:
       - name: Revalidate candidate before approval
         env:
           AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/prototype/vnext/rust/target/release/agentic-vnext-rust
+          AGENTIC_RELEASE_SOURCE_REVISION: ${{ steps.candidate.outputs.source_revision }}
         run: |
           sh prototype/vnext/scripts/verify-release-candidate.sh candidate
           sh prototype/vnext/scripts/verify-release-binaries.sh \

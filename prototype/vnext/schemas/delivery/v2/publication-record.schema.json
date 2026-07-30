@@ -63,11 +63,16 @@
       "additionalProperties": false,
       "required": [
         "candidate-framework.lock",
+        "distribution-trust.json",
         "framework-release.tar",
         "publish-receipt.json"
       ],
       "properties": {
         "candidate-framework.lock": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "distribution-trust.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },

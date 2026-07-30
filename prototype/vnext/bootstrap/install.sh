@@ -146,11 +146,21 @@ trap cleanup EXIT HUP INT TERM
   --pattern "$BINARY" \
   --pattern "$BUILD_RECORD" \
   --pattern SHA256SUMS \
-  --pattern publication-record.json
+  --pattern publication-record.json \
+  --pattern distribution-trust.json \
+  --pattern candidate-framework.lock \
+  --pattern framework-release.tar \
+  --pattern publish-receipt.json
 
 # Verify the executable before running it. Pinning the workflow and source
 # revision prevents a checksum and binary replaced together from being trusted.
 "$GH_CLI" attestation verify "$STAGING/$BINARY" \
+  --repo "$REPOSITORY" \
+  --signer-workflow "$REPOSITORY/.github/workflows/vnext-release.yml" \
+  --source-digest "$SOURCE_REVISION" \
+  --source-ref "refs/heads/$DEFAULT_BRANCH" \
+  --deny-self-hosted-runners >/dev/null
+"$GH_CLI" attestation verify "$STAGING/distribution-trust.json" \
   --repo "$REPOSITORY" \
   --signer-workflow "$REPOSITORY/.github/workflows/vnext-release.yml" \
   --source-digest "$SOURCE_REVISION" \
@@ -164,3 +174,4 @@ chmod 755 "$STAGING/$BINARY"
   --install-root "$INSTALL_ROOT"
 
 echo "Add $INSTALL_ROOT/bin to PATH to invoke agentic."
+echo "Then run: agentic project init --project /path/to/project"

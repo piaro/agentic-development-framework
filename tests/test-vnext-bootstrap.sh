@@ -65,9 +65,28 @@ build = {
     f"{digest(binary).removeprefix('sha256:')}  {binary_name}\n",
     encoding="utf-8",
 )
+release_id = tag.removeprefix("framework-")
+trust = {
+    "schema_version": "1",
+    "release_id": release_id,
+    "keys": [{
+        "id": "test.framework.release",
+        "algorithm": "ed25519",
+        "public_key": "c" * 64,
+        "allowed_sources": ["remote:test-fixture"],
+        "status": "active",
+    }],
+}
+(root / "distribution-trust.json").write_text(
+    json.dumps(trust, indent=2, sort_keys=True) + "\n",
+    encoding="utf-8",
+)
+(root / "candidate-framework.lock").write_text("test lock\n", encoding="utf-8")
+(root / "framework-release.tar").write_bytes(b"test archive\n")
+(root / "publish-receipt.json").write_text("{}\n", encoding="utf-8")
 record = {
     "schema_version": "1",
-    "release_id": tag.removeprefix("framework-"),
+    "release_id": release_id,
     "release_tag": tag,
     "source_revision": revision,
     "candidate_workflow_run_id": "12345",
@@ -77,9 +96,10 @@ record = {
     "archive_digest": "sha256:" + "b" * 64,
     "signer_public_key": "c" * 64,
     "asset_digests": {
-        "candidate-framework.lock": "sha256:" + "d" * 64,
-        "framework-release.tar": "sha256:" + "e" * 64,
-        "publish-receipt.json": "sha256:" + "f" * 64,
+        "candidate-framework.lock": digest(root / "candidate-framework.lock"),
+        "distribution-trust.json": digest(root / "distribution-trust.json"),
+        "framework-release.tar": digest(root / "framework-release.tar"),
+        "publish-receipt.json": digest(root / "publish-receipt.json"),
     },
     "binary_asset_digests": {
         binary_name: digest(binary),
@@ -155,8 +175,11 @@ from pathlib import Path
 
 calls = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines()]
 repository, first_revision, second_revision = sys.argv[2:]
-assert len(calls) == 2
-for call, revision in zip(calls, (first_revision, second_revision)):
+assert len(calls) == 4
+for call, revision in zip(
+    calls,
+    (first_revision, first_revision, second_revision, second_revision),
+):
     assert call[call.index("--repo") + 1] == repository
     assert call[call.index("--signer-workflow") + 1] == (
         repository + "/.github/workflows/vnext-release.yml"
@@ -202,6 +225,6 @@ if FAKE_GH_STATE=$STATE \
   echo "bootstrap accepted a draft GitHub Release" >&2
   exit 1
 fi
-test "$(wc -l <"$STATE/attestation-calls.jsonl" | tr -d ' ')" = "2"
+test "$(wc -l <"$STATE/attestation-calls.jsonl" | tr -d ' ')" = "4"
 
 echo "vNext bootstrap tests passed"

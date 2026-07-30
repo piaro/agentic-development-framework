@@ -104,6 +104,40 @@ fn failed_update_preserves_the_active_release() {
 }
 
 #[test]
+fn install_rejects_a_trust_bundle_that_does_not_match_publication() {
+    let fixture = BinaryFixture::new();
+    let revision = "6".repeat(40);
+    let candidate = fixture.candidate("framework-test-v6", &revision);
+    let trust_path = candidate.join("distribution-trust.json");
+    let mut trust: Value = serde_json::from_slice(&fs::read(&trust_path).unwrap()).unwrap();
+    trust["keys"][0]["public_key"] = Value::String("d".repeat(64));
+    fs::write(&trust_path, serde_json::to_vec_pretty(&trust).unwrap()).unwrap();
+    let publication_path = candidate.join("publication-record.json");
+    let mut publication: Value =
+        serde_json::from_slice(&fs::read(&publication_path).unwrap()).unwrap();
+    publication["asset_digests"]["distribution-trust.json"] = Value::String(digest(&trust_path));
+    fs::write(
+        &publication_path,
+        serde_json::to_vec_pretty(&publication).unwrap(),
+    )
+    .unwrap();
+
+    let result = install_binary_candidate(
+        &candidate,
+        "framework-test-v6",
+        &revision,
+        &fixture.install_root,
+    );
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("does not match Publication Record")
+    );
+    assert!(!fixture.install_root.join("active").exists());
+}
+
+#[test]
 fn cli_and_managed_launcher_observe_the_same_installation() {
     let fixture = BinaryFixture::new();
     let revision = "3".repeat(40);
@@ -264,6 +298,30 @@ impl BinaryFixture {
             format!("{hexadecimal_digest}  {binary_name}\n"),
         )
         .unwrap();
+        let release_id = tag.strip_prefix("framework-").unwrap();
+        let trust = json!({
+            "schema_version": "1",
+            "release_id": release_id,
+            "keys": [{
+                "id": "test.framework.release",
+                "algorithm": "ed25519",
+                "public_key": "c".repeat(64),
+                "allowed_sources": ["remote:test-fixture"],
+                "status": "active",
+            }],
+        });
+        fs::write(
+            candidate.join("distribution-trust.json"),
+            serde_json::to_vec_pretty(&trust).unwrap(),
+        )
+        .unwrap();
+        for (name, bytes) in [
+            ("candidate-framework.lock", b"test lock\n".as_slice()),
+            ("framework-release.tar", b"test archive\n".as_slice()),
+            ("publish-receipt.json", b"{}\n".as_slice()),
+        ] {
+            fs::write(candidate.join(name), bytes).unwrap();
+        }
 
         let mut binary_digests = published_binary_digest_fixture();
         binary_digests.insert(binary_name, Value::String(digest(&binary)));
@@ -277,7 +335,7 @@ impl BinaryFixture {
         );
         let publication = json!({
             "schema_version": "1",
-            "release_id": tag.strip_prefix("framework-").unwrap(),
+            "release_id": release_id,
             "release_tag": tag,
             "source_revision": revision,
             "candidate_workflow_run_id": "12345",
@@ -287,9 +345,10 @@ impl BinaryFixture {
             "archive_digest": fake_digest('b'),
             "signer_public_key": "c".repeat(64),
             "asset_digests": {
-                "candidate-framework.lock": fake_digest('d'),
-                "framework-release.tar": fake_digest('e'),
-                "publish-receipt.json": fake_digest('f'),
+                "candidate-framework.lock": digest(&candidate.join("candidate-framework.lock")),
+                "distribution-trust.json": digest(&candidate.join("distribution-trust.json")),
+                "framework-release.tar": digest(&candidate.join("framework-release.tar")),
+                "publish-receipt.json": digest(&candidate.join("publish-receipt.json")),
             },
             "binary_asset_digests": binary_digests,
         });

@@ -5,6 +5,10 @@
 //! tags, so the running executable is never overwritten. Keeping both tags in
 //! one file also makes update and rollback a single filesystem replacement.
 
+use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, validate_distribution_binding};
+use crate::project_setup::{
+    CANDIDATE_LOCK_FILE, FRAMEWORK_ARCHIVE_FILE, PUBLICATION_RECORD_FILE, PUBLISH_RECEIPT_FILE,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -105,7 +109,7 @@ pub fn published_binary_name(target: &str) -> String {
     format!("agentic-vnext-rust-{target}{suffix}")
 }
 
-/// Verify the four assets needed to install the current platform.
+/// Verify the native binary and the complete project bootstrap candidate.
 pub fn inspect_binary_candidate(
     candidate_root: &Path,
     expected_tag: &str,
@@ -127,13 +131,17 @@ pub fn inspect_binary_candidate(
         binary_name.as_str(),
         record_name.as_str(),
         "SHA256SUMS",
-        "publication-record.json",
+        PUBLICATION_RECORD_FILE,
+        DISTRIBUTION_TRUST_FILE,
+        CANDIDATE_LOCK_FILE,
+        FRAMEWORK_ARCHIVE_FILE,
+        PUBLISH_RECEIPT_FILE,
     ];
     for name in required {
         require_regular_file(&root.join(name))?;
     }
 
-    let publication: PublicationRecord = read_json(&root.join("publication-record.json"))?;
+    let publication: PublicationRecord = read_json(&root.join(PUBLICATION_RECORD_FILE))?;
     if publication.schema_version != "1"
         || publication.release_tag != expected_tag
         || publication.source_revision != expected_revision
@@ -157,7 +165,7 @@ pub fn inspect_binary_candidate(
             .signer_public_key
             .bytes()
             .all(|value| value.is_ascii_hexdigit() && !value.is_ascii_uppercase())
-        || publication.asset_digests.len() != 3
+        || publication.asset_digests.len() != 4
         || publication
             .asset_digests
             .keys()
@@ -165,6 +173,7 @@ pub fn inspect_binary_candidate(
             .collect::<BTreeSet<_>>()
             != BTreeSet::from([
                 "candidate-framework.lock",
+                "distribution-trust.json",
                 "framework-release.tar",
                 "publish-receipt.json",
             ])
@@ -180,6 +189,31 @@ pub fn inspect_binary_candidate(
         return Err(binary_error(
             "Publication Record contains invalid Framework provenance fields",
         ));
+    }
+    validate_distribution_binding(
+        &root.join(DISTRIBUTION_TRUST_FILE),
+        &publication.release_id,
+        &publication.signer_key_id,
+        &publication.source_id,
+        &publication.signer_public_key,
+    )
+    .map_err(|error| binary_error(error.to_string()))?;
+    for name in [
+        DISTRIBUTION_TRUST_FILE,
+        CANDIDATE_LOCK_FILE,
+        FRAMEWORK_ARCHIVE_FILE,
+        PUBLISH_RECEIPT_FILE,
+    ] {
+        let actual = raw_digest(&root.join(name))?;
+        let expected = publication
+            .asset_digests
+            .get(name)
+            .ok_or_else(|| binary_error(format!("Publication Record does not list {name}")))?;
+        if expected != &actual {
+            return Err(binary_error(format!(
+                "Publication Record digest mismatch for {name}"
+            )));
+        }
     }
 
     let binary_path = root.join(&binary_name);
@@ -275,7 +309,11 @@ pub fn install_binary_candidate(
                 candidate.binary_name.as_str(),
                 record_name.as_str(),
                 "SHA256SUMS",
-                "publication-record.json",
+                PUBLICATION_RECORD_FILE,
+                DISTRIBUTION_TRUST_FILE,
+                CANDIDATE_LOCK_FILE,
+                FRAMEWORK_ARCHIVE_FILE,
+                PUBLISH_RECEIPT_FILE,
             ] {
                 copy_new_file(&candidate_root.join(name), &staging.join(name))?;
             }
@@ -336,7 +374,7 @@ pub fn rollback_binary_install(
         return Err(binary_error("binary rollback point is not distinct"));
     }
     let previous_root = install_root.join("releases").join(&previous);
-    let publication: PublicationRecord = read_json(&previous_root.join("publication-record.json"))?;
+    let publication: PublicationRecord = read_json(&previous_root.join(PUBLICATION_RECORD_FILE))?;
     let verified =
         inspect_binary_candidate(&previous_root, &previous, &publication.source_revision)?;
     publish_activation(&activation_path, &previous, Some(&current))?;
@@ -359,7 +397,7 @@ pub fn binary_install_status(
     let previous = activation.previous;
     if let Some(tag) = current.as_deref() {
         let root = install_root.join("releases").join(tag);
-        let publication: PublicationRecord = read_json(&root.join("publication-record.json"))?;
+        let publication: PublicationRecord = read_json(&root.join(PUBLICATION_RECORD_FILE))?;
         inspect_binary_candidate(&root, tag, &publication.source_revision)?;
     }
     Ok(BinaryInstallStatus {

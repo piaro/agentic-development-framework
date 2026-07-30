@@ -40,7 +40,7 @@ if [ "$ACTUAL_TARGET" != "$EXPECTED_TARGET" ]; then
   exit 1
 fi
 
-cargo build \
+AGENTIC_BUILD_SOURCE_REVISION=$SOURCE_REVISION cargo build \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --release \
   --locked

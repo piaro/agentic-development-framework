@@ -73,7 +73,11 @@ try {
         --pattern $binary `
         --pattern $buildRecord `
         --pattern SHA256SUMS `
-        --pattern publication-record.json
+        --pattern publication-record.json `
+        --pattern distribution-trust.json `
+        --pattern candidate-framework.lock `
+        --pattern framework-release.tar `
+        --pattern publish-receipt.json
     if ($LASTEXITCODE -ne 0) {
         throw 'Downloading the Framework Release assets failed.'
     }
@@ -88,6 +92,15 @@ try {
         --deny-self-hosted-runners | Out-Null
     if ($LASTEXITCODE -ne 0) {
         throw 'GitHub Artifact Attestation verification failed.'
+    }
+    & $GitHubCli attestation verify (Join-Path $staging 'distribution-trust.json') `
+        --repo $Repository `
+        --signer-workflow "$Repository/.github/workflows/vnext-release.yml" `
+        --source-digest $sourceRevision `
+        --source-ref "refs/heads/$defaultBranch" `
+        --deny-self-hosted-runners | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Distribution Trust Artifact Attestation verification failed.'
     }
 
     & (Join-Path $staging $binary) binary install $staging `
@@ -104,3 +117,4 @@ try {
 }
 
 Write-Output "Add $(Join-Path $InstallRoot 'bin') to PATH to invoke agentic."
+Write-Output 'Then run: agentic project init --project C:\path\to\project'

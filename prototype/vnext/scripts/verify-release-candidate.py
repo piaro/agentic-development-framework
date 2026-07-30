@@ -18,6 +18,7 @@ from pathlib import Path
 
 EXPECTED_FILES = {
     "candidate-framework.lock",
+    "distribution-trust.json",
     "framework-release.tar",
     "publish-receipt.json",
 }
@@ -48,16 +49,21 @@ def required_string(value: object, label: str, pattern: re.Pattern[str]) -> str:
 
 
 def main(arguments: list[str]) -> None:
-    if len(arguments) not in {3, 4}:
+    if len(arguments) not in {5, 6}:
         fail(
             "usage: verify-release-candidate.py "
-            "<candidate-dir> <expected-public-key> [expected-tag]"
+            "<candidate-dir> <expected-public-key> <expected-source-id> "
+            "<expected-key-id> [expected-tag]"
         )
     root = Path(arguments[1])
     expected_public_key = required_string(
         arguments[2], "expected public key", HEX_KEY
     )
-    expected_tag = arguments[3] if len(arguments) == 4 else None
+    expected_source_id = arguments[3]
+    expected_key_id = arguments[4]
+    expected_tag = arguments[5] if len(arguments) == 6 else None
+    if not expected_source_id or not expected_key_id:
+        fail("expected source and key IDs must not be empty")
 
     names = regular_files(root)
     if names != EXPECTED_FILES:
@@ -100,6 +106,62 @@ def main(arguments: list[str]) -> None:
     )
     if signer_public_key != expected_public_key:
         fail("Publish Receipt signer public key does not match the trusted pin")
+
+    trust_path = root / "distribution-trust.json"
+    try:
+        trust = json.loads(trust_path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        fail(f"Invalid Distribution Trust: {error}")
+    if (
+        not isinstance(trust, dict)
+        or set(trust) != {"schema_version", "release_id", "keys"}
+        or trust.get("schema_version") != "1"
+        or trust.get("release_id") != release_id
+    ):
+        fail("Distribution Trust identity is invalid")
+    keys = trust.get("keys")
+    if not isinstance(keys, list) or not keys:
+        fail("Distribution Trust keys are invalid")
+    expected_key = None
+    seen_key_ids: set[str] = set()
+    for key in keys:
+        if not isinstance(key, dict) or set(key) != {
+            "id",
+            "algorithm",
+            "public_key",
+            "allowed_sources",
+            "status",
+        }:
+            fail("Distribution Trust key fields are invalid")
+        key_id = key.get("id")
+        public_key = key.get("public_key")
+        allowed_sources = key.get("allowed_sources")
+        if (
+            not isinstance(key_id, str)
+            or not key_id
+            or key_id in seen_key_ids
+            or key.get("algorithm") != "ed25519"
+            or not isinstance(public_key, str)
+            or not HEX_KEY.fullmatch(public_key)
+            or not isinstance(allowed_sources, list)
+            or not allowed_sources
+            or not all(isinstance(source, str) and source for source in allowed_sources)
+            or len(set(allowed_sources)) != len(allowed_sources)
+            or key.get("status") not in {"active", "retired", "revoked"}
+        ):
+            fail("Distribution Trust key policy is invalid")
+        seen_key_ids.add(key_id)
+        if key.get("id") == expected_key_id:
+            expected_key = key
+    if expected_key is None:
+        fail("Distribution Trust does not contain the expected key")
+    if (
+        expected_key.get("algorithm") != "ed25519"
+        or expected_key.get("public_key") != expected_public_key
+        or expected_key.get("status") != "active"
+        or expected_source_id not in expected_key.get("allowed_sources", [])
+    ):
+        fail("Distribution Trust key policy does not match the trusted pin")
 
     outputs = receipt.get("outputs")
     if not isinstance(outputs, dict) or set(outputs) != {
