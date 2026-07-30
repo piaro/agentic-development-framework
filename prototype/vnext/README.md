@@ -143,7 +143,7 @@ agentic project observe \
   --format yaml
 ```
 
-この出力はRepository Observation Draft v2であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。組込みmethod以外は、次のように物理的な`resource.method`へ分類根拠を記録します。
+この出力はRepository Observation Draft v2であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。DB系はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORM、メッセージング系はAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。組込みmethod以外は、次のように物理的な`resource.method`へ分類根拠を記録します。
 
 ```yaml
 schema_version: "2"
@@ -389,7 +389,7 @@ sources:
 | ファイル | 役割 |
 |---|---|
 | `rust/src/source_detection.rs` | 対応・inventory対象言語の登録、共通parse・正規化・分類・整列処理、言語横断conformanceを定義 |
-| `rust/src/framework_detection.rs` | 主要ORMのproject/source根拠から、非authoritativeなframework method Binding候補を生成 |
+| `rust/src/framework_detection.rs` | 主要ORM・メッセージングAPIのproject/source根拠から、非authoritativeなframework method Binding候補を生成 |
 | `rust/src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
 | `rust/src/java_detection.rs` | Java構文からmethod・constructor・呼出先・物理resourceを観測 |
 | `rust/src/kotlin_detection.rs` | Kotlin構文からfunction・navigation call・物理resourceを観測 |
@@ -432,7 +432,7 @@ sources:
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
-- `project observe`のDraft v2はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。
+- `project observe`のDraft v2は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。

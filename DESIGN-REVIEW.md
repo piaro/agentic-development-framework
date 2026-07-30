@@ -134,6 +134,8 @@ Detector追加後の実project検証で、JSX入り`.js`、複数行receiver、�
 
 主要frameworkの初期Binding負荷を下げるため、Repository Observation Draft v2へ非authoritativeな`framework_candidates`を追加した。対象はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMである。project manifest、import、型名、receiver形状という機械的根拠と物理`resource.method`を提示するが、通常評価・coverage・fact生成は候補を参照しない。候補は常にreview必須で、accepted Decisionを持つ既存Binding Recordへ人またはAgentが転記して初めて有効になる。SQLAlchemyの`execute`のような読書き両用APIはkindを空にし、意味分類を自動化しない。
 
+同じ境界でメッセージング候補をAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsへ拡張した。公式clientの送信methodを言語別に保持し、`message_publish`を候補提示する。`send`や`publish`のように単独では曖昧なmethod名は、対応するmanifest、import、型またはreceiverの機械的根拠がなければ候補化しない。候補だけで通常評価を通過できないことと、accepted Decisionを持つmethod Bindingが初めて分類を有効にすることをCLI統合テストで固定する。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。

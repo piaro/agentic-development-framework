@@ -498,6 +498,133 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
 }
 
 #[test]
+fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() {
+    let root = temporary_test_root("project-observe-messaging");
+    fs::create_dir_all(root.join("src")).unwrap();
+    let files = [
+        (
+            "src/sqs_service.py",
+            "import boto3\n\
+             sqs = boto3.client('sqs')\n\
+             def enqueue(queue_url, body):\n\
+             \x20   sqs.send_message(QueueUrl=queue_url, MessageBody=body)\n",
+        ),
+        (
+            "src/KafkaService.java",
+            "import org.apache.kafka.clients.producer.KafkaProducer;\n\
+             class KafkaService {\n\
+             \x20 void publish(KafkaProducer producer, ProducerRecord record) {\n\
+             \x20   producer.send(record);\n\
+             \x20 }\n\
+             }\n",
+        ),
+        (
+            "src/rabbit_service.ts",
+            "import amqp from \"amqplib\";\n\
+             export function enqueue(channel: amqp.Channel, payload: Buffer) {\n\
+             \x20 channel.sendToQueue(\"orders\", payload);\n\
+             }\n",
+        ),
+        (
+            "src/celery_service.py",
+            "from celery import shared_task\n\
+             def enqueue(task):\n\
+             \x20   task.delay()\n",
+        ),
+        (
+            "src/pubsub_service.rb",
+            "require \"google/cloud/pubsub\"\n\
+             def publish_event(publisher, payload)\n\
+             \x20 publisher.publish_async(payload)\n\
+             end\n",
+        ),
+        (
+            "src/ServiceBusService.cs",
+            "using Azure.Messaging.ServiceBus;\n\
+             class ServiceBusService {\n\
+             \x20 async Task Send(ServiceBusSender sender, IEnumerable<ServiceBusMessage> messages) {\n\
+             \x20   await sender.SendMessagesAsync(messages);\n\
+             \x20 }\n\
+             }\n",
+        ),
+        (
+            "src/nats_service.go",
+            "package service\n\
+             import \"github.com/nats-io/nats.go\"\n\
+             func PublishEvent(connection *nats.Conn, payload []byte) {\n\
+             \x20   connection.Publish(\"orders\", payload)\n\
+             }\n",
+        ),
+        (
+            "src/redis_stream_service.ts",
+            "import { createClient } from \"redis\";\n\
+             export function append(redis: ReturnType<typeof createClient>) {\n\
+             \x20 redis.xAdd(\"orders\", \"*\", { status: \"created\" });\n\
+             }\n",
+        ),
+    ];
+    for (path, source) in files {
+        fs::write(root.join(path), source).unwrap();
+    }
+    run_git(&root, &["init", "--quiet"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let artifacts = draft["artifacts"].as_array().unwrap();
+    let expected = [
+        ("src/sqs_service.py", "amazon-sqs", "send_message"),
+        ("src/KafkaService.java", "apache-kafka", "send"),
+        ("src/rabbit_service.ts", "rabbitmq", "sendToQueue"),
+        ("src/celery_service.py", "celery", "delay"),
+        (
+            "src/pubsub_service.rb",
+            "google-cloud-pubsub",
+            "publish_async",
+        ),
+        (
+            "src/ServiceBusService.cs",
+            "azure-service-bus",
+            "SendMessagesAsync",
+        ),
+        ("src/nats_service.go", "nats", "Publish"),
+        ("src/redis_stream_service.ts", "redis-streams", "xAdd"),
+    ];
+    for (path, framework, method) in expected {
+        let artifact = artifacts
+            .iter()
+            .find(|artifact| artifact["path"] == path)
+            .unwrap_or_else(|| panic!("missing {path}"));
+        let candidate = artifact["framework_candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["framework"] == framework && candidate["method"] == method)
+            .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
+        assert_eq!(candidate["suggested_kind"], "message_publish");
+        assert_eq!(candidate["review_status"], "required");
+        assert!(
+            candidate["binding_key"]
+                .as_str()
+                .is_some_and(|key| key.ends_with(&format!(".{method}")))
+        );
+    }
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn typescript_artifact_runs_through_the_real_project_loader() {
     assert_language_artifact_runs_through_real_loader(
         "src/place_order.ts",
@@ -1177,6 +1304,29 @@ fn framework_candidate_does_not_bypass_reviewed_method_binding() {
 }
 
 #[test]
+fn messaging_candidate_does_not_bypass_reviewed_method_binding() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "from celery import shared_task\n\
+         def place_order(order):\n\
+         \x20   orders.delay(order)\n",
+    )
+    .unwrap();
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "blocked-detection");
+    assert!(
+        output["diagnostics"][0]
+            .as_str()
+            .unwrap()
+            .contains("unsupported-observation")
+    );
+}
+
+#[test]
 fn reviewed_framework_method_binding_classifies_a_non_builtin_method() {
     let project = TestProject::new();
     fs::write(
@@ -1190,6 +1340,34 @@ fn reviewed_framework_method_binding_classifies_a_non_builtin_method() {
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["methods"]["orders.save"] = json!({
         "kind": "db_write",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn reviewed_messaging_method_binding_classifies_a_non_builtin_method() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "from celery import shared_task\n\
+         def place_order(order):\n\
+         \x20   orders.delay(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["resources"]["orders"]["logical_ref"] =
+        json!("integration.order-tasks");
+    observation["artifacts"][0]["bindings"]["methods"]["orders.delay"] = json!({
+        "kind": "message_publish",
         "owner": "team.ordering",
         "authority_ref": "decision.repository-bindings",
     });

@@ -15,9 +15,17 @@ const EF_CORE: &str = "entity-framework-core";
 const RAILS_ACTIVE_RECORD: &str = "rails-active-record";
 const LARAVEL_ELOQUENT: &str = "laravel-eloquent";
 const GORM: &str = "gorm";
+const AMAZON_SQS: &str = "amazon-sqs";
+const APACHE_KAFKA: &str = "apache-kafka";
+const RABBITMQ: &str = "rabbitmq";
+const CELERY: &str = "celery";
+const GOOGLE_CLOUD_PUBSUB: &str = "google-cloud-pubsub";
+const AZURE_SERVICE_BUS: &str = "azure-service-bus";
+const NATS: &str = "nats";
+const REDIS_STREAMS: &str = "redis-streams";
 
-// Method vocabularies follow the projects' current official persistence
-// references. Keep uncertain dual-use APIs as `suggested_kind: None`.
+// Method vocabularies follow the projects' current official persistence and
+// publishing references. Keep uncertain dual-use APIs as `suggested_kind: None`.
 //
 // Django: https://docs.djangoproject.com/en/6.0/ref/models/querysets/
 // SQLAlchemy: https://docs.sqlalchemy.org/en/20/orm/session_basics.html
@@ -28,6 +36,17 @@ const GORM: &str = "gorm";
 // Rails: https://guides.rubyonrails.org/active_record_basics.html
 // Laravel: https://laravel.com/docs/13.x/eloquent
 // GORM: https://gorm.io/docs/
+// Amazon SQS:
+// https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/
+// Apache Kafka:
+// https://kafka.apache.org/41/javadoc/org/apache/kafka/clients/producer/KafkaProducer.html
+// RabbitMQ: https://www.rabbitmq.com/tutorials
+// Celery: https://docs.celeryq.dev/en/stable/userguide/calling.html
+// Google Cloud Pub/Sub: https://cloud.google.com/pubsub/docs/publisher
+// Azure Service Bus:
+// https://learn.microsoft.com/dotnet/api/overview/azure/messaging.servicebus-readme
+// NATS: https://docs.nats.io/using-nats/developer/sending
+// Redis Streams: https://redis.io/docs/latest/commands/xadd/
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrameworkCandidate {
@@ -74,6 +93,91 @@ impl FrameworkCatalog {
                 &["laravel/framework", "illuminate/database"][..],
             ),
             (GORM, &["gorm.io/gorm"][..]),
+            (
+                AMAZON_SQS,
+                &[
+                    "boto3",
+                    "@aws-sdk/client-sqs",
+                    "software.amazon.awssdk.services.sqs",
+                    "awssdk.sqs",
+                    "aws-sdk-go-v2/service/sqs",
+                    "aws-sdk-sqs",
+                ][..],
+            ),
+            (
+                APACHE_KAFKA,
+                &[
+                    "kafka-python",
+                    "confluent-kafka",
+                    "kafkajs",
+                    "org.apache.kafka",
+                    "confluent.kafka",
+                    "segmentio/kafka-go",
+                    "shopify/sarama",
+                    "twmb/franz-go",
+                    "ruby-kafka",
+                    "php-rdkafka",
+                    "rdkafka",
+                ][..],
+            ),
+            (
+                RABBITMQ,
+                &[
+                    "pika",
+                    "aio-pika",
+                    "\"amqplib\"",
+                    "com.rabbitmq",
+                    "rabbitmq.client",
+                    "rabbitmq/amqp091-go",
+                    "php-amqplib",
+                    "bunny",
+                    "lapin",
+                ][..],
+            ),
+            (CELERY, &["celery"][..]),
+            (
+                GOOGLE_CLOUD_PUBSUB,
+                &[
+                    "google-cloud-pubsub",
+                    "@google-cloud/pubsub",
+                    "google.cloud:google-cloud-pubsub",
+                    "google.cloud.pubsub",
+                    "cloud.google.com/go/pubsub",
+                ][..],
+            ),
+            (
+                AZURE_SERVICE_BUS,
+                &[
+                    "azure-servicebus",
+                    "azure-service-bus",
+                    "azure.messaging.servicebus",
+                    "@azure/service-bus",
+                    "azservicebus",
+                ][..],
+            ),
+            (
+                NATS,
+                &[
+                    "nats-py",
+                    "\"nats\"",
+                    "nats.ws",
+                    "io.nats",
+                    "nats.client",
+                    "nats-io/nats.go",
+                    "nats-pure",
+                ][..],
+            ),
+            (
+                REDIS_STREAMS,
+                &[
+                    "redis",
+                    "ioredis",
+                    "jedis",
+                    "lettuce-core",
+                    "go-redis",
+                    "stackexchange.redis",
+                ][..],
+            ),
         ] {
             if markers.iter().any(|marker| content.contains(marker)) {
                 self.project_evidence
@@ -199,6 +303,233 @@ fn framework_rules(language: &str, method: &str) -> Vec<FrameworkRule> {
         }
         _ => {}
     }
+    for (framework, methods, rationale) in messaging_rules(language) {
+        if methods.contains(&method) {
+            rules.push(message_rule(framework, rationale));
+        }
+    }
+    rules
+}
+
+fn messaging_rules(language: &str) -> Vec<(&'static str, &'static [&'static str], &'static str)> {
+    let mut rules = Vec::new();
+    let rationale = |framework| match framework {
+        AMAZON_SQS => "Amazon SQS send API publishes one or more queue messages.",
+        APACHE_KAFKA => "Kafka producer API publishes records to a topic.",
+        RABBITMQ => "RabbitMQ producer API publishes a message to an exchange or queue.",
+        CELERY => "Celery Calling API sends a task message to a broker.",
+        GOOGLE_CLOUD_PUBSUB => "Google Cloud Pub/Sub publisher API publishes a topic message.",
+        AZURE_SERVICE_BUS => {
+            "Azure Service Bus sender API publishes one or more brokered messages."
+        }
+        NATS => "NATS publish API sends a message to a subject or stream.",
+        REDIS_STREAMS => "Redis XADD appends a message to a stream.",
+        _ => unreachable!("unknown messaging framework"),
+    };
+    match language {
+        "python" => {
+            rules.push((
+                AMAZON_SQS,
+                &["send_message", "send_messages", "send_message_batch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((
+                APACHE_KAFKA,
+                &["send", "send_batch", "produce", "produce_batch"][..],
+                rationale(APACHE_KAFKA),
+            ));
+            rules.push((
+                RABBITMQ,
+                &["basic_publish", "publish"][..],
+                rationale(RABBITMQ),
+            ));
+            rules.push((
+                CELERY,
+                &["delay", "apply_async", "send_task"][..],
+                rationale(CELERY),
+            ));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["publish"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((
+                AZURE_SERVICE_BUS,
+                &["send_messages"][..],
+                rationale(AZURE_SERVICE_BUS),
+            ));
+            rules.push((NATS, &["publish"][..], rationale(NATS)));
+            rules.push((REDIS_STREAMS, &["xadd"][..], rationale(REDIS_STREAMS)));
+        }
+        "javascript" | "jsx" | "typescript" | "tsx" => {
+            rules.push((
+                AMAZON_SQS,
+                &["send", "sendMessage", "sendMessageBatch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((
+                APACHE_KAFKA,
+                &["send", "sendBatch", "produce"][..],
+                rationale(APACHE_KAFKA),
+            ));
+            rules.push((
+                RABBITMQ,
+                &["publish", "sendToQueue"][..],
+                rationale(RABBITMQ),
+            ));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["publish", "publishMessage"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((
+                AZURE_SERVICE_BUS,
+                &["sendMessages"][..],
+                rationale(AZURE_SERVICE_BUS),
+            ));
+            rules.push((NATS, &["publish"][..], rationale(NATS)));
+            rules.push((
+                REDIS_STREAMS,
+                &["xAdd", "xadd"][..],
+                rationale(REDIS_STREAMS),
+            ));
+        }
+        "java" | "kotlin" => {
+            rules.push((
+                AMAZON_SQS,
+                &["sendMessage", "sendMessageBatch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((APACHE_KAFKA, &["send"][..], rationale(APACHE_KAFKA)));
+            rules.push((RABBITMQ, &["basicPublish", "send"][..], rationale(RABBITMQ)));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["publish"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((
+                AZURE_SERVICE_BUS,
+                &["sendMessage", "sendMessages"][..],
+                rationale(AZURE_SERVICE_BUS),
+            ));
+            rules.push((NATS, &["publish"][..], rationale(NATS)));
+            rules.push((REDIS_STREAMS, &["xadd"][..], rationale(REDIS_STREAMS)));
+        }
+        "csharp" => {
+            rules.push((
+                AMAZON_SQS,
+                &["SendMessageAsync", "SendMessageBatchAsync"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((
+                APACHE_KAFKA,
+                &["Produce", "ProduceAsync"][..],
+                rationale(APACHE_KAFKA),
+            ));
+            rules.push((
+                RABBITMQ,
+                &["BasicPublish", "BasicPublishAsync"][..],
+                rationale(RABBITMQ),
+            ));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["Publish", "PublishAsync"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((
+                AZURE_SERVICE_BUS,
+                &["SendMessageAsync", "SendMessagesAsync"][..],
+                rationale(AZURE_SERVICE_BUS),
+            ));
+            rules.push((NATS, &["PublishAsync"][..], rationale(NATS)));
+            rules.push((
+                REDIS_STREAMS,
+                &["StreamAdd", "StreamAddAsync"][..],
+                rationale(REDIS_STREAMS),
+            ));
+        }
+        "go" => {
+            rules.push((
+                AMAZON_SQS,
+                &["SendMessage", "SendMessageBatch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((
+                APACHE_KAFKA,
+                &[
+                    "SendMessage",
+                    "SendMessages",
+                    "WriteMessages",
+                    "Produce",
+                    "ProduceSync",
+                ][..],
+                rationale(APACHE_KAFKA),
+            ));
+            rules.push((
+                RABBITMQ,
+                &["Publish", "PublishWithContext"][..],
+                rationale(RABBITMQ),
+            ));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["Publish"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((
+                AZURE_SERVICE_BUS,
+                &["SendMessage", "SendMessages"][..],
+                rationale(AZURE_SERVICE_BUS),
+            ));
+            rules.push((
+                NATS,
+                &["Publish", "PublishMsg", "PublishRequest", "PublishAsync"][..],
+                rationale(NATS),
+            ));
+            rules.push((REDIS_STREAMS, &["XAdd"][..], rationale(REDIS_STREAMS)));
+        }
+        "ruby" => {
+            rules.push((
+                AMAZON_SQS,
+                &["send_message", "send_message_batch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((
+                APACHE_KAFKA,
+                &["produce", "produce_sync", "deliver_messages"][..],
+                rationale(APACHE_KAFKA),
+            ));
+            rules.push((RABBITMQ, &["publish"][..], rationale(RABBITMQ)));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["publish", "publish_async"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((NATS, &["publish"][..], rationale(NATS)));
+            rules.push((REDIS_STREAMS, &["xadd"][..], rationale(REDIS_STREAMS)));
+        }
+        "php" => {
+            rules.push((
+                AMAZON_SQS,
+                &["sendMessage", "sendMessageBatch"][..],
+                rationale(AMAZON_SQS),
+            ));
+            rules.push((APACHE_KAFKA, &["produce"][..], rationale(APACHE_KAFKA)));
+            rules.push((RABBITMQ, &["basic_publish"][..], rationale(RABBITMQ)));
+            rules.push((
+                GOOGLE_CLOUD_PUBSUB,
+                &["publish", "publishBatch"][..],
+                rationale(GOOGLE_CLOUD_PUBSUB),
+            ));
+            rules.push((REDIS_STREAMS, &["xadd"][..], rationale(REDIS_STREAMS)));
+        }
+        "rust" => {
+            rules.push((APACHE_KAFKA, &["send"][..], rationale(APACHE_KAFKA)));
+            rules.push((RABBITMQ, &["basic_publish"][..], rationale(RABBITMQ)));
+            rules.push((NATS, &["publish"][..], rationale(NATS)));
+            rules.push((REDIS_STREAMS, &["xadd"][..], rationale(REDIS_STREAMS)));
+        }
+        _ => {}
+    }
     rules
 }
 
@@ -206,6 +537,14 @@ fn db_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
         suggested_kind: Some(SourceObservationKind::DbWrite),
+        rationale,
+    }
+}
+
+fn message_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
+    FrameworkRule {
+        framework,
+        suggested_kind: Some(SourceObservationKind::MessagePublish),
         rationale,
     }
 }
@@ -271,6 +610,62 @@ fn source_evidence(
             source.contains("gorm.io/gorm")
                 || source.contains("*gorm.db")
                 || source.contains("gorm.g[")
+        }
+        AMAZON_SQS => {
+            source.contains("@aws-sdk/client-sqs")
+                || source.contains("software.amazon.awssdk.services.sqs")
+                || source.contains("amazon.sqs")
+                || source.contains("aws::sqs")
+                || source.contains("aws\\sqs")
+                || source.contains("awssdk.sqs")
+                || source.contains("service/sqs")
+                || source.contains("client(\"sqs\")")
+                || source.contains("client('sqs')")
+                || source.contains("resource(\"sqs\")")
+                || source.contains("resource('sqs')")
+                || resource_lower.contains("sqs")
+        }
+        APACHE_KAFKA => {
+            source.contains("kafka")
+                || source.contains("sarama")
+                || source.contains("rdkafka")
+                || source.contains("franz-go")
+                || resource_lower.contains("kafka")
+        }
+        RABBITMQ => {
+            source.contains("rabbitmq")
+                || source.contains("pika")
+                || source.contains("aio_pika")
+                || source.contains("amqplib")
+                || source.contains("amqp091")
+                || source.contains("phpamqplib")
+                || source.contains("lapin")
+        }
+        CELERY => {
+            source.contains("celery")
+                || source.contains("@shared_task")
+                || source.contains("@app.task")
+        }
+        GOOGLE_CLOUD_PUBSUB => {
+            source.contains("google.cloud.pubsub")
+                || source.contains("from google.cloud import pubsub")
+                || source.contains("google/cloud/pubsub")
+                || source.contains("google\\cloud\\pubsub")
+                || source.contains("google-cloud-pubsub")
+                || source.contains("@google-cloud/pubsub")
+                || source.contains("cloud.google.com/go/pubsub")
+                || resource_lower.contains("pubsub")
+        }
+        AZURE_SERVICE_BUS => {
+            source.contains("azure.messaging.servicebus")
+                || source.contains("@azure/service-bus")
+                || source.contains("azure.servicebus")
+                || source.contains("azservicebus")
+                || resource_lower.contains("servicebus")
+        }
+        NATS => source.contains("nats") || resource_lower.contains("jetstream"),
+        REDIS_STREAMS => {
+            source.contains("redis") || source.contains("jedis") || resource_lower.contains("redis")
         }
         _ => false,
     };
@@ -515,6 +910,76 @@ mod tests {
             );
             assert!(candidates[0].method_binding_required);
         }
+    }
+
+    #[test]
+    fn covers_the_eight_reviewed_messaging_families() {
+        let fixtures = [
+            (
+                "python",
+                "import boto3\nsqs = boto3.client('sqs')",
+                "send_message",
+                AMAZON_SQS,
+            ),
+            (
+                "java",
+                "import org.apache.kafka.clients.producer.KafkaProducer;",
+                "send",
+                APACHE_KAFKA,
+            ),
+            (
+                "typescript",
+                "import amqp from 'amqplib'",
+                "sendToQueue",
+                RABBITMQ,
+            ),
+            ("python", "from celery import shared_task", "delay", CELERY),
+            (
+                "ruby",
+                "require \"google/cloud/pubsub\"",
+                "publish_async",
+                GOOGLE_CLOUD_PUBSUB,
+            ),
+            (
+                "csharp",
+                "using Azure.Messaging.ServiceBus;",
+                "SendMessagesAsync",
+                AZURE_SERVICE_BUS,
+            ),
+            (
+                "go",
+                "import \"github.com/nats-io/nats.go\"",
+                "Publish",
+                NATS,
+            ),
+            (
+                "typescript",
+                "import { createClient } from 'redis'",
+                "xAdd",
+                REDIS_STREAMS,
+            ),
+        ];
+        let catalog = FrameworkCatalog::default();
+        for (language, source, method, framework) in fixtures {
+            let candidates =
+                catalog.candidates("src/service", language, source, &[observation(method)]);
+            assert_eq!(candidates.len(), 1, "{framework}");
+            assert_eq!(candidates[0].framework, framework);
+            assert_eq!(
+                candidates[0].suggested_kind,
+                Some(SourceObservationKind::MessagePublish)
+            );
+        }
+    }
+
+    #[test]
+    fn ambiguous_send_without_framework_evidence_is_not_suggested() {
+        let catalog = FrameworkCatalog::default();
+        assert!(
+            catalog
+                .candidates("src/service.ts", "typescript", "", &[observation("send")])
+                .is_empty()
+        );
     }
 
     #[test]
