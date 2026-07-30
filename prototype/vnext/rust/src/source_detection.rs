@@ -13,6 +13,7 @@ use crate::php_detection::observe_php;
 use crate::python_detection::observe_python;
 use crate::ruby_detection::observe_ruby;
 use crate::rust_detection::observe_rust;
+use crate::scala_detection::observe_scala;
 use crate::script_detection::{observe_javascript, observe_jsx, observe_tsx, observe_typescript};
 use crate::swift_detection::observe_swift;
 use std::path::Path;
@@ -41,9 +42,8 @@ pub fn classify_method(language: &str, method: &str) -> SourceObservationKind {
     // Binding Record.
     let (db_write, message_publish): (&[&str], &[&str]) = match language {
         "go" | "csharp" => (&["Insert", "Update", "Delete"], &["Publish", "SendMessage"]),
-        "java" | "kotlin" | "php" | "swift" | "javascript" | "jsx" | "typescript" | "tsx" => {
-            (&["insert", "update", "delete"], &["publish", "sendMessage"])
-        }
+        "java" | "kotlin" | "php" | "scala" | "swift" | "javascript" | "jsx" | "typescript"
+        | "tsx" => (&["insert", "update", "delete"], &["publish", "sendMessage"]),
         "python" | "ruby" | "rust" => (
             &["insert", "update", "delete"],
             &["publish", "send_message"],
@@ -207,7 +207,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "scala",
         extensions: &["scala", "sc"],
-        observe: None,
+        observe: Some(observe_scala),
     },
     LanguageDetector {
         language: "c",
@@ -260,7 +260,8 @@ mod tests {
         assert!(detector_for_language("php").unwrap().is_supported());
         assert!(detector_for_language("csharp").unwrap().is_supported());
         assert!(detector_for_language("swift").unwrap().is_supported());
-        assert!(!detector_for_language("scala").unwrap().is_supported());
+        assert!(detector_for_language("scala").unwrap().is_supported());
+        assert!(!detector_for_language("c").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
@@ -726,6 +727,39 @@ final class OrderService {
 "#,
             unparseable: "final class OrderService { func placeOrder( {",
             parse_error: "Swift source contains a syntax error",
+        },
+        Fixture {
+            language: "scala",
+            operation: r#"
+final class OrderService {
+  def placeOrder(order: Order): Unit = {
+    orders.insert(order)
+    orderEvents.publish(order)
+    repository.save(order)
+  }
+}
+"#,
+            symbol: "OrderService.placeOrder",
+            write_method: "insert",
+            publish_method: "publish",
+            unclassified_method: "save",
+            text_only: r#"
+final class OrderService {
+  def placeOrder(order: Order): String = {
+    // orders.insert(order)
+    "orderEvents.publish(order) repository.save(order)"
+  }
+}
+"#,
+            receiverless_call: r#"
+final class OrderService {
+  def placeOrder(order: Order): Unit = {
+    insert(order)
+  }
+}
+"#,
+            unparseable: "final class OrderService { def placeOrder( = {",
+            parse_error: "Scala source contains a syntax error",
         },
     ];
 

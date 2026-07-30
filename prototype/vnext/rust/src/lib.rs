@@ -34,6 +34,7 @@ pub mod remote_delivery;
 mod ruby_detection;
 pub mod rules;
 mod rust_detection;
+mod scala_detection;
 pub mod schema;
 mod script_detection;
 mod signal_catalog;
