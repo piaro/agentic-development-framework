@@ -17,6 +17,7 @@ pub mod distribution_trust;
 pub mod explain;
 pub mod filesystem_project;
 pub mod framework_lock;
+mod gdscript_detection;
 pub mod git_repository;
 mod go_detection;
 mod java_detection;

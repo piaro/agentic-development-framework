@@ -7,6 +7,7 @@
 
 use crate::c_detection::observe_c;
 use crate::csharp_detection::observe_csharp;
+use crate::gdscript_detection::observe_gdscript;
 use crate::go_detection::observe_go;
 use crate::java_detection::observe_java;
 use crate::kotlin_detection::observe_kotlin;
@@ -48,6 +49,10 @@ pub fn classify_method(language: &str, method: &str) -> SourceObservationKind {
         "c" | "python" | "ruby" | "rust" => (
             &["insert", "update", "delete"],
             &["publish", "send_message"],
+        ),
+        "gdscript" => (
+            &["insert", "update", "delete"],
+            &["publish", "send_message", "emit", "emit_signal"],
         ),
         _ => (&[], &[]),
     };
@@ -216,6 +221,11 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
         observe: Some(observe_c),
     },
     LanguageDetector {
+        language: "gdscript",
+        extensions: &["gd"],
+        observe: Some(observe_gdscript),
+    },
+    LanguageDetector {
         language: "cpp",
         extensions: &["cc", "cpp", "cxx", "hh", "hpp", "hxx"],
         observe: None,
@@ -263,6 +273,7 @@ mod tests {
         assert!(detector_for_language("swift").unwrap().is_supported());
         assert!(detector_for_language("scala").unwrap().is_supported());
         assert!(detector_for_language("c").unwrap().is_supported());
+        assert!(detector_for_language("gdscript").unwrap().is_supported());
         assert!(!detector_for_language("cpp").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
@@ -306,6 +317,14 @@ mod tests {
         assert_eq!(
             classify_method("go", "SendMessage"),
             SourceObservationKind::MessagePublish
+        );
+        assert_eq!(
+            classify_method("gdscript", "emit"),
+            SourceObservationKind::MessagePublish
+        );
+        assert_eq!(
+            classify_method("python", "emit"),
+            SourceObservationKind::OtherMethodCall
         );
     }
 }
@@ -789,6 +808,36 @@ void place_order(Order *order) {
 "#,
             unparseable: "void place_order( {",
             parse_error: "C source contains a syntax error",
+        },
+        Fixture {
+            language: "gdscript",
+            operation: r#"
+class_name OrderService
+extends Node
+
+func place_order(order: Order) -> void:
+    orders.insert(order)
+    orderEvents.emit(order)
+    repository.save(order)
+"#,
+            symbol: "OrderService.place_order",
+            write_method: "insert",
+            publish_method: "emit",
+            unclassified_method: "save",
+            text_only: r#"
+class_name OrderService
+extends Node
+
+func place_order(order: Order) -> String:
+    # orders.insert(order)
+    return "orderEvents.emit(order) repository.save(order)"
+"#,
+            receiverless_call: r#"
+func place_order(order):
+    insert(order)
+"#,
+            unparseable: "func place_order(:\n",
+            parse_error: "GDScript source contains a syntax error",
         },
     ];
 

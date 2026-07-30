@@ -21,7 +21,7 @@ Project Snapshot
 - 複数Ruleが選ぶ同じRequirement Instanceの重複排除
 - Signal候補を人またはAnalystが確認してからのRule適用
 - Detector coverage未報告・未完了時の`blocked-detection`
-- RustのPython・Java・Kotlin・Go・Rust・Ruby・PHP・C#・Swift・Scala・C・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
+- RustのPython・Java・Kotlin・Go・Rust・Ruby・PHP・C#・Swift・Scala・C・GDScript・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
 - Git管理された解析rootの宣言漏れ、parse失敗、binding未解決、未対応観測のfail-closed化
 - 未知のrepository fact kindの拒否
 - 組込みSignal Catalogによる未知Signal・不正binding参照のRule compile拒否
@@ -385,6 +385,7 @@ sources:
 | `rust/src/swift_detection.rs` | Swift構文からfunction・initializer・navigation call・物理resourceを観測 |
 | `rust/src/scala_detection.rs` | Scala 2/3構文からfunction・extension・通常/infix/postfix call・物理resourceを観測 |
 | `rust/src/c_detection.rs` | C構文からfunction・free function call・struct function pointer call・物理resourceを観測 |
+| `rust/src/gdscript_detection.rs` | Godot GDScript構文からscript class・inner class・function・property accessor・lambda・attribute call・Signal発火・物理resourceを観測 |
 | `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
 | `rust/src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
@@ -406,11 +407,12 @@ sources:
 
 - InMemory Adapterはテスト用です。Filesystem StoreではChange、Contract、Decision、Result、Evidenceを保存しますが、発行済みAction自体は保存せず、正本から再生成します。
 - 実Projectの通常経路では、Observation Schema v4に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。
-- 現在の言語DetectorはPython、Java、Kotlin、Go、Rust、Ruby、PHP、C#、Swift、Scala、C、JavaScript、JSX、TypeScript、TSXに対応します。C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
+- 現在の言語DetectorはPython、Java、Kotlin、Go、Rust、Ruby、PHP、C#、Swift、Scala、C、GDScript、JavaScript、JSX、TypeScript、TSXに対応します。C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
 - `.js`・`.mjs`・`.cjs`もJSXを受理します。source拡張子はASCIIの大文字小文字を区別せず、Git inventoryでも同じ規則を使います。
 - receiverは構文tokenを連結した1行の物理IDへ正規化します。たとえば複数行の`client .table("orders")`は`client.table("orders")`になります。同じ行に同一呼出しが複数あっても観測を重複除去しません。
-- 組込み分類は言語ごとの自然な綴りだけを対象とします。C・Python・Ruby・Rustは`send_message`、Java・Kotlin・PHP・Swift・Scala・JavaScript・TypeScript系は`sendMessage`、Go・C#は`SendMessage`です。DB書込みもGo・C#は`Insert`・`Update`・`Delete`、その他は小文字で始まる綴りです。`send`・`save`・`Save`など曖昧またはframework固有の名前は、`resource.method`ごとに`kind`、owner、承認DecisionをBindingします。
+- 組込み分類は言語ごとの自然な綴りだけを対象とします。C・GDScript・Python・Ruby・Rustは`send_message`、Java・Kotlin・PHP・Swift・Scala・JavaScript・TypeScript系は`sendMessage`、Go・C#は`SendMessage`です。GDScriptではGodot 4の`Signal.emit`と明示receiver付き`Object.emit_signal`もmessage publishです。DB書込みはGo・C#が`Insert`・`Update`・`Delete`、その他が小文字で始まる綴りです。`send`・`save`・`Save`など曖昧またはframework固有の名前は、`resource.method`ごとに`kind`、owner、承認DecisionをBindingします。
 - Cのfree function callは第1引数を物理resource、関数名をmethodとして観測し、先頭のaddress-of `&`はresource名から除きます。`client->publish(...)`のようなstruct function pointer callはstruct式をresource、field名をmethodにします。引数のないcallはresource identityを持たないため観測しません。未Binding resource上の未分類callは候補から除外し、Binding済みresourceに対する`sqlite3_exec`や`PQexec`等は明示的なmethod Bindingがなければ停止します。
+- GDScriptは`.gd`を対象とし、`class_name`とinner classをsymbolへ反映します。function、propertyの`set`・`get`、変数へ代入したlambdaに安定したsymbolを付け、`$Node`・`%UniqueNode`・`super`・chain receiverを物理resourceとして扱います。`signal_name.emit(...)`はsignal名をresourceとして観測します。receiverを省略した`emit_signal(...)`を含むbare callはresource identityを持たないため観測しません。
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。

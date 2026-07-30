@@ -215,6 +215,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "void publish_order(Order *order) { publish(events, order); }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/PublishOrder.gd"),
+        "class_name GdOrderService\nextends Node\nfunc publish_order(order):\n    events.emit(order)\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -329,6 +334,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(c["detector_status"], "supported");
     assert_eq!(c["symbols"][0], "publish_order");
     assert_eq!(c["resources"][0], "events");
+    let gdscript = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/PublishOrder.gd")
+        .unwrap();
+    assert_eq!(gdscript["language"], "gdscript");
+    assert_eq!(gdscript["detector_status"], "supported");
+    assert_eq!(gdscript["symbols"][0], "GdOrderService.publish_order");
+    assert_eq!(gdscript["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -912,6 +925,27 @@ fn c_artifact_runs_through_the_real_project_loader() {
         "c",
         "void place_order(Order *order) {\n    memcpy(buffer, order, sizeof(*order));\n    insert(orders, order);\n}\n",
         "place_order",
+    );
+}
+
+#[test]
+fn gdscript_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/place_order.gd",
+        "gdscript",
+        "extends Node\nfunc place_order(order):\n    orders.insert(order)\n",
+        "place_order",
+    );
+}
+
+#[test]
+fn gdscript_framework_method_binding_runs_through_the_real_project_loader() {
+    assert_language_artifact_with_optional_method_binding(
+        "src/place_order.gd",
+        "gdscript",
+        "extends Node\nfunc place_order(order):\n    orders.save(order)\n",
+        "place_order",
+        Some("orders.save"),
     );
 }
 
