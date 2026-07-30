@@ -9,6 +9,7 @@ pub mod cli_output;
 pub mod context;
 pub mod contract_health;
 mod contract_scope;
+mod csharp_detection;
 pub mod delivery;
 pub mod detection;
 pub mod distribution_trust;
