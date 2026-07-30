@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/outputs/v1/binding-validation-report",
+  "type": "object",
+  "required": ["schema_version", "status", "summary", "issues"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "status": {
+      "type": "string",
+      "enum": ["valid", "invalid", "blocked"]
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "artifacts",
+        "observations",
+        "facts",
+        "binding_issues",
+        "coverage_issues"
+      ],
+      "properties": {
+        "artifacts": {"type": "integer", "minimum": 0},
+        "observations": {"type": "integer", "minimum": 0},
+        "facts": {"type": "integer", "minimum": 0},
+        "binding_issues": {"type": "integer", "minimum": 0},
+        "coverage_issues": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "kind", "reason"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": ["binding", "coverage"]
+          },
+          "kind": {"type": "string", "minLength": 1},
+          "artifact_ref": {"type": "string", "minLength": 1},
+          "reason": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

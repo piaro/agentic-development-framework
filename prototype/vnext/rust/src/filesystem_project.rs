@@ -264,6 +264,16 @@ impl<'a> FileProjectStore<'a> {
             .map_err(|error| file_error(error.to_string()))
     }
 
+    pub fn decisions(&self) -> Result<Vec<Value>, FileProjectError> {
+        let decisions = self.load_document_records(&self.decision_root, "decision")?;
+        for decision in &decisions {
+            self.schema_registry
+                .validate("decision", decision)
+                .map_err(|error| file_error(error.to_string()))?;
+        }
+        Ok(decisions)
+    }
+
     pub fn record_paths(&self, change_id: &str) -> Result<Vec<PathBuf>, FileProjectError> {
         let change_id = safe_id(change_id)?;
         let change_directory = self.change_root.join(change_id);

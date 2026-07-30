@@ -2810,15 +2810,22 @@ agentic next <change-id>
 
 agentic explain <change-id>
   [同じoption]
+
+agentic project validate-bindings
+  [--project <root>]
+  [--format text|json]
+  [--require-clean]
 ```
 
 `next`と`explain`は別々のProject読込み処理を持たず、同じ`LoadedProject`からFilesystem StoreとApplicationを構築する。したがってCLIごとにRule適用、Repository観測、Contract選択がずれる経路を作らない。
+
+`project validate-bindings`も同じGit観測とBinding適用処理を再利用し、通常評価の前にRepository全体のBinding状態だけを検査する。Binding不足、短縮symbolの曖昧性、不正な論理ID、framework固有methodの未分類、acceptedでないDecision authorityは`invalid`とする。未対応言語、parse失敗、languageとpathの不一致はBinding違反と混同せず`blocked`とする。JSON reportは`binding`と`coverage`のcategoryを分け、`valid`以外では終了codeを非0にする。このcommandは意味的な値を補完しない。
 
 既定のtext出力は、人が次の操作を判断するためのState、Role、Action、理由、Action ID、Result Schema、Context digest、source IDだけを表示する。JSON出力では、`next-response.schema.json`または`explain-report.schema.json`に従う。Next Responseは内部Kernel structをそのまま公開せず、ActionとRequirement Instance ID、Generated Contextへ投影する。これにより内部field追加を不用意なCLI互換性変更にしない。
 
 ローカル実行では、Git管理済みartifactの未commit変更も現在のbytesからdigestへ反映する。これにより実装途中のコードを評価できる。`--require-clean`を指定した場合はtracked・untrackedを含む変更が一つでもあれば停止し、CIとclean clone検証に使用できる。さらにconfig、Framework lock、Change、Contract、Decision、Result、EvidenceがGit indexへ登録されていることを個別に検査するため、`.gitignore`に隠れた未追跡Recordもclean評価へ混入できない。どちらのmodeでもobservation manifestとコードartifactはGit管理対象でなければ受理しない。
 
-CLI integration testは、一つの実Git Repositoryをfixtureから作成し、`next`と`explain`が同じStateとAction IDを返すこと、両JSONが出力Schemaを満たすこと、text表示、dirty artifactの再評価、`--require-clean`による拒否を検証する。
+CLI integration testは、一つの実Git Repositoryをfixtureから作成し、`next`と`explain`が同じStateとAction IDを返すこと、両JSONが出力Schemaを満たすこと、text表示、dirty artifactの再評価、`--require-clean`による拒否を検証する。Binding検証についても、正常系、不足、同名symbolの曖昧性、未承認authority、parse失敗を固定report Schemaと終了codeで検証する。
 
 `VerifiedRelease` resolverは、Framework lockの`framework_release`から`.agentic/cache/releases/<release-id>/`を選び、`release.yaml`を読む。manifestが指定できるのはRelease内相対pathだけであり、絶対path、`..`、symlinkによるRelease外参照を拒否する。署名済みv2では、manifestのEd25519署名、取得元ID、署名鍵ID、署名対象部分のdigest、列挙された全fileの生bytes SHA-256を先に検証する。続いてRule sourceのcanonical digest、Schema bundle version・digestがFramework lockと一致した場合だけApplicationへ渡す。ApplicationはRule Index digestとprotocol全体をFramework lockで検証する。
 

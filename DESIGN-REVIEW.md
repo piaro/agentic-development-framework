@@ -141,6 +141,8 @@ Detector追加後の実project検証で、JSX入り`.js`、複数行receiver、�
 
 Repository Observation Draft v3では、候補から正規Binding Recordのartifact構造へ手作業でキーを転記する負担を減らすため、`binding_artifacts`を追加した。物理ref、path、language、観測対象のsymbol・resource、明示Bindingが必要なmethod keyだけを機械的に配置する。意味判断になるkind、論理ID、owner、承認Decisionはすべて`null`とする。CLIはfileを書き換えず、未記入templateは正規loaderが拒否するため、候補生成と確定権限の境界は変わらない。推奨kindは根拠とreview必須表示を持つ`framework_candidates`にだけ残す。
 
+転記後の確認用に`project validate-bindings`を追加した。通常のProject評価と同じGit観測・Binding適用処理を使い、Binding不足、同名symbolの曖昧性、不正な論理ID、未分類method、宣言済みBindingが参照する未承認Decisionを`invalid`として返す。一方、未対応言語、parse失敗、languageとpathの不一致は「違反」ではなく完全な検査ができない`blocked`として分ける。JSON reportと非0終了codeをCIでも再利用できるが、CLIがkind、論理ID、owner、authorityを推測・補完することはない。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。
@@ -436,7 +438,7 @@ CIと別セッションから参照できるという要件は、通常のブラ
 根本設計の層を先に置く。
 
 1. （保存時制御までRust版で対応済み）変更が2件あるfixtureと、`change_id`を持たないShared Contractを用意し、変更Aが確定した規範を変更Bが再利用できることを検証する。別条項の並行更新は機械的に併合し、同じ条項はstaleとして拒否する。残るのはactive Changeの事前競合索引と、拒否後にHuman Authorityへ戻すActionである。2.1
-2. （Rust版の最初の縦断実装まで対応済み）コードからの物理観測と、symbol・resource単位のBinding Recordを分離する。Bindingにはownerと承認Decisionを持たせ、source、Binding、Decisionの変更を検出根拠の鮮度へ反映する。対応言語・frameworkを増やす際はcoverageをfail-closedのまま拡張する。2.2
+2. （Rust版で対応済み）コードからの物理観測と、symbol・resource単位のBinding Recordを分離する。Bindingにはownerと承認Decisionを持たせ、source、Binding、Decisionの変更を検出根拠の鮮度へ反映する。`project validate-bindings`はBinding違反を`invalid`、未対応言語・parse失敗等による検査不能を`blocked`として分け、通常評価前とCIの両方で確認できる。対応言語・frameworkを増やす際はcoverageをfail-closedのまま拡張する。2.2
 3. （Rust版で対応済み）signalの`not-applicable`判定を候補ごとにChallengerへ確認させ、支持されなければ`confirmed`へ戻す。旧`excluded`値は廃止する。実在するsignalに対するRequirement省略は未実装のままfail closedとし、将来追加する場合も決定権限・適用範囲・期限を持つDecision経路として分離する。2.4
 4. （Rust版で対応済み）各Requirementを「証拠で裏付けられる」と「形式しか検査できない」に分類する。標準Ruleでは実装検証の2件だけを`evidence-backed`とし、分析・設計・Challengeは`attestation`として保証範囲を明示する。CI／runner由来の保証は署名付きEvidenceを導入するまで対象外とする。2.3
 5. 候補の同一性を、論理IDと根拠の版に分ける。実装後の差し戻し先を実装前の工程から実装後のChallengerへ変える。あわせて、実装でコードのhashが変わる場合をgolden fixtureとテストへ追加する。3.1
@@ -450,4 +452,4 @@ CIと別セッションから参照できるという要件は、通常のブラ
 
 - 現行Kitに実際の導入先があるか。無い、または管理下だけであれば、7.1 の互換層と段階移行は不要になり、相応の工数が浮く
 - 現行のLevelとR0からR3の分類を新方式でどう扱うか。7.1 に記述がない
-- 並行する変更どうしが同じ条項に触れる場合の意味論。片方を止めるのか、両方に再確認を要求するのか、Contractの正本をどう直列化するのか。2.1 の実装に先立って決める必要がある
+- 同じ条項の並行更新は保存時にstaleとして拒否する。残る前提は、拒否後に両方へ再確認を要求するか、どのHuman Authorityへ戻すかである

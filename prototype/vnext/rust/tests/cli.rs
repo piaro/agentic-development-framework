@@ -742,6 +742,168 @@ fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
 }
 
 #[test]
+fn project_validate_bindings_reports_a_valid_reviewed_repository() {
+    let project = TestProject::new();
+
+    let output = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&report, "binding-validation-report.schema.json");
+    assert_eq!(report["status"], "valid");
+    assert_eq!(report["summary"]["binding_issues"], 0);
+    assert_eq!(report["summary"]["coverage_issues"], 0);
+
+    let text = project.run(&["project", "validate-bindings"]);
+    assert_success(&text);
+    assert!(String::from_utf8_lossy(&text.stdout).contains("Binding validation: valid"));
+
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n    orders.insert(order)\n# dirty\n",
+    )
+    .unwrap();
+    let clean = project.run(&[
+        "project",
+        "validate-bindings",
+        "--format",
+        "json",
+        "--require-clean",
+    ]);
+    assert!(!clean.status.success());
+    assert!(String::from_utf8_lossy(&clean.stderr).contains("working tree is not clean"));
+}
+
+#[test]
+fn project_validate_bindings_reports_missing_and_ambiguous_bindings() {
+    let project = TestProject::new();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["resources"] = json!({});
+    write_yaml(&observation_path, &observation);
+
+    let missing = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert!(!missing.status.success());
+    let report: Value = serde_json::from_slice(&missing.stdout).unwrap();
+    validate_output_schema(&report, "binding-validation-report.schema.json");
+    assert_eq!(report["status"], "invalid");
+    assert!(report["issues"].as_array().unwrap().iter().any(|issue| {
+        issue["kind"] == "unmapped-observation"
+            && issue["artifact_ref"] == "code.place-order-handler"
+    }));
+
+    fs::write(
+        project.root.join("src/duplicate_service.java"),
+        "class A { void save() { orders.insert(null); } }\n\
+         class B { void save() { orders.insert(null); } }\n",
+    )
+    .unwrap();
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.duplicate-service-java",
+            "path": "src/duplicate_service.java",
+            "language": "java",
+            "bindings": {
+                "symbols": {
+                    "save": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "resources": {
+                    "orders": {
+                        "logical_ref": "data.orders",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "add invalid bindings"],
+    );
+
+    let ambiguous = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert!(!ambiguous.status.success());
+    let report: Value = serde_json::from_slice(&ambiguous.stdout).unwrap();
+    assert!(report["issues"].as_array().unwrap().iter().any(|issue| {
+        issue["kind"] == "ambiguous-symbol-binding"
+            && issue["artifact_ref"] == "code.duplicate-service-java"
+    }));
+}
+
+#[test]
+fn project_validate_bindings_reports_unaccepted_authority_and_coverage_blocks() {
+    let project = TestProject::new();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["methods"]["unused.save"] = json!({
+        "kind": "db_write",
+        "owner": "team.ordering",
+        "authority_ref": "decision.unused-binding",
+    });
+    write_yaml(&observation_path, &observation);
+    let unused = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert!(!unused.status.success());
+    let report: Value = serde_json::from_slice(&unused.stdout).unwrap();
+    assert!(report["issues"].as_array().unwrap().iter().any(|issue| {
+        issue["kind"] == "unaccepted-binding-authority"
+            && issue["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("decision.unused-binding"))
+    }));
+    observation["artifacts"][0]["bindings"]["methods"]
+        .as_object_mut()
+        .unwrap()
+        .remove("unused.save");
+    write_yaml(&observation_path, &observation);
+
+    let decision_path = project
+        .root
+        .join("decisions/decision.repository-bindings.yaml");
+    let mut decision = read_yaml(&decision_path);
+    decision["status"] = json!("proposed");
+    write_yaml(&decision_path, &decision);
+
+    let unaccepted = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert!(!unaccepted.status.success());
+    let report: Value = serde_json::from_slice(&unaccepted.stdout).unwrap();
+    assert_eq!(report["status"], "invalid");
+    assert!(report["issues"].as_array().unwrap().iter().any(|issue| {
+        issue["kind"] == "unaccepted-binding-authority"
+            && issue["reason"]
+                .as_str()
+                .is_some_and(|reason| reason.contains("decision.repository-bindings"))
+    }));
+
+    decision["status"] = json!("accepted");
+    write_yaml(&decision_path, &decision);
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(:\n",
+    )
+    .unwrap();
+    let blocked = project.run(&["project", "validate-bindings", "--format", "json"]);
+    assert!(!blocked.status.success());
+    let report: Value = serde_json::from_slice(&blocked.stdout).unwrap();
+    assert_eq!(report["status"], "blocked");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| { issue["category"] == "coverage" && issue["kind"] == "parse-error" })
+    );
+}
+
+#[test]
 fn typescript_artifact_runs_through_the_real_project_loader() {
     assert_language_artifact_runs_through_real_loader(
         "src/place_order.ts",

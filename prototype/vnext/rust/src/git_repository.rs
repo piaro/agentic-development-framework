@@ -256,6 +256,35 @@ impl GitRepositoryAdapter {
         }))
     }
 
+    pub fn binding_authority_refs(&self) -> Result<Vec<String>, GitRepositoryError> {
+        let manifest = self.read_manifest()?;
+        let mut authority_refs = BTreeSet::new();
+        for declaration in required_array(&manifest, "artifacts", "repository observation")? {
+            let declaration = declaration
+                .as_object()
+                .ok_or_else(|| git_error("artifact declaration must be a mapping"))?;
+            let bindings = artifact_bindings(
+                declaration
+                    .get("bindings")
+                    .ok_or_else(|| git_error("artifact declaration bindings is missing"))?,
+            )?;
+            authority_refs.extend(
+                bindings
+                    .symbols
+                    .values()
+                    .chain(bindings.resources.values())
+                    .map(|binding| binding.authority_ref.clone()),
+            );
+            authority_refs.extend(
+                bindings
+                    .methods
+                    .values()
+                    .map(|binding| binding.authority_ref.clone()),
+            );
+        }
+        Ok(authority_refs.into_iter().collect())
+    }
+
     /// Require authoritative project files to be present in the Git index.
     pub fn assert_tracked_paths(&self, paths: &[PathBuf]) -> Result<(), GitRepositoryError> {
         for path in paths {

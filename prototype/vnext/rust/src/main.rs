@@ -115,9 +115,13 @@ fn main() -> ExitCode {
             }
         };
         return match run_project_management_command(&options) {
-            Ok(output) => {
-                print!("{output}");
-                ExitCode::SUCCESS
+            Ok(response) => {
+                print!("{}", response.output);
+                if response.success {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
             }
             Err(error) => {
                 eprintln!("{error}");
@@ -854,6 +858,10 @@ enum ProjectManagementOperation {
         analysis_roots: Vec<String>,
         format: ProjectDraftFormat,
     },
+    ValidateBindings {
+        format: ProjectDraftFormat,
+        require_clean: bool,
+    },
 }
 
 struct ProjectManagementCommand {
@@ -861,8 +869,14 @@ struct ProjectManagementCommand {
     operation: ProjectManagementOperation,
 }
 
+struct ProjectManagementResponse {
+    output: String,
+    success: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ProjectDraftFormat {
+    Text,
     Yaml,
     Json,
 }
@@ -885,6 +899,7 @@ fn parse_project_management_command(
     let mut analysis_roots = Vec::new();
     let mut format = ProjectDraftFormat::Yaml;
     let mut format_provided = false;
+    let mut require_clean = false;
     let mut index = 1;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -905,10 +920,14 @@ fn parse_project_management_command(
             "--format" => {
                 format_provided = true;
                 format = match flag_value(arguments, &mut index, "--format")? {
+                    "text" => ProjectDraftFormat::Text,
                     "yaml" => ProjectDraftFormat::Yaml,
                     "json" => ProjectDraftFormat::Json,
                     other => return Err(format!("unsupported project output format: {other}")),
                 };
+            }
+            "--require-clean" => {
+                require_clean = true;
             }
             other => return Err(format!("unknown project argument: {other}")),
         }
@@ -919,6 +938,9 @@ fn parse_project_management_command(
             if format_provided {
                 return Err("project init does not accept --format".to_owned());
             }
+            if require_clean {
+                return Err("project init does not accept --require-clean".to_owned());
+            }
             ProjectManagementOperation::Init {
                 candidate_root,
                 analysis_roots,
@@ -928,9 +950,35 @@ fn parse_project_management_command(
             if candidate_root.is_some() {
                 return Err("project observe does not accept --candidate-dir".to_owned());
             }
+            if require_clean {
+                return Err("project observe does not accept --require-clean".to_owned());
+            }
+            if format == ProjectDraftFormat::Text {
+                return Err("project observe supports only yaml or json output".to_owned());
+            }
             ProjectManagementOperation::Observe {
                 analysis_roots,
                 format,
+            }
+        }
+        "validate-bindings" => {
+            if candidate_root.is_some() {
+                return Err("project validate-bindings does not accept --candidate-dir".to_owned());
+            }
+            if !analysis_roots.is_empty() {
+                return Err("project validate-bindings does not accept --analysis-root".to_owned());
+            }
+            if !format_provided {
+                format = ProjectDraftFormat::Text;
+            }
+            if format == ProjectDraftFormat::Yaml {
+                return Err(
+                    "project validate-bindings supports only text or json output".to_owned(),
+                );
+            }
+            ProjectManagementOperation::ValidateBindings {
+                format,
+                require_clean,
             }
         }
         other => return Err(format!("unsupported project operation: {other}")),
@@ -941,7 +989,9 @@ fn parse_project_management_command(
     })
 }
 
-fn run_project_management_command(options: &ProjectManagementCommand) -> Result<String, String> {
+fn run_project_management_command(
+    options: &ProjectManagementCommand,
+) -> Result<ProjectManagementResponse, String> {
     match &options.operation {
         ProjectManagementOperation::Init {
             candidate_root,
@@ -969,13 +1019,17 @@ fn run_project_management_command(options: &ProjectManagementCommand) -> Result<
                 })
                 .collect::<Vec<_>>()
                 .join(", ");
-            Ok(format!(
-                "Project initialized with Framework Release {}.\nCreated: {}\nNext: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --project {} and complete the reviewed bindings and accepted Decisions.\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
-                receipt.release_id,
-                files,
-                receipt.project_root.display(),
-                receipt.project_root.display()
-            ))
+            Ok(ProjectManagementResponse {
+                output: format!(
+                    "Project initialized with Framework Release {}.\nCreated: {}\nNext: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --project {} and complete the reviewed bindings and accepted Decisions.\nNext: agentic project validate-bindings --project {}\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
+                    receipt.release_id,
+                    files,
+                    receipt.project_root.display(),
+                    receipt.project_root.display(),
+                    receipt.project_root.display()
+                ),
+                success: true,
+            })
         }
         ProjectManagementOperation::Observe {
             analysis_roots,
@@ -983,14 +1037,43 @@ fn run_project_management_command(options: &ProjectManagementCommand) -> Result<
         } => {
             let value = observation_draft(&options.project_root, analysis_roots)
                 .map_err(|error| error.to_string())?;
-            match format {
+            let output = match format {
                 ProjectDraftFormat::Yaml => {
                     serde_yaml::to_string(&value).map_err(|error| error.to_string())
                 }
                 ProjectDraftFormat::Json => serde_json::to_string_pretty(&value)
                     .map(|value| value + "\n")
                     .map_err(|error| error.to_string()),
-            }
+                ProjectDraftFormat::Text => unreachable!("observe rejects text output"),
+            }?;
+            Ok(ProjectManagementResponse {
+                output,
+                success: true,
+            })
+        }
+        ProjectManagementOperation::ValidateBindings {
+            format,
+            require_clean,
+        } => {
+            ensure_project_initialized(&options.project_root)?;
+            let project = LoadedProject::load(&options.project_root, None, *require_clean)
+                .map_err(|error| error.to_string())?;
+            let report = project
+                .binding_validation_report()
+                .map_err(|error| error.to_string())?;
+            let output = match format {
+                ProjectDraftFormat::Text => report.render_text(),
+                ProjectDraftFormat::Json => serde_json::to_string_pretty(&report.as_value())
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string())?,
+                ProjectDraftFormat::Yaml => {
+                    unreachable!("validate-bindings rejects yaml output")
+                }
+            };
+            Ok(ProjectManagementResponse {
+                output,
+                success: report.is_valid(),
+            })
         }
     }
 }
@@ -1273,6 +1356,7 @@ fn usage_text() -> &'static str {
 usage:\n\
   agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
   agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>]\n\
+  agentic project validate-bindings [--project <root>] [--format <text|json>] [--require-clean]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
@@ -1338,7 +1422,7 @@ fn repository_usage(command: &str) {
 
 fn project_management_usage() {
     eprintln!(
-        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>]"
+        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>]\n  agentic project validate-bindings [--project <root>] [--format <text|json>] [--require-clean]"
     );
 }
 

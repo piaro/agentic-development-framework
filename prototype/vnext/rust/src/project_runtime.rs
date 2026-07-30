@@ -1,6 +1,7 @@
 //! Load one real project and connect its configured sources to the Application.
 
 use crate::application::{Application, ApplicationError};
+use crate::binding_validation::BindingValidationReport;
 use crate::delivery::{TRUST_STORE_PATH, resolve_verified_release};
 use crate::filesystem_project::{DocumentFormat, FileProjectStore};
 use crate::git_repository::GitRepositoryAdapter;
@@ -60,6 +61,32 @@ impl LoadedProject {
 
     pub fn release_root(&self) -> &Path {
         &self.release_root
+    }
+
+    pub fn binding_validation_report(
+        &self,
+    ) -> Result<BindingValidationReport, ProjectRuntimeError> {
+        let store = FileProjectStore::open_with_options(
+            &self.root,
+            self.repository.clone(),
+            &self.config.contract_root,
+            &self.config.decision_root,
+            DocumentFormat::Auto,
+            &self.schema_registry,
+        )
+        .map_err(|error| runtime_error(error.to_string()))?;
+        let decisions = store
+            .decisions()
+            .map_err(|error| runtime_error(error.to_string()))?;
+        let binding_authority_refs =
+            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
+                .and_then(|adapter| adapter.binding_authority_refs())
+                .map_err(|error| runtime_error(error.to_string()))?;
+        Ok(BindingValidationReport::build(
+            &self.repository,
+            &decisions,
+            &binding_authority_refs,
+        ))
     }
 
     pub fn application(&self) -> Result<Application<'_, FileProjectStore<'_>>, ApplicationError> {

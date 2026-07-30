@@ -147,6 +147,16 @@ agentic project observe \
 
 Draft v3の`binding_artifacts`は、`.agentic/repository-observation.yaml`の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`kind`、`logical_ref`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
+転記・review後は、通常評価の前にBindingだけを検査できます。`invalid`は不足・曖昧・不正なBindingまたは未承認authority、`blocked`は未対応言語や構文エラーなど、完全なBinding検査を妨げるcoverage gapです。どちらも終了codeは非0です。`--require-clean`はCIで使用します。
+
+```sh
+agentic project validate-bindings \
+  --project /path/to/project \
+  --format json
+```
+
+JSON出力は`schemas/outputs/v1/binding-validation-report.schema.json`に従い、issueごとに`category: binding|coverage`、安定した`kind`、artifact ref、理由を返します。このcommandは論理ID、owner、kind、authorityを補完せず、既存の観測・Binding・Decisionだけを検証します。
+
 ```yaml
 schema_version: "3"
 kind: repository-observation-draft
@@ -426,6 +436,7 @@ sources:
 | `rust/src/gdscript_detection.rs` | Godot GDScript構文からscript class・inner class・function・property accessor・lambda・attribute call・Signal発火・物理resourceを観測 |
 | `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
 | `rust/src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
+| `rust/src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
 | `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
@@ -433,7 +444,7 @@ sources:
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
-| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response v1とExplain Report v1 |
+| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |

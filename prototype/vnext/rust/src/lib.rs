@@ -5,6 +5,7 @@
 
 pub mod application;
 pub mod binary_install;
+pub mod binding_validation;
 mod c_detection;
 pub mod cli_output;
 pub mod context;
