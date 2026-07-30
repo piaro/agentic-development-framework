@@ -175,6 +175,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "package service\nfunc PublishOrder(order Order) { events.Publish(order) }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/publish.rs"),
+        "fn publish_order(order: Order) { events.publish(order); }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -225,6 +230,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(go["detector_status"], "supported");
     assert_eq!(go["symbols"][0], "PublishOrder");
     assert_eq!(go["resources"][0], "events");
+    let rust = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/publish.rs")
+        .unwrap();
+    assert_eq!(rust["language"], "rust");
+    assert_eq!(rust["detector_status"], "supported");
+    assert_eq!(rust["symbols"][0], "publish_order");
+    assert_eq!(rust["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -629,8 +642,8 @@ fn java_artifact_runs_through_the_real_project_loader() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/order_service.rs"),
-        "fn place_order() {}\n",
+        project.root.join("src/OrderService.kt"),
+        "class OrderService\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -639,9 +652,9 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service-rust",
-            "path": "src/order_service.rs",
-            "language": "rust",
+            "ref": "code.order-service-kotlin",
+            "path": "src/OrderService.kt",
+            "language": "kotlin",
             "bindings": {
                 "symbols": {},
                 "resources": {},
@@ -652,7 +665,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare rust source"],
+        &["commit", "--quiet", "-m", "declare kotlin source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -707,6 +720,55 @@ fn go_artifact_runs_through_the_real_project_loader() {
     run_git(
         &project.root,
         &["commit", "--quiet", "-m", "declare go source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn rust_artifact_runs_through_the_real_project_loader() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/order_service.rs"),
+        "fn place_order(order: Order) {\n    orders.insert(order);\n}\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.order-service-rust",
+            "path": "src/order_service.rs",
+            "language": "rust",
+            "bindings": {
+                "symbols": {
+                    "place_order": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "resources": {
+                    "orders": {
+                        "logical_ref": "data.orders",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "declare rust source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);

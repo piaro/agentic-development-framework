@@ -8,6 +8,7 @@
 use crate::go_detection::observe_go;
 use crate::java_detection::observe_java;
 use crate::python_detection::observe_python;
+use crate::rust_detection::observe_rust;
 use crate::script_detection::{observe_javascript, observe_jsx, observe_tsx, observe_typescript};
 use std::path::Path;
 
@@ -104,7 +105,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "rust",
         extensions: &["rs"],
-        observe: None,
+        observe: Some(observe_rust),
     },
     LanguageDetector {
         language: "ruby",
@@ -173,7 +174,8 @@ mod tests {
         assert!(detector_for_language("typescript").unwrap().is_supported());
         assert!(detector_for_language("java").unwrap().is_supported());
         assert!(detector_for_language("go").unwrap().is_supported());
-        assert!(!detector_for_language("rust").unwrap().is_supported());
+        assert!(detector_for_language("rust").unwrap().is_supported());
+        assert!(!detector_for_language("kotlin").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
