@@ -29,6 +29,7 @@ pub mod project_setup;
 mod python_detection;
 pub mod release_publisher;
 pub mod remote_delivery;
+mod ruby_detection;
 pub mod rules;
 mod rust_detection;
 pub mod schema;
