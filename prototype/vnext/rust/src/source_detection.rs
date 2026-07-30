@@ -5,6 +5,7 @@
 //! project inventory can report unsupported source instead of silently
 //! excluding it.
 
+use crate::c_detection::observe_c;
 use crate::csharp_detection::observe_csharp;
 use crate::go_detection::observe_go;
 use crate::java_detection::observe_java;
@@ -44,7 +45,7 @@ pub fn classify_method(language: &str, method: &str) -> SourceObservationKind {
         "go" | "csharp" => (&["Insert", "Update", "Delete"], &["Publish", "SendMessage"]),
         "java" | "kotlin" | "php" | "scala" | "swift" | "javascript" | "jsx" | "typescript"
         | "tsx" => (&["insert", "update", "delete"], &["publish", "sendMessage"]),
-        "python" | "ruby" | "rust" => (
+        "c" | "python" | "ruby" | "rust" => (
             &["insert", "update", "delete"],
             &["publish", "send_message"],
         ),
@@ -212,7 +213,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "c",
         extensions: &["c", "h"],
-        observe: None,
+        observe: Some(observe_c),
     },
     LanguageDetector {
         language: "cpp",
@@ -261,7 +262,8 @@ mod tests {
         assert!(detector_for_language("csharp").unwrap().is_supported());
         assert!(detector_for_language("swift").unwrap().is_supported());
         assert!(detector_for_language("scala").unwrap().is_supported());
-        assert!(!detector_for_language("c").unwrap().is_supported());
+        assert!(detector_for_language("c").unwrap().is_supported());
+        assert!(!detector_for_language("cpp").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
@@ -760,6 +762,33 @@ final class OrderService {
 "#,
             unparseable: "final class OrderService { def placeOrder( = {",
             parse_error: "Scala source contains a syntax error",
+        },
+        Fixture {
+            language: "c",
+            operation: r#"
+void place_order(Order *order) {
+    insert(orders, order);
+    publish(orderEvents, order);
+    save(repository, order);
+}
+"#,
+            symbol: "place_order",
+            write_method: "insert",
+            publish_method: "publish",
+            unclassified_method: "save",
+            text_only: r#"
+const char *place_order(Order *order) {
+    // insert(orders, order);
+    return "publish(orderEvents, order) save(repository, order)";
+}
+"#,
+            receiverless_call: r#"
+void place_order(Order *order) {
+    insert();
+}
+"#,
+            unparseable: "void place_order( {",
+            parse_error: "C source contains a syntax error",
         },
     ];
 

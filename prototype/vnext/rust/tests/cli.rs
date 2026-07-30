@@ -210,6 +210,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "final class ScalaOrderService { def publishOrder(order: Order): Unit = { events.publish(order) } }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/publish_order.c"),
+        "void publish_order(Order *order) { publish(events, order); }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -316,6 +321,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(scala["detector_status"], "supported");
     assert_eq!(scala["symbols"][0], "ScalaOrderService.publishOrder");
     assert_eq!(scala["resources"][0], "events");
+    let c = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/publish_order.c")
+        .unwrap();
+    assert_eq!(c["language"], "c");
+    assert_eq!(c["detector_status"], "supported");
+    assert_eq!(c["symbols"][0], "publish_order");
+    assert_eq!(c["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -335,6 +348,16 @@ fn assert_language_artifact_runs_through_real_loader(
     source: &str,
     symbol: &str,
 ) {
+    assert_language_artifact_with_optional_method_binding(path, language, source, symbol, None);
+}
+
+fn assert_language_artifact_with_optional_method_binding(
+    path: &str,
+    language: &str,
+    source: &str,
+    symbol: &str,
+    method_binding: Option<&str>,
+) {
     let project = TestProject::new();
     fs::remove_file(project.root.join("src/place_order.py")).unwrap();
     fs::write(project.root.join(path), source).unwrap();
@@ -349,6 +372,13 @@ fn assert_language_artifact_runs_through_real_loader(
             "authority_ref": "decision.repository-bindings",
         },
     });
+    if let Some(method_key) = method_binding {
+        observation["artifacts"][0]["bindings"]["methods"][method_key] = json!({
+            "kind": "db_write",
+            "owner": "team.ordering",
+            "authority_ref": "decision.repository-bindings",
+        });
+    }
     write_yaml(&observation_path, &observation);
     run_git(&project.root, &["add", "-A"]);
     run_git(
@@ -757,8 +787,8 @@ fn ambiguous_short_symbol_binding_blocks_same_named_methods() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/order_service.c"),
-        "int main(void) { return 0; }\n",
+        project.root.join("src/order_service.cpp"),
+        "int main() { return 0; }\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -767,9 +797,9 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service-c",
-            "path": "src/order_service.c",
-            "language": "c",
+            "ref": "code.order-service-cpp",
+            "path": "src/order_service.cpp",
+            "language": "cpp",
             "bindings": {
                 "symbols": {},
                 "resources": {},
@@ -780,7 +810,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare c source"],
+        &["commit", "--quiet", "-m", "declare cpp source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -872,6 +902,27 @@ fn scala_artifact_runs_through_the_real_project_loader() {
         "scala",
         "final class OrderService {\n  def placeOrder(order: Order): Unit = {\n    orders.insert(order)\n  }\n}\n",
         "placeOrder",
+    );
+}
+
+#[test]
+fn c_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/place_order.c",
+        "c",
+        "void place_order(Order *order) {\n    memcpy(buffer, order, sizeof(*order));\n    insert(orders, order);\n}\n",
+        "place_order",
+    );
+}
+
+#[test]
+fn c_framework_function_binding_runs_through_the_real_project_loader() {
+    assert_language_artifact_with_optional_method_binding(
+        "src/place_order.c",
+        "c",
+        "void place_order(Order *order) {\n    sqlite3_exec(orders, \"INSERT\", 0, 0, 0);\n}\n",
+        "place_order",
+        Some("orders.sqlite3_exec"),
     );
 }
 
