@@ -6,7 +6,10 @@
 
 use crate::canonical_digest;
 use crate::project_config::repository_path;
-use crate::python_detection::{PythonObservationKind, observe_python};
+use crate::source_detection::{
+    SourceObservation, SourceObservationKind, detector_for_language, detector_for_path,
+    source_pathspecs,
+};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
@@ -15,7 +18,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub const OBSERVATION_SCHEMA_VERSION: &str = "3";
+pub const OBSERVATION_SCHEMA_VERSION: &str = "4";
 
 pub struct GitRepositoryAdapter {
     root: PathBuf,
@@ -33,6 +36,13 @@ struct BindingRecord {
 struct ArtifactBinding {
     symbols: BTreeMap<String, BindingRecord>,
     resources: BTreeMap<String, BindingRecord>,
+    methods: BTreeMap<String, MethodBindingRecord>,
+}
+
+struct MethodBindingRecord {
+    kind: SourceObservationKind,
+    owner: String,
+    authority_ref: String,
 }
 
 impl GitRepositoryAdapter {
@@ -133,28 +143,54 @@ impl GitRepositoryAdapter {
             .map_err(|error| git_error(error.to_string()))?;
 
             let mut artifact_observations = Vec::new();
-            if language != "python" {
+            let Some(detector) = detector_for_language(language) else {
+                gaps.push(coverage_gap(
+                    "unsupported-language",
+                    Some(reference),
+                    format!("language {language} is not supported"),
+                ));
+                artifacts.push(json!({
+                    "ref": reference,
+                    "path": artifact_relative,
+                    "language": language,
+                    "applies_to": applies_to,
+                    "observations": artifact_observations,
+                    "content_digest": content_digest,
+                    "digest": digest,
+                }));
+                continue;
+            };
+            if !detector.is_supported() {
                 gaps.push(coverage_gap(
                     "unsupported-language",
                     Some(reference),
                     format!("language {language} is not supported"),
                 ));
             } else {
-                match observe_python(&source) {
+                if detector_for_path(configured_path)
+                    .is_some_and(|path_detector| path_detector.language != language)
+                {
+                    gaps.push(coverage_gap(
+                        "language-path-mismatch",
+                        Some(reference),
+                        format!("language {language} does not match source path {configured_path}"),
+                    ));
+                }
+                match detector.observe(&source) {
                     Err(error) => gaps.push(coverage_gap("parse-error", Some(reference), error)),
                     Ok(observations) => {
                         analyzed_refs.push(reference.to_owned());
                         for observation in observations {
-                            if observation.kind == PythonObservationKind::OtherMethodCall
+                            if observation.kind == SourceObservationKind::OtherMethodCall
                                 && !bindings.resources.contains_key(&observation.resource)
                             {
                                 continue;
                             }
                             artifact_observations.push(json!({
                                 "kind": match observation.kind {
-                                    PythonObservationKind::DbWrite => "db_write",
-                                    PythonObservationKind::MessagePublish => "message_publish",
-                                    PythonObservationKind::OtherMethodCall => "unsupported_method_call",
+                                    SourceObservationKind::DbWrite => "db_write",
+                                    SourceObservationKind::MessagePublish => "message_publish",
+                                    SourceObservationKind::OtherMethodCall => "unsupported_method_call",
                                 },
                                 "symbol": &observation.symbol,
                                 "resource": &observation.resource,
@@ -186,10 +222,13 @@ impl GitRepositoryAdapter {
 
         for path in self.analysis_targets(&analysis_roots)? {
             if !artifact_paths.contains(&path) {
+                let language = detector_for_path(&path)
+                    .map(|detector| detector.language)
+                    .unwrap_or("unknown");
                 gaps.push(coverage_gap(
                     "unbound-source-artifact",
                     None,
-                    format!("Git source target has no artifact Binding Record: {path}"),
+                    format!("Git {language} source target has no artifact Binding Record: {path}"),
                 ));
             }
         }
@@ -267,14 +306,16 @@ impl GitRepositoryAdapter {
     }
 
     fn analysis_targets(&self, roots: &[String]) -> Result<Vec<String>, GitRepositoryError> {
-        let output = self.git(&[
+        let pathspecs = source_pathspecs();
+        let mut arguments = vec![
             "ls-files",
             "--cached",
             "--others",
             "--exclude-standard",
             "--",
-            "*.py",
-        ])?;
+        ];
+        arguments.extend(pathspecs.iter().map(String::as_str));
+        let output = self.git(&arguments)?;
         let mut targets: Vec<String> = output
             .lines()
             .filter(|path| is_under_analysis_root(path, roots))
@@ -360,7 +401,11 @@ fn artifact_bindings(value: &Value) -> Result<ArtifactBinding, GitRepositoryErro
     let bindings = value
         .as_object()
         .ok_or_else(|| git_error("artifact bindings must be a mapping"))?;
-    assert_exact_fields(bindings, &["symbols", "resources"], "artifact bindings")?;
+    assert_exact_fields(
+        bindings,
+        &["symbols", "resources", "methods"],
+        "artifact bindings",
+    )?;
     Ok(ArtifactBinding {
         symbols: binding_map(
             bindings
@@ -374,7 +419,61 @@ fn artifact_bindings(value: &Value) -> Result<ArtifactBinding, GitRepositoryErro
                 .ok_or_else(|| git_error("artifact resource bindings are missing"))?,
             "artifact resource binding",
         )?,
+        methods: method_binding_map(
+            bindings
+                .get("methods")
+                .ok_or_else(|| git_error("artifact method bindings are missing"))?,
+        )?,
     })
+}
+
+fn method_binding_map(
+    value: &Value,
+) -> Result<BTreeMap<String, MethodBindingRecord>, GitRepositoryError> {
+    let records = value
+        .as_object()
+        .ok_or_else(|| git_error("artifact method bindings must be a mapping"))?;
+    records
+        .iter()
+        .map(|(physical_call, value)| {
+            if physical_call.is_empty() || !physical_call.contains('.') {
+                return Err(git_error(
+                    "artifact method binding name must be resource.method",
+                ));
+            }
+            let record = value
+                .as_object()
+                .ok_or_else(|| git_error("artifact method binding must be a mapping"))?;
+            assert_exact_fields(
+                record,
+                &["kind", "owner", "authority_ref"],
+                "artifact method binding",
+            )?;
+            let kind = match required_nonempty_string(record, "kind", "artifact method binding")? {
+                "db_write" => SourceObservationKind::DbWrite,
+                "message_publish" => SourceObservationKind::MessagePublish,
+                other => {
+                    return Err(git_error(format!(
+                        "artifact method binding kind is not supported: {other}"
+                    )));
+                }
+            };
+            Ok((
+                physical_call.clone(),
+                MethodBindingRecord {
+                    kind,
+                    owner: required_nonempty_string(record, "owner", "artifact method binding")?
+                        .to_owned(),
+                    authority_ref: required_nonempty_string(
+                        record,
+                        "authority_ref",
+                        "artifact method binding",
+                    )?
+                    .to_owned(),
+                },
+            ))
+        })
+        .collect()
 }
 
 fn binding_map(
@@ -419,7 +518,7 @@ fn binding_logical_refs(bindings: &ArtifactBinding) -> Vec<String> {
 }
 
 fn bind_observation(
-    observation: &crate::python_detection::PythonObservation,
+    observation: &SourceObservation,
     artifact_ref: &str,
     bindings: &ArtifactBinding,
     facts: &mut Vec<Value>,
@@ -447,17 +546,24 @@ fn bind_observation(
         ));
         return;
     };
-    if observation.kind == PythonObservationKind::OtherMethodCall {
-        gaps.push(coverage_gap(
-            "unsupported-observation",
-            Some(artifact_ref),
-            format!(
-                "bound resource {} uses unsupported method {} at line {}",
-                observation.resource, observation.method, observation.line
-            ),
-        ));
-        return;
-    }
+    let method_key = format!("{}.{}", observation.resource, observation.method);
+    let method_binding = bindings.methods.get(&method_key);
+    let observation_kind = if observation.kind == SourceObservationKind::OtherMethodCall {
+        let Some(method_binding) = method_binding else {
+            gaps.push(coverage_gap(
+                "unsupported-observation",
+                Some(artifact_ref),
+                format!(
+                    "bound resource {} uses unsupported method {} at line {}",
+                    observation.resource, observation.method, observation.line
+                ),
+            ));
+            return;
+        };
+        method_binding.kind
+    } else {
+        observation.kind
+    };
     if !symbol.logical_ref.starts_with("operation.") {
         gaps.push(coverage_gap(
             "invalid-binding",
@@ -469,10 +575,10 @@ fn bind_observation(
         ));
         return;
     }
-    let (resource_field, required_prefix) = match observation.kind {
-        PythonObservationKind::DbWrite => ("data", "data."),
-        PythonObservationKind::MessagePublish => ("integration", "integration."),
-        PythonObservationKind::OtherMethodCall => unreachable!("handled above"),
+    let (resource_field, required_prefix) = match observation_kind {
+        SourceObservationKind::DbWrite => ("data", "data."),
+        SourceObservationKind::MessagePublish => ("integration", "integration."),
+        SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
     };
     if !resource.logical_ref.starts_with(required_prefix) {
         gaps.push(coverage_gap(
@@ -485,30 +591,32 @@ fn bind_observation(
         ));
         return;
     }
-    let evidence_refs: Vec<&str> = BTreeSet::from([
+    let mut evidence_refs = BTreeSet::from([
         artifact_ref,
         symbol.authority_ref.as_str(),
         resource.authority_ref.as_str(),
-    ])
-    .into_iter()
-    .collect();
+    ]);
+    let mut binding_authority_refs = BTreeSet::from([
+        symbol.authority_ref.as_str(),
+        resource.authority_ref.as_str(),
+    ]);
+    let mut binding_owners = BTreeSet::from([symbol.owner.as_str(), resource.owner.as_str()]);
+    if let Some(method_binding) = method_binding {
+        evidence_refs.insert(method_binding.authority_ref.as_str());
+        binding_authority_refs.insert(method_binding.authority_ref.as_str());
+        binding_owners.insert(method_binding.owner.as_str());
+    }
     facts.push(json!({
-        "kind": match observation.kind {
-            PythonObservationKind::DbWrite => "db_write",
-            PythonObservationKind::MessagePublish => "message_publish",
-            PythonObservationKind::OtherMethodCall => unreachable!("handled above"),
+        "kind": match observation_kind {
+            SourceObservationKind::DbWrite => "db_write",
+            SourceObservationKind::MessagePublish => "message_publish",
+            SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
         },
         "operation": symbol.logical_ref,
         (resource_field): resource.logical_ref,
-        "evidence_refs": evidence_refs,
-        "binding_authority_refs": [
-            symbol.authority_ref,
-            resource.authority_ref,
-        ],
-        "binding_owners": [
-            symbol.owner,
-            resource.owner,
-        ],
+        "evidence_refs": evidence_refs.into_iter().collect::<Vec<_>>(),
+        "binding_authority_refs": binding_authority_refs.into_iter().collect::<Vec<_>>(),
+        "binding_owners": binding_owners.into_iter().collect::<Vec<_>>(),
     }));
 }
 

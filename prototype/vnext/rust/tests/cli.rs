@@ -160,6 +160,16 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "def save(order):\n    orders.insert(order)\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/publish.ts"),
+        "export function publishOrder(order: Order) {\n  events.publish(order);\n}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("src/Service.java"),
+        "class Service { void save() {} }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -177,10 +187,58 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(draft["kind"], "repository-observation-draft");
-    assert_eq!(draft["artifacts"][0]["symbols"][0], "save");
-    assert_eq!(draft["artifacts"][0]["resources"][0], "orders");
-    assert!(draft["artifacts"][0].get("logical_ref").is_none());
+    let artifacts = draft["artifacts"].as_array().unwrap();
+    let python = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/orders.py")
+        .unwrap();
+    assert_eq!(python["detector_status"], "supported");
+    assert_eq!(python["symbols"][0], "save");
+    assert_eq!(python["resources"][0], "orders");
+    assert!(python.get("logical_ref").is_none());
+    let typescript = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/publish.ts")
+        .unwrap();
+    assert_eq!(typescript["language"], "typescript");
+    assert_eq!(typescript["detector_status"], "supported");
+    assert_eq!(typescript["symbols"][0], "publishOrder");
+    assert_eq!(typescript["resources"][0], "events");
+    let java = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/Service.java")
+        .unwrap();
+    assert_eq!(java["language"], "java");
+    assert_eq!(java["detector_status"], "unsupported");
+    assert!(java["observations"].as_array().unwrap().is_empty());
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn typescript_artifact_runs_through_the_real_project_loader() {
+    let project = TestProject::new();
+    fs::remove_file(project.root.join("src/place_order.py")).unwrap();
+    fs::write(
+        project.root.join("src/place_order.ts"),
+        "export function place_order(order: Order) {\n  orders.insert(order);\n}\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["path"] = Value::String("src/place_order.ts".to_owned());
+    observation["artifacts"][0]["language"] = Value::String("typescript".to_owned());
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "use typescript source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[cfg(unix)]
@@ -505,6 +563,48 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
 }
 
 #[test]
+fn declared_inventory_only_language_reports_unsupported_language() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/OrderService.java"),
+        "class OrderService {}\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.order-service",
+            "path": "src/OrderService.java",
+            "language": "java",
+            "bindings": {
+                "symbols": {},
+                "resources": {},
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "declare java source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "blocked-detection");
+    assert!(
+        output["diagnostics"][0]
+            .as_str()
+            .unwrap()
+            .contains("unsupported-language")
+    );
+}
+
+#[test]
 fn syntax_error_blocks_detection() {
     let project = TestProject::new();
     fs::write(
@@ -564,6 +664,30 @@ fn unsupported_method_on_a_bound_resource_blocks_detection() {
             .unwrap()
             .contains("unsupported-observation")
     );
+}
+
+#[test]
+fn reviewed_framework_method_binding_classifies_a_non_builtin_method() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n    orders.save(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["methods"]["orders.save"] = json!({
+        "kind": "db_write",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]

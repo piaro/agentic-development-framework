@@ -128,6 +128,8 @@ Binding Recordはartifact単位の`applies_to`ではなく、関数名と物理r
 
 この実装ではLLMを解析器として使わない。LLMはBinding Recordの候補作成を支援できるが、通常評価が再実行のたびに意味写像を推測する構成にはしない。現時点のlanguage-specific DetectorはPythonの限定したmethod群だけであり、alias、動的dispatch、framework固有API、他言語はDetectorを追加してcoverage範囲を広げる必要がある。
 
+その後、Observation Schema v4で言語非依存の観測形式とDetector登録表を追加し、Pythonに加えてJavaScript、JSX、TypeScript、TSXを同じGit Adapterへ接続した。Java、Kotlin、Go、Rustなどの主要source拡張子もinventory対象とし、Detector未実装の言語を初期観測から黙って除外しない。framework固有APIは`resource.method`単位のBindingへ`db_write`または`message_publish`、owner、承認Decisionを記録することで追加できる。これによりSQLAlchemyの`session.execute`やDjangoの`model.save`を導入先の判断で分類できるが、alias、動的dispatch、query内容の意味解析は引き続きcoverage外としてfail closedに扱う。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。

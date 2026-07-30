@@ -4,25 +4,10 @@
 //! function or receiver to a project-owned logical ID is handled by the Git
 //! repository Adapter's reviewed Binding Record.
 
+use crate::source_detection::{SourceObservation, classify_method};
 use tree_sitter::{Node, Parser};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PythonObservationKind {
-    DbWrite,
-    MessagePublish,
-    OtherMethodCall,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct PythonObservation {
-    pub kind: PythonObservationKind,
-    pub symbol: String,
-    pub resource: String,
-    pub method: String,
-    pub line: usize,
-}
-
-pub fn observe_python(source: &str) -> Result<Vec<PythonObservation>, String> {
+pub fn observe_python(source: &str) -> Result<Vec<SourceObservation>, String> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_python::LANGUAGE.into())
@@ -46,7 +31,7 @@ fn collect_observations(
     node: Node<'_>,
     source: &[u8],
     enclosing_symbol: Option<&str>,
-    observations: &mut Vec<PythonObservation>,
+    observations: &mut Vec<SourceObservation>,
 ) {
     let symbol = if node.kind() == "function_definition" {
         node.child_by_field_name("name")
@@ -72,7 +57,7 @@ fn observation_for_call(
     call: Node<'_>,
     source: &[u8],
     symbol: Option<&str>,
-) -> Option<PythonObservation> {
+) -> Option<SourceObservation> {
     let callable = call.child_by_field_name("function")?;
     if callable.kind() != "attribute" {
         return None;
@@ -80,13 +65,8 @@ fn observation_for_call(
     let receiver = callable.child_by_field_name("object")?;
     let attribute = callable.child_by_field_name("attribute")?;
     let method = attribute.utf8_text(source).ok()?;
-    let kind = match method {
-        "insert" | "update" | "delete" => PythonObservationKind::DbWrite,
-        "publish" | "send_message" => PythonObservationKind::MessagePublish,
-        _ => PythonObservationKind::OtherMethodCall,
-    };
-    Some(PythonObservation {
-        kind,
+    Some(SourceObservation {
+        kind: classify_method(method),
         symbol: symbol.unwrap_or("<module>").to_owned(),
         resource: receiver.utf8_text(source).ok()?.to_owned(),
         method: method.to_owned(),
@@ -97,6 +77,7 @@ fn observation_for_call(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::source_detection::SourceObservationKind;
 
     #[test]
     fn observes_calls_with_physical_symbol_and_resource_identities() {
@@ -112,15 +93,15 @@ def place_order(order):
         assert_eq!(
             observations,
             vec![
-                PythonObservation {
-                    kind: PythonObservationKind::DbWrite,
+                SourceObservation {
+                    kind: SourceObservationKind::DbWrite,
                     symbol: "place_order".to_owned(),
                     resource: "orders".to_owned(),
                     method: "insert".to_owned(),
                     line: 3,
                 },
-                PythonObservation {
-                    kind: PythonObservationKind::MessagePublish,
+                SourceObservation {
+                    kind: SourceObservationKind::MessagePublish,
                     symbol: "place_order".to_owned(),
                     resource: "order_events".to_owned(),
                     method: "publish".to_owned(),
@@ -157,8 +138,8 @@ def place_order(order):
 
         assert_eq!(
             observations,
-            vec![PythonObservation {
-                kind: PythonObservationKind::OtherMethodCall,
+            vec![SourceObservation {
+                kind: SourceObservationKind::OtherMethodCall,
                 symbol: "place_order".to_owned(),
                 resource: "orders".to_owned(),
                 method: "save".to_owned(),

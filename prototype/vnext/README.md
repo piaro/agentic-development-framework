@@ -21,7 +21,7 @@ Project Snapshot
 - 複数Ruleが選ぶ同じRequirement Instanceの重複排除
 - Signal候補を人またはAnalystが確認してからのRule適用
 - Detector coverage未報告・未完了時の`blocked-detection`
-- RustのPython構文解析によるDB書込み・message publishの観測
+- RustのPython・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
 - Git管理された解析rootの宣言漏れ、parse失敗、binding未解決、未対応観測のfail-closed化
 - 未知のrepository fact kindの拒否
 - 組込みSignal Catalogによる未知Signal・不正binding参照のRule compile拒否
@@ -134,7 +134,7 @@ agentic change init change.example \
   --project /path/to/project
 ```
 
-生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandでPython上の物理関数・resourceを列挙できます。
+生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandで対応言語上の物理関数・resourceを列挙できます。Java、Kotlin、Go、RustなどDetector未実装の主要言語も`detector_status: unsupported`としてinventoryへ残ります。
 
 ```sh
 agentic project observe \
@@ -143,7 +143,18 @@ agentic project observe \
   --format yaml
 ```
 
-この出力はBinding Recordの下書きであり、論理ID、owner、`authority_ref`を作りません。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。
+この出力はBinding Recordの下書きであり、論理ID、owner、`authority_ref`を作りません。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。組込みmethod以外は、意味を自動推測せず、次のように物理的な`resource.method`へ分類根拠を記録します。
+
+```yaml
+bindings:
+  symbols: {}
+  resources: {}
+  methods:
+    session.execute:
+      kind: db_write
+      owner: team.ordering
+      authority_ref: decision.repository-bindings
+```
 
 Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナリを`mcp` subcommandで起動すると、`next`、`submit`、`explain`、`contract-health`と、発行Actionに限定されたEvidence、Decision、Contract書込みToolを利用できます。Tool契約と信頼境界は[`MCP-DESIGN.md`](MCP-DESIGN.md)、固定I/O Schemaは`schemas/mcp/v1/`にあります。既存CLIは人向け診断、CI、Release・binary管理の補助経路として残します。
 
@@ -362,7 +373,9 @@ sources:
 
 | ファイル | 役割 |
 |---|---|
+| `rust/src/source_detection.rs` | 対応・inventory対象言語の登録と、言語非依存な観測形式を定義 |
 | `rust/src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
+| `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
 | `rust/src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
 | `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
@@ -382,9 +395,10 @@ sources:
 ## 現時点の制約
 
 - InMemory Adapterはテスト用です。Filesystem StoreではChange、Contract、Decision、Result、Evidenceを保存しますが、発行済みAction自体は保存せず、正本から再生成します。
-- 実Projectの通常経路では、Observation Schema v3に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のPython sourceを列挙・解析して生成します。
-- 現在の言語DetectorはPythonのみで、DB書込みは`insert`・`update`・`delete`、message送信は`publish`・`send_message`を観測します。Binding済みresourceへの他method呼出しは`unsupported-observation`として停止します。alias、動的dispatch、framework固有APIは今後のDetector追加対象です。
-- Binding Recordはartifact内の関数名・物理resource名ごとに、論理ID、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
+- 実Projectの通常経路では、Observation Schema v4に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。
+- 現在の言語DetectorはPython、JavaScript、JSX、TypeScript、TSXに対応します。Java、Kotlin、Go、Rust、Ruby、PHP、C#、Swift、Scala、C、C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
+- 組込み分類はDB書込みの`insert`・`update`・`delete`と、message送信の`publish`・`send_message`です。SQLAlchemyの`session.execute`やDjangoの`model.save`などは、`resource.method`ごとに`kind`、owner、承認DecisionをBindingすると検出できます。Bindingのない未対応methodは`unsupported-observation`で停止します。aliasと動的dispatchは今後のDetector追加対象です。
+- Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。

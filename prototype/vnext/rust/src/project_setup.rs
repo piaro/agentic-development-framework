@@ -1,8 +1,8 @@
 //! Safe, mechanical setup for a project without inventing semantic bindings.
 
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
-use crate::python_detection::{PythonObservationKind, observe_python};
 use crate::remote_delivery::install_release_archive;
+use crate::source_detection::{SourceObservationKind, detector_for_path, source_pathspecs};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fmt;
@@ -116,7 +116,7 @@ pub fn initialize_project(
         "repository_observation: .agentic/repository-observation.yaml\n"
     );
     let observation = serde_yaml::to_string(&json!({
-        "schema_version": "3",
+        "schema_version": "4",
         "phase": "pre-build",
         "analysis": {"roots": analysis_roots},
         "artifacts": [],
@@ -206,17 +206,16 @@ pub fn observation_draft(
         .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
     assert_git_root(&root)?;
     let roots = normalize_analysis_roots(analysis_roots)?;
-    let output = git(
-        &root,
-        &[
-            "ls-files",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-            "--",
-            "*.py",
-        ],
-    )?;
+    let pathspecs = source_pathspecs();
+    let mut arguments = vec![
+        "ls-files",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+        "--",
+    ];
+    arguments.extend(pathspecs.iter().map(String::as_str));
+    let output = git(&root, &arguments)?;
     let mut artifacts = Vec::new();
     for relative in output.lines().filter(|path| under_roots(path, &roots)) {
         let path = root.join(relative);
@@ -230,10 +229,17 @@ pub fn observation_draft(
         if !metadata.is_file() {
             continue;
         }
-        let source = fs::read_to_string(&path)
-            .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
-        let observations =
-            observe_python(&source).map_err(|error| setup_error(format!("{relative}: {error}")))?;
+        let detector = detector_for_path(relative)
+            .ok_or_else(|| setup_error(format!("source language is unknown: {relative}")))?;
+        let observations = if detector.is_supported() {
+            let source = fs::read_to_string(&path)
+                .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+            detector
+                .observe(&source)
+                .map_err(|error| setup_error(format!("{relative}: {error}")))?
+        } else {
+            Vec::new()
+        };
         let symbols = observations
             .iter()
             .map(|item| item.symbol.clone())
@@ -244,15 +250,16 @@ pub fn observation_draft(
             .collect::<BTreeSet<_>>();
         artifacts.push(json!({
             "path": relative,
-            "language": "python",
+            "language": detector.language,
+            "detector_status": if detector.is_supported() { "supported" } else { "unsupported" },
             "candidate_ref": candidate_ref(relative),
             "symbols": symbols,
             "resources": resources,
             "observations": observations.into_iter().map(|item| json!({
                 "kind": match item.kind {
-                    PythonObservationKind::DbWrite => "db_write",
-                    PythonObservationKind::MessagePublish => "message_publish",
-                    PythonObservationKind::OtherMethodCall => "other_method_call",
+                    SourceObservationKind::DbWrite => "db_write",
+                    SourceObservationKind::MessagePublish => "message_publish",
+                    SourceObservationKind::OtherMethodCall => "other_method_call",
                 },
                 "symbol": item.symbol,
                 "resource": item.resource,
@@ -267,7 +274,7 @@ pub fn observation_draft(
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
         "artifacts": artifacts,
-        "next": "Review each physical symbol and resource, then record logical_ref, owner, and an accepted Decision authority_ref in .agentic/repository-observation.yaml. This draft is not authoritative.",
+        "next": "Review each physical symbol and resource, then record logical_ref, owner, and an accepted Decision authority_ref in .agentic/repository-observation.yaml. For framework-specific methods, add a resource.method binding with kind, owner, and authority_ref. This draft is not authoritative.",
     }))
 }
 

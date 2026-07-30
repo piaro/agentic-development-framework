@@ -28,7 +28,9 @@ pub mod release_publisher;
 pub mod remote_delivery;
 pub mod rules;
 pub mod schema;
+mod script_detection;
 mod signal_catalog;
+mod source_detection;
 pub mod submission;
 
 use serde::Deserialize;
