@@ -180,6 +180,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "fn publish_order(order: Order) { events.publish(order); }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/PublishOrder.kt"),
+        "fun publishOrder(order: Order) { events.publish(order) }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -238,6 +243,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(rust["detector_status"], "supported");
     assert_eq!(rust["symbols"][0], "publish_order");
     assert_eq!(rust["resources"][0], "events");
+    let kotlin = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/PublishOrder.kt")
+        .unwrap();
+    assert_eq!(kotlin["language"], "kotlin");
+    assert_eq!(kotlin["detector_status"], "supported");
+    assert_eq!(kotlin["symbols"][0], "publishOrder");
+    assert_eq!(kotlin["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -642,8 +655,8 @@ fn java_artifact_runs_through_the_real_project_loader() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/OrderService.kt"),
-        "class OrderService\n",
+        project.root.join("src/order_service.rb"),
+        "class OrderService\nend\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -652,9 +665,9 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service-kotlin",
-            "path": "src/OrderService.kt",
-            "language": "kotlin",
+            "ref": "code.order-service-ruby",
+            "path": "src/order_service.rb",
+            "language": "ruby",
             "bindings": {
                 "symbols": {},
                 "resources": {},
@@ -665,7 +678,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare kotlin source"],
+        &["commit", "--quiet", "-m", "declare ruby source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -769,6 +782,55 @@ fn rust_artifact_runs_through_the_real_project_loader() {
     run_git(
         &project.root,
         &["commit", "--quiet", "-m", "declare rust source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn kotlin_artifact_runs_through_the_real_project_loader() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/OrderService.kt"),
+        "fun placeOrder(order: Order) {\n    orders.insert(order)\n}\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.order-service-kotlin",
+            "path": "src/OrderService.kt",
+            "language": "kotlin",
+            "bindings": {
+                "symbols": {
+                    "placeOrder": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "resources": {
+                    "orders": {
+                        "logical_ref": "data.orders",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "declare kotlin source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);

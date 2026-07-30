@@ -19,6 +19,7 @@ pub mod git_repository;
 mod go_detection;
 mod java_detection;
 pub mod kernel;
+mod kotlin_detection;
 pub mod mcp_server;
 pub mod project;
 pub mod project_application;

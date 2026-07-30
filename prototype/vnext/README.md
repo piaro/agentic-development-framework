@@ -21,7 +21,7 @@ Project Snapshot
 - 複数Ruleが選ぶ同じRequirement Instanceの重複排除
 - Signal候補を人またはAnalystが確認してからのRule適用
 - Detector coverage未報告・未完了時の`blocked-detection`
-- RustのPython・Java・Go・Rust・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
+- RustのPython・Java・Kotlin・Go・Rust・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
 - Git管理された解析rootの宣言漏れ、parse失敗、binding未解決、未対応観測のfail-closed化
 - 未知のrepository fact kindの拒否
 - 組込みSignal Catalogによる未知Signal・不正binding参照のRule compile拒否
@@ -134,7 +134,7 @@ agentic change init change.example \
   --project /path/to/project
 ```
 
-生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandで対応言語上の物理関数・resourceを列挙できます。KotlinなどDetector未実装の主要言語も`detector_status: unsupported`としてinventoryへ残ります。
+生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandで対応言語上の物理関数・resourceを列挙できます。RubyなどDetector未実装の主要言語も`detector_status: unsupported`としてinventoryへ残ります。
 
 ```sh
 agentic project observe \
@@ -376,6 +376,7 @@ sources:
 | `rust/src/source_detection.rs` | 対応・inventory対象言語の登録と、言語非依存な観測形式を定義 |
 | `rust/src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
 | `rust/src/java_detection.rs` | Java構文からmethod・constructor・呼出先・物理resourceを観測 |
+| `rust/src/kotlin_detection.rs` | Kotlin構文からfunction・navigation call・物理resourceを観測 |
 | `rust/src/go_detection.rs` | Go構文からfunction・method・selector call・物理resourceを観測 |
 | `rust/src/rust_detection.rs` | Rust構文からfunction・field call・物理resourceを観測 |
 | `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
@@ -399,7 +400,7 @@ sources:
 
 - InMemory Adapterはテスト用です。Filesystem StoreではChange、Contract、Decision、Result、Evidenceを保存しますが、発行済みAction自体は保存せず、正本から再生成します。
 - 実Projectの通常経路では、Observation Schema v4に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。
-- 現在の言語DetectorはPython、Java、Go、Rust、JavaScript、JSX、TypeScript、TSXに対応します。Kotlin、Ruby、PHP、C#、Swift、Scala、C、C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
+- 現在の言語DetectorはPython、Java、Kotlin、Go、Rust、JavaScript、JSX、TypeScript、TSXに対応します。Ruby、PHP、C#、Swift、Scala、C、C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
 - 組込み分類はDB書込みの`insert`・`update`・`delete`と、message送信の`publish`・`send_message`です。SQLAlchemyの`session.execute`やDjangoの`model.save`などは、`resource.method`ごとに`kind`、owner、承認DecisionをBindingすると検出できます。Bindingのない未対応methodは`unsupported-observation`で停止します。aliasと動的dispatchは今後のDetector追加対象です。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
