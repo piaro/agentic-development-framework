@@ -1,6 +1,7 @@
 //! Safe, mechanical setup for a project without inventing semantic bindings.
 
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
+use crate::framework_detection::{FrameworkCandidate, FrameworkCatalog};
 use crate::remote_delivery::install_release_archive;
 use crate::source_detection::{SourceObservationKind, detector_for_path, source_pathspecs};
 use serde_json::{Value, json};
@@ -216,6 +217,7 @@ pub fn observation_draft(
     ];
     arguments.extend(pathspecs.iter().map(String::as_str));
     let output = git(&root, &arguments)?;
+    let framework_catalog = framework_catalog(&root)?;
     let mut artifacts = Vec::new();
     for relative in output.lines().filter(|path| under_roots(path, &roots)) {
         let path = root.join(relative);
@@ -231,15 +233,27 @@ pub fn observation_draft(
         }
         let detector = detector_for_path(relative)
             .ok_or_else(|| setup_error(format!("source language is unknown: {relative}")))?;
-        let observations = if detector.is_supported() {
-            let source = fs::read_to_string(&path)
-                .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+        let source = if detector.is_supported() {
+            Some(
+                fs::read_to_string(&path)
+                    .map_err(|error| setup_error(format!("{}: {error}", path.display())))?,
+            )
+        } else {
+            None
+        };
+        let observations = if let Some(source) = source.as_deref() {
             detector
-                .observe(&source)
+                .observe(source)
                 .map_err(|error| setup_error(format!("{relative}: {error}")))?
         } else {
             Vec::new()
         };
+        let framework_candidates = source
+            .as_deref()
+            .map(|source| {
+                framework_catalog.candidates(relative, detector.language, source, &observations)
+            })
+            .unwrap_or_default();
         let symbols = observations
             .iter()
             .map(|item| item.symbol.clone())
@@ -266,16 +280,87 @@ pub fn observation_draft(
                 "method": item.method,
                 "line": item.line,
             })).collect::<Vec<_>>(),
+            "framework_candidates": framework_candidates.into_iter().map(framework_candidate_value).collect::<Vec<_>>(),
         }));
     }
     artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     Ok(json!({
-        "schema_version": "1",
+        "schema_version": "2",
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
         "artifacts": artifacts,
-        "next": "Review each physical symbol and resource, then record logical_ref, owner, and an accepted Decision authority_ref in .agentic/repository-observation.yaml. For framework-specific methods, add a resource.method binding with kind, owner, and authority_ref. This draft is not authoritative.",
+        "next": "Review each physical symbol, resource, and framework candidate, then record logical_ref, owner, and an accepted Decision authority_ref in .agentic/repository-observation.yaml. A suggested_kind is non-authoritative; add a resource.method binding only after review. Candidates with suggested_kind null require call-specific classification. This draft is not authoritative.",
     }))
+}
+
+fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
+    json!({
+        "framework": candidate.framework,
+        "symbol": candidate.symbol,
+        "resource": candidate.resource,
+        "method": candidate.method,
+        "line": candidate.line,
+        "binding_key": candidate.binding_key,
+        "suggested_kind": candidate.suggested_kind.map(|kind| match kind {
+            SourceObservationKind::DbWrite => "db_write",
+            SourceObservationKind::MessagePublish => "message_publish",
+            SourceObservationKind::OtherMethodCall => unreachable!("framework candidates cannot suggest an unsupported kind"),
+        }),
+        "method_binding_required": candidate.method_binding_required,
+        "review_status": "required",
+        "evidence": candidate.evidence,
+        "rationale": candidate.rationale,
+    })
+}
+
+fn framework_catalog(root: &Path) -> Result<FrameworkCatalog, ProjectSetupError> {
+    let output = git(
+        root,
+        &["ls-files", "--cached", "--others", "--exclude-standard"],
+    )?;
+    let mut catalog = FrameworkCatalog::default();
+    for relative in output.lines().filter(|path| framework_manifest(path)) {
+        let relative_path = Path::new(relative);
+        if reject_symlink_components(root, relative_path).is_err() {
+            continue;
+        }
+        let path = root.join(relative_path);
+        let Ok(metadata) = fs::symlink_metadata(&path) else {
+            continue;
+        };
+        if metadata.file_type().is_symlink() || !metadata.is_file() || metadata.len() > 1_048_576 {
+            continue;
+        }
+        let Ok(content) = fs::read_to_string(&path) else {
+            continue;
+        };
+        catalog.record_manifest(relative, &content);
+    }
+    Ok(catalog)
+}
+
+fn framework_manifest(path: &str) -> bool {
+    let path = Path::new(path);
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    matches!(
+        name,
+        "pyproject.toml"
+            | "requirements.txt"
+            | "Pipfile"
+            | "setup.py"
+            | "setup.cfg"
+            | "package.json"
+            | "pom.xml"
+            | "build.gradle"
+            | "build.gradle.kts"
+            | "Directory.Packages.props"
+            | "Gemfile"
+            | "composer.json"
+            | "go.mod"
+    ) || name.starts_with("requirements") && name.ends_with(".txt")
+        || path.extension().and_then(|extension| extension.to_str()) == Some("csproj")
 }
 
 pub fn default_candidate_root() -> Result<PathBuf, ProjectSetupError> {

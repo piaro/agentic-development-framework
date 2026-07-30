@@ -132,6 +132,8 @@ Binding Recordはartifact単位の`applies_to`ではなく、関数名と物理r
 
 Detector追加後の実project検証で、JSX入り`.js`、複数行receiver、同一行の同一call、Rust turbofish、computed property、大文字拡張子、同名methodの物理identityに共通欠陥が見つかった。parse・receiver正規化・言語別の組込みmethod分類・確定的整列を共通engineへ集約し、観測は重複除去しない。class・impl・receiver内のsymbolは型名で修飾し、従来の短縮Binding keyはartifact内で一意な場合だけ互換利用する。同名symbolに対する短縮keyは`ambiguous-symbol-binding`としてfail closedにする。言語横断conformanceとCLIの共通fixtureが、この境界を新しいDetectorにも要求する。
 
+主要frameworkの初期Binding負荷を下げるため、Repository Observation Draft v2へ非authoritativeな`framework_candidates`を追加した。対象はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMである。project manifest、import、型名、receiver形状という機械的根拠と物理`resource.method`を提示するが、通常評価・coverage・fact生成は候補を参照しない。候補は常にreview必須で、accepted Decisionを持つ既存Binding Recordへ人またはAgentが転記して初めて有効になる。SQLAlchemyの`execute`のような読書き両用APIはkindを空にし、意味分類を自動化しない。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。

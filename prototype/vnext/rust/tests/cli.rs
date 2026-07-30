@@ -236,6 +236,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(draft["schema_version"], "2");
     assert_eq!(draft["kind"], "repository-observation-draft");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let python = artifacts
@@ -342,6 +343,157 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(gdscript["detector_status"], "supported");
     assert_eq!(gdscript["symbols"][0], "GdOrderService.publish_order");
     assert_eq!(gdscript["resources"][0], "events");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_observe_suggests_eight_major_orms_without_approving_them() {
+    let root = temporary_test_root("project-observe-frameworks");
+    fs::create_dir_all(root.join("src")).unwrap();
+    let files = [
+        (
+            "src/django_service.py",
+            "from django.db import models\n\
+             def place_order(order):\n\
+             \x20   order.save()\n",
+        ),
+        (
+            "src/sqlalchemy_service.py",
+            "from sqlalchemy.orm import Session\n\
+             def place_order(session: Session, order, statement):\n\
+             \x20   session.add(order)\n\
+             \x20   session.execute(statement)\n",
+        ),
+        (
+            "src/prisma_service.ts",
+            "import { PrismaClient } from \"@prisma/client\";\n\
+             const prisma = new PrismaClient();\n\
+             export function placeOrder(order: Order) {\n\
+             \x20 return prisma.order.create({ data: order });\n\
+             }\n",
+        ),
+        (
+            "src/SpringOrderService.java",
+            "import org.springframework.data.repository.CrudRepository;\n\
+             class SpringOrderService {\n\
+             \x20 void placeOrder(OrderRepository repository, Order order) {\n\
+             \x20   repository.save(order);\n\
+             \x20 }\n\
+             }\n",
+        ),
+        (
+            "src/EfOrderService.cs",
+            "using Microsoft.EntityFrameworkCore;\n\
+             class EfOrderService {\n\
+             \x20 async Task PlaceOrder(DbContext context) {\n\
+             \x20   await context.SaveChangesAsync();\n\
+             \x20 }\n\
+             }\n",
+        ),
+        (
+            "src/rails_order_service.rb",
+            "class RailsOrderService\n\
+             \x20 def place_order(order)\n\
+             \x20   order.save!\n\
+             \x20 end\n\
+             end\n",
+        ),
+        (
+            "src/laravel_order_service.php",
+            "<?php\n\
+             use Illuminate\\Database\\Eloquent\\Model;\n\
+             function placeOrder($order) {\n\
+             \x20   $order->save();\n\
+             }\n",
+        ),
+        (
+            "src/gorm_order_service.go",
+            "package service\n\
+             import \"gorm.io/gorm\"\n\
+             func PlaceOrder(db *gorm.DB, order *Order) {\n\
+             \x20   db.Create(order)\n\
+             }\n",
+        ),
+    ];
+    for (path, source) in files {
+        fs::write(root.join(path), source).unwrap();
+    }
+    fs::write(
+        root.join("Gemfile"),
+        "source \"https://rubygems.org\"\ngem \"rails\"\n",
+    )
+    .unwrap();
+    run_git(&root, &["init", "--quiet"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(draft["schema_version"], "2");
+    let artifacts = draft["artifacts"].as_array().unwrap();
+    let expected = [
+        ("src/django_service.py", "django-orm", "save"),
+        ("src/sqlalchemy_service.py", "sqlalchemy", "add"),
+        ("src/prisma_service.ts", "prisma", "create"),
+        ("src/SpringOrderService.java", "spring-data-jpa", "save"),
+        (
+            "src/EfOrderService.cs",
+            "entity-framework-core",
+            "SaveChangesAsync",
+        ),
+        ("src/rails_order_service.rb", "rails-active-record", "save!"),
+        ("src/laravel_order_service.php", "laravel-eloquent", "save"),
+        ("src/gorm_order_service.go", "gorm", "Create"),
+    ];
+    for (path, framework, method) in expected {
+        let artifact = artifacts
+            .iter()
+            .find(|artifact| artifact["path"] == path)
+            .unwrap_or_else(|| panic!("missing {path}"));
+        let candidate = artifact["framework_candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| candidate["framework"] == framework && candidate["method"] == method)
+            .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
+        assert_eq!(candidate["suggested_kind"], "db_write");
+        assert_eq!(candidate["review_status"], "required");
+        assert_eq!(candidate["method_binding_required"], true);
+        assert!(
+            candidate["binding_key"]
+                .as_str()
+                .is_some_and(|key| key.ends_with(&format!(".{method}")))
+        );
+    }
+
+    let sqlalchemy = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/sqlalchemy_service.py")
+        .unwrap();
+    let execute = sqlalchemy["framework_candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|candidate| candidate["method"] == "execute")
+        .unwrap();
+    assert!(execute["suggested_kind"].is_null());
+    assert!(
+        draft["next"]
+            .as_str()
+            .unwrap()
+            .contains("non-authoritative")
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -1002,11 +1154,13 @@ fn observed_resource_without_a_binding_blocks_detection() {
 }
 
 #[test]
-fn unsupported_method_on_a_bound_resource_blocks_detection() {
+fn framework_candidate_does_not_bypass_reviewed_method_binding() {
     let project = TestProject::new();
     fs::write(
         project.root.join("src/place_order.py"),
-        "def place_order(order):\n    orders.save(order)\n",
+        "from django.db import models\n\
+         def place_order(order):\n\
+         \x20   orders.save(order)\n",
     )
     .unwrap();
 
@@ -1027,7 +1181,9 @@ fn reviewed_framework_method_binding_classifies_a_non_builtin_method() {
     let project = TestProject::new();
     fs::write(
         project.root.join("src/place_order.py"),
-        "def place_order(order):\n    orders.save(order)\n",
+        "from django.db import models\n\
+         def place_order(order):\n\
+         \x20   orders.save(order)\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");

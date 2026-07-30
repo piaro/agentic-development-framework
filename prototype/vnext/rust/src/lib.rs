@@ -16,6 +16,7 @@ pub mod detection;
 pub mod distribution_trust;
 pub mod explain;
 pub mod filesystem_project;
+mod framework_detection;
 pub mod framework_lock;
 mod gdscript_detection;
 pub mod git_repository;
