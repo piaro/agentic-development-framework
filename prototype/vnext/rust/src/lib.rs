@@ -21,6 +21,7 @@ mod java_detection;
 pub mod kernel;
 mod kotlin_detection;
 pub mod mcp_server;
+mod php_detection;
 pub mod project;
 pub mod project_application;
 pub mod project_config;

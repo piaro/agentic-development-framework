@@ -190,6 +190,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "def publish_order(order)\n  events.publish(order)\nend\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/publish_order.php"),
+        "<?php\nfunction publish_order($order) { events::publish($order); }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -264,6 +269,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(ruby["detector_status"], "supported");
     assert_eq!(ruby["symbols"][0], "publish_order");
     assert_eq!(ruby["resources"][0], "events");
+    let php = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/publish_order.php")
+        .unwrap();
+    assert_eq!(php["language"], "php");
+    assert_eq!(php["detector_status"], "supported");
+    assert_eq!(php["symbols"][0], "publish_order");
+    assert_eq!(php["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -705,8 +718,8 @@ fn ambiguous_short_symbol_binding_blocks_same_named_methods() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/order_service.php"),
-        "<?php\nfinal class OrderService {}\n",
+        project.root.join("src/OrderService.cs"),
+        "sealed class OrderService {}\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -715,9 +728,9 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service-php",
-            "path": "src/order_service.php",
-            "language": "php",
+            "ref": "code.order-service-csharp",
+            "path": "src/OrderService.cs",
+            "language": "csharp",
             "bindings": {
                 "symbols": {},
                 "resources": {},
@@ -728,7 +741,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare php source"],
+        &["commit", "--quiet", "-m", "declare csharp source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -779,6 +792,16 @@ fn ruby_artifact_runs_through_the_real_project_loader() {
         "src/order_service.rb",
         "ruby",
         "def place_order(order)\n  orders.insert(order)\nend\n",
+        "place_order",
+    );
+}
+
+#[test]
+fn php_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/order_service.php",
+        "php",
+        "<?php\nfunction place_order($order) {\n    orders::insert($order);\n}\n",
         "place_order",
     );
 }

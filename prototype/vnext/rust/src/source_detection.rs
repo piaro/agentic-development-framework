@@ -8,6 +8,7 @@
 use crate::go_detection::observe_go;
 use crate::java_detection::observe_java;
 use crate::kotlin_detection::observe_kotlin;
+use crate::php_detection::observe_php;
 use crate::python_detection::observe_python;
 use crate::ruby_detection::observe_ruby;
 use crate::rust_detection::observe_rust;
@@ -38,7 +39,7 @@ pub fn classify_method(language: &str, method: &str) -> SourceObservationKind {
     // Binding Record.
     let (db_write, message_publish): (&[&str], &[&str]) = match language {
         "go" => (&["Insert", "Update", "Delete"], &["Publish", "SendMessage"]),
-        "java" | "kotlin" | "javascript" | "jsx" | "typescript" | "tsx" => {
+        "java" | "kotlin" | "php" | "javascript" | "jsx" | "typescript" | "tsx" => {
             (&["insert", "update", "delete"], &["publish", "sendMessage"])
         }
         "python" | "ruby" | "rust" => (
@@ -189,7 +190,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "php",
         extensions: &["php"],
-        observe: None,
+        observe: Some(observe_php),
     },
     LanguageDetector {
         language: "csharp",
@@ -254,7 +255,8 @@ mod tests {
         assert!(detector_for_language("rust").unwrap().is_supported());
         assert!(detector_for_language("kotlin").unwrap().is_supported());
         assert!(detector_for_language("ruby").unwrap().is_supported());
-        assert!(!detector_for_language("php").unwrap().is_supported());
+        assert!(detector_for_language("php").unwrap().is_supported());
+        assert!(!detector_for_language("csharp").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
@@ -621,6 +623,33 @@ end
 "#,
             unparseable: "def place_order(\n",
             parse_error: "Ruby source contains a syntax error",
+        },
+        Fixture {
+            language: "php",
+            operation: r#"<?php
+function placeOrder($order) {
+    orders::insert($order);
+    orderEvents::publish($order);
+    repository::save($order);
+}
+"#,
+            symbol: "placeOrder",
+            write_method: "insert",
+            publish_method: "publish",
+            unclassified_method: "save",
+            text_only: r#"<?php
+function placeOrder($order) {
+    // orders::insert($order);
+    return "orderEvents::publish repository::save";
+}
+"#,
+            receiverless_call: r#"<?php
+function placeOrder($order) {
+    insert($order);
+}
+"#,
+            unparseable: "<?php\nfunction placeOrder( {\n",
+            parse_error: "PHP source contains a syntax error",
         },
     ];
 
