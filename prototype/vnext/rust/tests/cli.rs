@@ -220,6 +220,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "class_name GdOrderService\nextends Node\nfunc publish_order(order):\n    events.emit(order)\n",
     )
     .unwrap();
+    fs::write(root.join("src/native.cpp"), "void save() {}\n").unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -236,7 +237,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "2");
+    assert_eq!(draft["schema_version"], "3");
     assert_eq!(draft["kind"], "repository-observation-draft");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let python = artifacts
@@ -343,6 +344,41 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(gdscript["detector_status"], "supported");
     assert_eq!(gdscript["symbols"][0], "GdOrderService.publish_order");
     assert_eq!(gdscript["resources"][0], "events");
+    let cpp = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/native.cpp")
+        .unwrap();
+    assert_eq!(cpp["language"], "cpp");
+    assert_eq!(cpp["detector_status"], "unsupported");
+
+    let binding_artifacts = draft["binding_artifacts"].as_array().unwrap();
+    assert_eq!(binding_artifacts.len(), artifacts.len());
+    let python_binding = binding_artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/orders.py")
+        .unwrap();
+    assert_eq!(python_binding["ref"], "code.src.orders");
+    assert!(python_binding["bindings"]["symbols"]["save"]["logical_ref"].is_null());
+    assert!(python_binding["bindings"]["symbols"]["save"]["owner"].is_null());
+    assert!(python_binding["bindings"]["symbols"]["save"]["authority_ref"].is_null());
+    assert!(python_binding["bindings"]["resources"]["orders"]["logical_ref"].is_null());
+    assert_eq!(
+        python_binding["bindings"]["methods"]
+            .as_object()
+            .unwrap()
+            .len(),
+        0
+    );
+    let cpp_binding = binding_artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/native.cpp")
+        .unwrap();
+    assert!(
+        cpp_binding["bindings"]["symbols"]
+            .as_object()
+            .unwrap()
+            .is_empty()
+    );
     let _ = fs::remove_dir_all(root);
 }
 
@@ -440,7 +476,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "2");
+    assert_eq!(draft["schema_version"], "3");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let expected = [
         ("src/django_service.py", "django-orm", "save"),
@@ -475,6 +511,22 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
                 .as_str()
                 .is_some_and(|key| key.ends_with(&format!(".{method}")))
         );
+        let binding_artifact = draft["binding_artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|artifact| artifact["path"] == path)
+            .unwrap();
+        assert!(
+            binding_artifact["bindings"]["methods"][candidate["binding_key"].as_str().unwrap()]
+                ["kind"]
+                .is_null()
+        );
+        assert!(
+            binding_artifact["bindings"]["methods"]
+                [candidate["binding_key"].as_str().unwrap()]["owner"]
+                .is_null()
+        );
     }
 
     let sqlalchemy = artifacts
@@ -488,6 +540,13 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .find(|candidate| candidate["method"] == "execute")
         .unwrap();
     assert!(execute["suggested_kind"].is_null());
+    let sqlalchemy_binding = draft["binding_artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|artifact| artifact["path"] == "src/sqlalchemy_service.py")
+        .unwrap();
+    assert!(sqlalchemy_binding["bindings"]["methods"]["session.execute"]["kind"].is_null());
     assert!(
         draft["next"]
             .as_str()
@@ -621,7 +680,65 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
                 .is_some_and(|key| key.ends_with(&format!(".{method}")))
         );
     }
+    let kafka_binding = draft["binding_artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|artifact| artifact["path"] == "src/KafkaService.java")
+        .unwrap();
+    assert!(kafka_binding["bindings"]["methods"]["producer.send"]["kind"].is_null());
+    assert!(kafka_binding["bindings"]["methods"]["producer.send"]["authority_ref"].is_null());
+    let sqs_binding = draft["binding_artifacts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|artifact| artifact["path"] == "src/sqs_service.py")
+        .unwrap();
+    assert!(
+        sqs_binding["bindings"]["methods"]
+            .as_object()
+            .unwrap()
+            .is_empty(),
+        "built-in send_message classification does not need a method binding"
+    );
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
+    let project = TestProject::new();
+    let observe = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&project.root)
+        .output()
+        .unwrap();
+    assert_success(&observe);
+    let draft: Value = serde_json::from_slice(&observe.stdout).unwrap();
+    write_yaml(
+        &project.root.join(".agentic/repository-observation.yaml"),
+        &json!({
+            "schema_version": "4",
+            "phase": "pre-build",
+            "analysis": {"roots": draft["analysis_roots"].clone()},
+            "artifacts": draft["binding_artifacts"].clone(),
+        }),
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("logical_ref"),
+        "unexpected stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]

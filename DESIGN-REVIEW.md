@@ -136,6 +136,8 @@ Detector追加後の実project検証で、JSX入り`.js`、複数行receiver、�
 
 同じ境界でメッセージング候補をAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsへ拡張した。公式clientの送信methodを言語別に保持し、`message_publish`を候補提示する。`send`や`publish`のように単独では曖昧なmethod名は、対応するmanifest、import、型またはreceiverの機械的根拠がなければ候補化しない。候補だけで通常評価を通過できないことと、accepted Decisionを持つmethod Bindingが初めて分類を有効にすることをCLI統合テストで固定する。
 
+Repository Observation Draft v3では、候補から正規Binding Recordのartifact構造へ手作業でキーを転記する負担を減らすため、`binding_artifacts`を追加した。物理ref、path、language、観測対象のsymbol・resource、明示Bindingが必要なmethod keyだけを機械的に配置する。意味判断になるkind、論理ID、owner、承認Decisionはすべて`null`とする。CLIはfileを書き換えず、未記入templateは正規loaderが拒否するため、候補生成と確定権限の境界は変わらない。推奨kindは根拠とreview必須表示を持つ`framework_candidates`にだけ残す。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。

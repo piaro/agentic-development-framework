@@ -143,10 +143,12 @@ agentic project observe \
   --format yaml
 ```
 
-この出力はRepository Observation Draft v2であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。DB系はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORM、メッセージング系はAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。Agentまたは人が既存コードと設計を調査し、accepted Decisionとともに`.agentic/repository-observation.yaml`へ記入します。組込みmethod以外は、次のように物理的な`resource.method`へ分類根拠を記録します。
+この出力はRepository Observation Draft v3であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。DB系はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORM、メッセージング系はAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。
+
+Draft v3の`binding_artifacts`は、`.agentic/repository-observation.yaml`の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`kind`、`logical_ref`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
 ```yaml
-schema_version: "2"
+schema_version: "3"
 kind: repository-observation-draft
 artifacts:
   - path: shop/service.py
@@ -156,6 +158,26 @@ artifacts:
         suggested_kind: db_write
         method_binding_required: true
         review_status: required
+binding_artifacts:
+  - ref: code.shop.service
+    path: shop/service.py
+    language: python
+    bindings:
+      symbols:
+        place_order:
+          logical_ref: null
+          owner: null
+          authority_ref: null
+      resources:
+        order:
+          logical_ref: null
+          owner: null
+          authority_ref: null
+      methods:
+        order.save:
+          kind: null
+          owner: null
+          authority_ref: null
 ```
 
 SQLAlchemyの`execute`はSELECTとDMLの両方を受け取るため、`suggested_kind: null`で出力し、call単位の確認を要求します。候補生成は通常のrepository評価、coverage、fact生成には影響しません。
@@ -432,7 +454,7 @@ sources:
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
-- `project observe`のDraft v2は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。
+- `project observe`のDraft v3は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。

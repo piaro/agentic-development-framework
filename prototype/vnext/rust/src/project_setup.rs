@@ -3,9 +3,11 @@
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
 use crate::framework_detection::{FrameworkCandidate, FrameworkCatalog};
 use crate::remote_delivery::install_release_archive;
-use crate::source_detection::{SourceObservationKind, detector_for_path, source_pathspecs};
+use crate::source_detection::{
+    SourceObservation, SourceObservationKind, detector_for_path, source_pathspecs,
+};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -219,6 +221,7 @@ pub fn observation_draft(
     let output = git(&root, &arguments)?;
     let framework_catalog = framework_catalog(&root)?;
     let mut artifacts = Vec::new();
+    let mut binding_artifacts = Vec::new();
     for relative in output.lines().filter(|path| under_roots(path, &roots)) {
         let path = root.join(relative);
         let metadata = fs::symlink_metadata(&path)
@@ -262,6 +265,12 @@ pub fn observation_draft(
             .iter()
             .map(|item| item.resource.clone())
             .collect::<BTreeSet<_>>();
+        binding_artifacts.push(binding_artifact_template(
+            relative,
+            detector.language,
+            &observations,
+            &framework_candidates,
+        ));
         artifacts.push(json!({
             "path": relative,
             "language": detector.language,
@@ -284,13 +293,108 @@ pub fn observation_draft(
         }));
     }
     artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
+    binding_artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     Ok(json!({
-        "schema_version": "2",
+        "schema_version": "3",
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
         "artifacts": artifacts,
-        "next": "Review each physical symbol, resource, and framework candidate, then record logical_ref, owner, and an accepted Decision authority_ref in .agentic/repository-observation.yaml. A suggested_kind is non-authoritative; add a resource.method binding only after review. Candidates with suggested_kind null require call-specific classification. This draft is not authoritative.",
+        "binding_artifacts": binding_artifacts,
+        "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with a reviewed logical_ref or kind, owner, and accepted Decision authority_ref before copying the artifacts into .agentic/repository-observation.yaml. A suggested kind is non-authoritative, and candidates with kind null require call-specific classification. This draft is not authoritative and never updates project files.",
     }))
+}
+
+fn binding_artifact_template(
+    path: &str,
+    language: &str,
+    observations: &[SourceObservation],
+    candidates: &[FrameworkCandidate],
+) -> Value {
+    let candidate_calls = candidates
+        .iter()
+        .map(|candidate| {
+            (
+                candidate.symbol.as_str(),
+                candidate.resource.as_str(),
+                candidate.method.as_str(),
+            )
+        })
+        .collect::<BTreeSet<_>>();
+    let relevant = observations
+        .iter()
+        .filter(|observation| {
+            observation.kind != SourceObservationKind::OtherMethodCall
+                || candidate_calls.contains(&(
+                    observation.symbol.as_str(),
+                    observation.resource.as_str(),
+                    observation.method.as_str(),
+                ))
+        })
+        .collect::<Vec<_>>();
+    let symbols = relevant
+        .iter()
+        .map(|observation| {
+            (
+                observation.symbol.clone(),
+                json!({
+                    "logical_ref": null,
+                    "owner": null,
+                    "authority_ref": null,
+                }),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let resources = relevant
+        .iter()
+        .map(|observation| {
+            (
+                observation.resource.clone(),
+                json!({
+                    "logical_ref": null,
+                    "owner": null,
+                    "authority_ref": null,
+                }),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    let method_keys = candidates
+        .iter()
+        .filter(|candidate| candidate.method_binding_required)
+        .map(|candidate| candidate.binding_key.clone())
+        .collect::<BTreeSet<_>>();
+    let methods = method_keys
+        .into_iter()
+        .map(|binding_key| {
+            (
+                binding_key,
+                json!({
+                    "kind": null,
+                    "owner": null,
+                    "authority_ref": null,
+                }),
+            )
+        })
+        .collect::<BTreeMap<_, _>>();
+    json!({
+        "ref": candidate_ref(path),
+        "path": path,
+        "language": language,
+        "bindings": {
+            "symbols": symbols,
+            "resources": resources,
+            "methods": methods,
+        },
+    })
+}
+
+fn source_observation_kind_name(kind: SourceObservationKind) -> &'static str {
+    match kind {
+        SourceObservationKind::DbWrite => "db_write",
+        SourceObservationKind::MessagePublish => "message_publish",
+        SourceObservationKind::OtherMethodCall => {
+            unreachable!("unsupported observations cannot be suggested binding kinds")
+        }
+    }
 }
 
 fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
@@ -301,11 +405,7 @@ fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
         "method": candidate.method,
         "line": candidate.line,
         "binding_key": candidate.binding_key,
-        "suggested_kind": candidate.suggested_kind.map(|kind| match kind {
-            SourceObservationKind::DbWrite => "db_write",
-            SourceObservationKind::MessagePublish => "message_publish",
-            SourceObservationKind::OtherMethodCall => unreachable!("framework candidates cannot suggest an unsupported kind"),
-        }),
+        "suggested_kind": candidate.suggested_kind.map(source_observation_kind_name),
         "method_binding_required": candidate.method_binding_required,
         "review_status": "required",
         "evidence": candidate.evidence,
