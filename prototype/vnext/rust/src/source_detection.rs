@@ -5,6 +5,7 @@
 //! project inventory can report unsupported source instead of silently
 //! excluding it.
 
+use crate::java_detection::observe_java;
 use crate::python_detection::observe_python;
 use crate::script_detection::{observe_javascript, observe_jsx, observe_tsx, observe_typescript};
 use std::path::Path;
@@ -83,7 +84,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "java",
         extensions: &["java"],
-        observe: None,
+        observe: Some(observe_java),
     },
     LanguageDetector {
         language: "kotlin",
@@ -165,7 +166,8 @@ mod tests {
     #[test]
     fn registry_separates_supported_detectors_from_inventory_only_languages() {
         assert!(detector_for_language("typescript").unwrap().is_supported());
-        assert!(!detector_for_language("java").unwrap().is_supported());
+        assert!(detector_for_language("java").unwrap().is_supported());
+        assert!(!detector_for_language("go").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"

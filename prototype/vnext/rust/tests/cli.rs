@@ -167,7 +167,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     .unwrap();
     fs::write(
         root.join("src/Service.java"),
-        "class Service { void save() {} }\n",
+        "class Service { void save() { orders.insert(null); } }\n",
     )
     .unwrap();
     run_git(&root, &["init", "--quiet"]);
@@ -209,8 +209,9 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .find(|artifact| artifact["path"] == "src/Service.java")
         .unwrap();
     assert_eq!(java["language"], "java");
-    assert_eq!(java["detector_status"], "unsupported");
-    assert!(java["observations"].as_array().unwrap().is_empty());
+    assert_eq!(java["detector_status"], "supported");
+    assert_eq!(java["symbols"][0], "save");
+    assert_eq!(java["resources"][0], "orders");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -563,11 +564,11 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
 }
 
 #[test]
-fn declared_inventory_only_language_reports_unsupported_language() {
+fn java_artifact_runs_through_the_real_project_loader() {
     let project = TestProject::new();
     fs::write(
         project.root.join("src/OrderService.java"),
-        "class OrderService {}\n",
+        "class OrderService {\n  void place_order(Order order) {\n    orders.insert(order);\n  }\n}\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -580,6 +581,55 @@ fn declared_inventory_only_language_reports_unsupported_language() {
             "path": "src/OrderService.java",
             "language": "java",
             "bindings": {
+                "symbols": {
+                    "place_order": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "resources": {
+                    "orders": {
+                        "logical_ref": "data.orders",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    },
+                },
+                "methods": {},
+            },
+        }));
+    write_yaml(&observation_path, &observation);
+    run_git(&project.root, &["add", "-A"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "declare java source"],
+    );
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn declared_inventory_only_language_reports_unsupported_language() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/order_service.go"),
+        "package service\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({
+            "ref": "code.order-service-go",
+            "path": "src/order_service.go",
+            "language": "go",
+            "bindings": {
                 "symbols": {},
                 "resources": {},
                 "methods": {},
@@ -589,7 +639,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare java source"],
+        &["commit", "--quiet", "-m", "declare go source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
