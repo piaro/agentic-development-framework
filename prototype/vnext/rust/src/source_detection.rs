@@ -14,6 +14,7 @@ use crate::python_detection::observe_python;
 use crate::ruby_detection::observe_ruby;
 use crate::rust_detection::observe_rust;
 use crate::script_detection::{observe_javascript, observe_jsx, observe_tsx, observe_typescript};
+use crate::swift_detection::observe_swift;
 use std::path::Path;
 use tree_sitter::{Language, Node, Parser};
 
@@ -40,7 +41,7 @@ pub fn classify_method(language: &str, method: &str) -> SourceObservationKind {
     // Binding Record.
     let (db_write, message_publish): (&[&str], &[&str]) = match language {
         "go" | "csharp" => (&["Insert", "Update", "Delete"], &["Publish", "SendMessage"]),
-        "java" | "kotlin" | "php" | "javascript" | "jsx" | "typescript" | "tsx" => {
+        "java" | "kotlin" | "php" | "swift" | "javascript" | "jsx" | "typescript" | "tsx" => {
             (&["insert", "update", "delete"], &["publish", "sendMessage"])
         }
         "python" | "ruby" | "rust" => (
@@ -201,7 +202,7 @@ static LANGUAGE_DETECTORS: &[LanguageDetector] = &[
     LanguageDetector {
         language: "swift",
         extensions: &["swift"],
-        observe: None,
+        observe: Some(observe_swift),
     },
     LanguageDetector {
         language: "scala",
@@ -258,7 +259,8 @@ mod tests {
         assert!(detector_for_language("ruby").unwrap().is_supported());
         assert!(detector_for_language("php").unwrap().is_supported());
         assert!(detector_for_language("csharp").unwrap().is_supported());
-        assert!(!detector_for_language("swift").unwrap().is_supported());
+        assert!(detector_for_language("swift").unwrap().is_supported());
+        assert!(!detector_for_language("scala").unwrap().is_supported());
         assert_eq!(
             detector_for_path("src/example.tsx").unwrap().language,
             "tsx"
@@ -691,6 +693,39 @@ sealed class OrderService
 "#,
             unparseable: "class OrderService { void PlaceOrder( }",
             parse_error: "C# source contains a syntax error",
+        },
+        Fixture {
+            language: "swift",
+            operation: r#"
+final class OrderService {
+    func placeOrder(_ order: Order) {
+        orders.insert(order)
+        orderEvents.publish(order)
+        repository.save(order)
+    }
+}
+"#,
+            symbol: "OrderService.placeOrder",
+            write_method: "insert",
+            publish_method: "publish",
+            unclassified_method: "save",
+            text_only: r#"
+final class OrderService {
+    func placeOrder(_ order: Order) -> String {
+        // orders.insert(order)
+        return "orderEvents.publish(order) repository.save(order)"
+    }
+}
+"#,
+            receiverless_call: r#"
+final class OrderService {
+    func placeOrder(_ order: Order) {
+        insert(order)
+    }
+}
+"#,
+            unparseable: "final class OrderService { func placeOrder( {",
+            parse_error: "Swift source contains a syntax error",
         },
     ];
 

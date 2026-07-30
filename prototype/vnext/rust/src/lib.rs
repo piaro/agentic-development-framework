@@ -39,6 +39,7 @@ mod script_detection;
 mod signal_catalog;
 mod source_detection;
 pub mod submission;
+mod swift_detection;
 
 use serde::Deserialize;
 use serde_json::{Value, json};

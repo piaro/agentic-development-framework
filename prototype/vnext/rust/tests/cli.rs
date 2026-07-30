@@ -200,6 +200,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         "sealed class CsOrderService { void PublishOrder(Order order) { events.Publish(order); } }\n",
     )
     .unwrap();
+    fs::write(
+        root.join("src/PublishOrder.swift"),
+        "final class SwiftOrderService { func publishOrder(_ order: Order) { events.publish(order) } }\n",
+    )
+    .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -290,6 +295,14 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(csharp["detector_status"], "supported");
     assert_eq!(csharp["symbols"][0], "CsOrderService.PublishOrder");
     assert_eq!(csharp["resources"][0], "events");
+    let swift = artifacts
+        .iter()
+        .find(|artifact| artifact["path"] == "src/PublishOrder.swift")
+        .unwrap();
+    assert_eq!(swift["language"], "swift");
+    assert_eq!(swift["detector_status"], "supported");
+    assert_eq!(swift["symbols"][0], "SwiftOrderService.publishOrder");
+    assert_eq!(swift["resources"][0], "events");
     let _ = fs::remove_dir_all(root);
 }
 
@@ -731,8 +744,8 @@ fn ambiguous_short_symbol_binding_blocks_same_named_methods() {
 fn declared_inventory_only_language_reports_unsupported_language() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/OrderService.swift"),
-        "final class OrderService {}\n",
+        project.root.join("src/OrderService.scala"),
+        "final class OrderService\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -741,9 +754,9 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service-swift",
-            "path": "src/OrderService.swift",
-            "language": "swift",
+            "ref": "code.order-service-scala",
+            "path": "src/OrderService.scala",
+            "language": "scala",
             "bindings": {
                 "symbols": {},
                 "resources": {},
@@ -754,7 +767,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare swift source"],
+        &["commit", "--quiet", "-m", "declare scala source"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -826,6 +839,16 @@ fn csharp_artifact_runs_through_the_real_project_loader() {
         "csharp",
         "sealed class OrderService {\n    void PlaceOrder(Order order) {\n        orders.Insert(order);\n    }\n}\n",
         "PlaceOrder",
+    );
+}
+
+#[test]
+fn swift_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/OrderService.swift",
+        "swift",
+        "final class OrderService {\n    func placeOrder(_ order: Order) {\n        orders.insert(order)\n    }\n}\n",
+        "placeOrder",
     );
 }
 
