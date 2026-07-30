@@ -1,0 +1,6 @@
+schema_version: "1"
+id: decision.order-model
+change_id: change.place-order
+status: accepted
+title: 注文IDは受付時に採番する
+resolves: []

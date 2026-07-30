@@ -1,0 +1,171 @@
+{
+  "schema_version": "1",
+  "result_submission_protocol_version": "1",
+  "schema_root": "../../schemas/v1",
+  "base_case": "application-initial.json",
+  "scenario_case": "application-lifecycle.json",
+  "step_index": 0,
+  "expected": {
+    "id": "result.a9264e02b9de0b0dba0f",
+    "schema_version": "1",
+    "change_id": "change.place-order",
+    "action_id": "action.76c79e6f916c6355",
+    "role": "Analyst",
+    "result_schema": "result.risk-signal-review",
+    "context_digest": "sha256:6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727",
+    "input_refs": {
+      "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+      "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "output_refs": [],
+    "freshness_refs": {
+      "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+      "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "payload": {
+      "reviewed_candidates": [
+        {
+          "fingerprint": "sha256:f0547174c17341e1bd2ece0e45b6f085bd17888fca12feec48f051acf68310d9",
+          "status": "confirmed",
+          "reason": "typed factとコード参照を確認した",
+          "basis_refs": [
+            "code.order-events-publisher"
+          ]
+        },
+        {
+          "fingerprint": "sha256:9a1af2bd0dcbdd810e58a1ab3908f7546b9d293592efb2607967bb491f6cac04",
+          "status": "confirmed",
+          "reason": "typed factとコード参照を確認した",
+          "basis_refs": [
+            "code.order-events-publisher"
+          ]
+        },
+        {
+          "fingerprint": "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b",
+          "status": "confirmed",
+          "reason": "typed factとコード参照を確認した",
+          "basis_refs": [
+            "code.place-order-handler"
+          ]
+        }
+      ],
+      "outcomes": [
+        {
+          "instance_key": "risk-signals-reviewed|change.place-order",
+          "definition_digest": "sha256:72d8372b8155563324202a01a084beb3daa421ccea4a452235fd0260944b98c1",
+          "status": "satisfied",
+          "summary": "risk-signals-reviewedをgolden scenarioで確認した",
+          "basis_refs": [
+            "change.place-order",
+            "code.order-events-publisher",
+            "code.place-order-handler"
+          ],
+          "input_refs": {
+            "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+            "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "freshness_refs": {
+            "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+            "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          }
+        }
+      ]
+    }
+  },
+  "invalid_cases": [
+    {
+      "case_id": "action-mismatch",
+      "operation": "set",
+      "path": ["submission", "action_id"],
+      "value": "action.other",
+      "error": "action does not match issued context"
+    },
+    {
+      "case_id": "context-digest-mismatch",
+      "operation": "set",
+      "path": ["submission", "context_digest"],
+      "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "error": "context digest does not match issued action"
+    },
+    {
+      "case_id": "role-mismatch",
+      "operation": "set",
+      "path": ["submission", "role"],
+      "value": "Builder",
+      "error": "role does not match issued action"
+    },
+    {
+      "case_id": "result-schema-mismatch",
+      "operation": "set",
+      "path": ["submission", "result_schema"],
+      "value": "result.analysis",
+      "error": "result schema mismatch"
+    },
+    {
+      "case_id": "change-mismatch",
+      "operation": "set",
+      "path": ["submission", "change_id"],
+      "value": "change.other",
+      "error": "change does not match current Snapshot"
+    },
+    {
+      "case_id": "stale-issued-input",
+      "operation": "set",
+      "path": ["project", "repository", "artifacts", 0, "digest"],
+      "value": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "error": "issued context is stale: code.place-order-handler"
+    },
+    {
+      "case_id": "missing-output-ref",
+      "operation": "set",
+      "path": ["submission", "output_refs"],
+      "value": ["contract.missing"],
+      "error": "output ref does not exist: contract.missing"
+    },
+    {
+      "case_id": "duplicate-output-ref",
+      "operation": "set",
+      "path": ["submission", "output_refs"],
+      "value": ["change.place-order", "change.place-order"],
+      "error": "output refs must be unique"
+    },
+    {
+      "case_id": "candidate-not-offered",
+      "operation": "set",
+      "path": ["submission", "payload", "reviewed_candidates", 0, "fingerprint"],
+      "value": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "error": "candidate was not offered by issued action"
+    },
+    {
+      "case_id": "candidate-basis-not-offered",
+      "operation": "set",
+      "path": ["submission", "payload", "reviewed_candidates", 0, "basis_refs"],
+      "value": ["change.place-order"],
+      "error": "candidate review refers to evidence not offered by issued action"
+    },
+    {
+      "case_id": "unknown-outcome-instance",
+      "operation": "set",
+      "path": ["submission", "payload", "outcomes", 0, "instance_key"],
+      "value": "unknown|subject",
+      "error": "outcome does not belong to issued action"
+    },
+    {
+      "case_id": "outcome-basis-outside-context",
+      "operation": "set",
+      "path": ["submission", "payload", "outcomes", 0, "basis_refs"],
+      "value": ["contract.order-lifecycle"],
+      "error": "outcome basis ref does not belong to issued action"
+    },
+    {
+      "case_id": "missing-outcome-summary",
+      "operation": "remove",
+      "path": ["submission", "payload", "outcomes", 0, "summary"],
+      "error": "summary"
+    }
+  ]
+}

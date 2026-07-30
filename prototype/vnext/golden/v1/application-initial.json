@@ -1,0 +1,340 @@
+{
+  "schema_version": "1",
+  "case_id": "db-sqs.initial",
+  "schema_root": "../../schemas/v1",
+  "change_id": "change.place-order",
+  "input": {
+    "project": {
+      "changes": [
+        {
+          "schema_version": "1",
+          "id": "change.place-order",
+          "title": "Place orderを永続化し、注文作成イベントを発行する",
+          "intent": "1回の受付でordersへ保存し、order-eventsへ通知する"
+        }
+      ],
+      "contracts": [
+        {
+          "schema_version": "1",
+          "id": "contract.order-lifecycle",
+          "change_id": "change.place-order",
+          "applies_to": [
+            "operation.place-order",
+            "data.orders",
+            "integration.order-events"
+          ],
+          "clauses": [
+            {
+              "id": "orders-source-of-truth",
+              "text": "受理済み注文の正本はordersテーブルとする",
+              "authority_ref": "decision.order-model"
+            }
+          ]
+        }
+      ],
+      "decisions": [
+        {
+          "schema_version": "1",
+          "id": "decision.order-model",
+          "change_id": "change.place-order",
+          "status": "accepted",
+          "title": "注文IDは受付時に採番する",
+          "resolves": []
+        }
+      ],
+      "results": [],
+      "evidence": [],
+      "repository": {
+        "phase": "pre-build",
+        "revision": "golden-r1",
+        "artifacts": [
+          {
+            "ref": "code.place-order-handler",
+            "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "applies_to": [
+              "operation.place-order",
+              "data.orders"
+            ]
+          },
+          {
+            "ref": "code.order-events-publisher",
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "applies_to": [
+              "operation.place-order",
+              "integration.order-events"
+            ]
+          }
+        ],
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [
+            "code.order-events-publisher",
+            "code.place-order-handler"
+          ],
+          "gaps": []
+        },
+        "facts": [
+          {
+            "kind": "db_write",
+            "operation": "operation.place-order",
+            "data": "data.orders",
+            "evidence_refs": [
+              "code.place-order-handler"
+            ]
+          },
+          {
+            "kind": "message_publish",
+            "operation": "operation.place-order",
+            "integration": "integration.order-events",
+            "evidence_refs": [
+              "code.order-events-publisher"
+            ]
+          }
+        ]
+      }
+    },
+    "rule_source": {
+      "requirements": [
+        {
+          "id": "risk-signals-reviewed",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.risk-signal-review",
+          "context": [
+            "change",
+            "repository-artifacts"
+          ]
+        },
+        {
+          "id": "operation-boundaries-confirmed",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "depends_on": [
+            "risk-signals-reviewed"
+          ],
+          "context": [
+            "change",
+            "matching-contracts",
+            "matching-decisions",
+            "affected-code"
+          ]
+        },
+        {
+          "id": "distributed-effect-contracts-ready",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "depends_on": [
+            "operation-boundaries-confirmed"
+          ],
+          "context": [
+            "change",
+            "matching-contracts",
+            "matching-decisions"
+          ]
+        },
+        {
+          "id": "design-challenged",
+          "phase": "before-build",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "depends_on": [
+            "distributed-effect-contracts-ready"
+          ],
+          "context": [
+            "change",
+            "matching-contracts",
+            "matching-decisions",
+            "dependency-results",
+            "affected-code"
+          ]
+        },
+        {
+          "id": "data-evidence-recorded",
+          "phase": "before-merge",
+          "role": "Builder",
+          "result_schema": "result.evidence",
+          "context": [
+            "change",
+            "matching-contracts",
+            "affected-code"
+          ]
+        },
+        {
+          "id": "data-implementation-challenged",
+          "phase": "before-merge",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "depends_on": [
+            "data-evidence-recorded"
+          ],
+          "context": [
+            "change",
+            "matching-contracts",
+            "dependency-results",
+            "affected-code"
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "id": "baseline.review-risk-signals",
+          "when": "always",
+          "requirement": "risk-signals-reviewed",
+          "subjects": [
+            "change.id"
+          ]
+        },
+        {
+          "id": "persistent-data.confirm-operation-boundary",
+          "signal": "persistent-data-write",
+          "requirement": "operation-boundaries-confirmed",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "distributed-effect.confirm-operation-boundary",
+          "signal": "distributed-effect",
+          "requirement": "operation-boundaries-confirmed",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "distributed-effect.prepare-contracts",
+          "signal": "distributed-effect",
+          "requirement": "distributed-effect-contracts-ready",
+          "subjects": [
+            "binding.integration"
+          ]
+        },
+        {
+          "id": "persistent-data.challenge-design",
+          "signal": "persistent-data-write",
+          "requirement": "design-challenged",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "persistent-data.record-evidence",
+          "signal": "persistent-data-write",
+          "repository_phase": "post-build",
+          "requirement": "data-evidence-recorded",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "persistent-data.challenge-implementation",
+          "signal": "persistent-data-write",
+          "repository_phase": "post-build",
+          "requirement": "data-implementation-challenged",
+          "subjects": [
+            "binding.operation"
+          ]
+        }
+      ]
+    },
+    "framework_lock": {
+      "schema_version": "1",
+      "framework_release": "prototype-vnext-dev",
+      "protocols": {
+        "application": "1",
+        "canonicalization": "canonical-json-v1",
+        "context_compiler": "4",
+        "data_model": "3",
+        "explanation": "2",
+        "kernel": "5",
+        "project_snapshot": "1",
+        "rule_compiler": "1"
+      },
+      "detectors": {
+        "typed-repository-fact": "3"
+      },
+      "schema_bundle": {
+        "version": "2",
+        "digest": "sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888"
+      },
+      "rule_set": {
+        "source_digest": "sha256:6fe7e6252e94c44901203395e6ac00ead20173dc857e0e630fe986c878af5855",
+        "index_digest": "sha256:175099cb33658a88160e59f31a600157f0d5b64cb046199efbae4b3a117adcbe"
+      }
+    }
+  },
+  "expected": {
+    "snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
+    "rule_index_digest": "sha256:175099cb33658a88160e59f31a600157f0d5b64cb046199efbae4b3a117adcbe",
+    "framework_lock_digest": "sha256:f46a33f0a5bf94262e7989ba99af8d0dd6d1fcce511624d4e6824629805b519e",
+    "decision": {
+      "state": "needs-analysis",
+      "action": {
+          "id": "action.76c79e6f916c6355",
+        "role": "Analyst",
+        "action": "review-risk-signals",
+        "requirement_instances": [
+          {
+            "requirement_id": "risk-signals-reviewed",
+            "subject_refs": [
+              "change.place-order"
+            ],
+            "instance_key": "risk-signals-reviewed|change.place-order",
+            "selected_by": [
+              "baseline.review-risk-signals"
+            ],
+            "definition_digest": "sha256:72d8372b8155563324202a01a084beb3daa421ccea4a452235fd0260944b98c1",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.risk-signal-review",
+            "depends_on": [],
+            "context": [
+              "change",
+              "repository-artifacts"
+            ],
+            "status": "unsatisfied"
+          }
+        ],
+        "reason": "3件の新しいSignal候補を確認してください",
+        "expected_result_schema": "result.risk-signal-review",
+        "candidate_fingerprints": [
+          "sha256:f0547174c17341e1bd2ece0e45b6f085bd17888fca12feec48f051acf68310d9",
+          "sha256:9a1af2bd0dcbdd810e58a1ab3908f7546b9d293592efb2607967bb491f6cac04",
+          "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b"
+        ]
+      },
+      "requirement_instances": [
+        {
+          "requirement_id": "risk-signals-reviewed",
+          "subject_refs": [
+            "change.place-order"
+          ],
+          "instance_key": "risk-signals-reviewed|change.place-order",
+          "selected_by": [
+            "baseline.review-risk-signals"
+          ],
+          "definition_digest": "sha256:72d8372b8155563324202a01a084beb3daa421ccea4a452235fd0260944b98c1",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.risk-signal-review",
+          "depends_on": [],
+          "context": [
+            "change",
+            "repository-artifacts"
+          ],
+          "status": "unsatisfied"
+        }
+      ],
+      "diagnostics": []
+    },
+      "decision_digest": "sha256:b0d5faadecb466122186d65ed3ecbc4af250d012b24e5378674ca19b062eb9c0",
+      "context_digest": "sha256:6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727",
+    "context_source_digests": {
+      "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+      "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    }
+  }
+}

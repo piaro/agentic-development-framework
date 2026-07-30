@@ -1,0 +1,38 @@
+{
+  "schema_version": "1",
+  "framework_lock_schema_version": "1",
+  "schema_root": "../../schemas/v1",
+  "base_case": "application-initial.json",
+  "expected_digest": "sha256:f46a33f0a5bf94262e7989ba99af8d0dd6d1fcce511624d4e6824629805b519e",
+  "invalid_cases": [
+    {
+      "case_id": "detector-version-mismatch",
+      "operation": "set",
+      "path": [
+        "detectors",
+        "typed-repository-fact"
+      ],
+      "value": "1",
+      "error_path": "detectors.typed-repository-fact"
+    },
+    {
+      "case_id": "missing-schema-digest",
+      "operation": "remove",
+      "path": [
+        "schema_bundle",
+        "digest"
+      ],
+      "error_path": "schema_bundle.digest"
+    },
+    {
+      "case_id": "unexpected-protocol",
+      "operation": "add",
+      "path": [
+        "protocols",
+        "future_protocol"
+      ],
+      "value": "1",
+      "error_path": "protocols.future_protocol"
+    }
+  ]
+}

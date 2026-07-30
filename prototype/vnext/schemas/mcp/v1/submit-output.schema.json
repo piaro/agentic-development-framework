@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/mcp/v1/submit-output",
+  "title": "agentic_submit output v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "result_id",
+    "already_completed",
+    "next_response",
+    "issued_action"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "result_id": {
+      "type": "string",
+      "pattern": "^result\\.[A-Za-z0-9._-]+$"
+    },
+    "already_completed": {
+      "type": "boolean"
+    },
+    "next_response": {
+      "type": "object"
+    },
+    "issued_action": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/issued_action"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$defs": {
+    "issued_action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "change_id",
+        "action_id",
+        "context_digest"
+      ],
+      "properties": {
+        "change_id": {
+          "type": "string",
+          "pattern": "^change\\.[A-Za-z0-9._-]+$"
+        },
+        "action_id": {
+          "type": "string",
+          "pattern": "^action\\.[A-Za-z0-9._-]+$"
+        },
+        "context_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

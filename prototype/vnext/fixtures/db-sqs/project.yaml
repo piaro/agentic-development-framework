@@ -1,0 +1,79 @@
+changes:
+  - schema_version: "1"
+    id: change.place-order
+    title: Place orderを永続化し、注文作成イベントを発行する
+    intent: 1回の受付でordersへ保存し、order-eventsへ通知する
+  - schema_version: "1"
+    id: change.retry-order-events
+    title: 注文作成イベントの再試行を追加する
+    intent: Place orderと同じ規範を参照してイベント送信を再試行する
+
+contracts:
+  - schema_version: "1"
+    id: contract.order-lifecycle
+    change_id: change.place-order
+    applies_to:
+      - operation.place-order
+      - data.orders
+      - integration.order-events
+    clauses:
+      - id: orders-source-of-truth
+        text: 受理済み注文の正本はordersテーブルとする
+        authority_ref: decision.order-model
+      - id: order-created-once
+        text: 同じ受付IDから注文を複数作成しない
+        authority_ref: decision.order-model
+
+  - schema_version: "1"
+    id: contract.customer-profile
+    change_id: change.place-order
+    applies_to:
+      - operation.update-customer-profile
+      - data.customer-profiles
+    clauses:
+      - id: profile-email-normalization
+        text: 顧客メールアドレスは小文字へ正規化する
+
+decisions:
+  - schema_version: "1"
+    id: decision.order-model
+    change_id: change.place-order
+    status: accepted
+    title: 注文IDは受付時に採番する
+    resolves: []
+
+results: []
+evidence: []
+
+repository:
+  phase: pre-build
+  revision: fixture-r1
+  artifacts:
+    - ref: code.place-order-handler
+      digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+      applies_to:
+        - operation.place-order
+        - data.orders
+    - ref: code.order-events-publisher
+      digest: sha256:2222222222222222222222222222222222222222222222222222222222222222
+      applies_to:
+        - operation.place-order
+        - integration.order-events
+  coverage:
+    status: complete
+    scope: declared-artifacts
+    analyzed_refs:
+      - code.place-order-handler
+      - code.order-events-publisher
+    gaps: []
+  facts:
+    - kind: db_write
+      operation: operation.place-order
+      data: data.orders
+      evidence_refs:
+        - code.place-order-handler
+    - kind: message_publish
+      operation: operation.place-order
+      integration: integration.order-events
+      evidence_refs:
+        - code.order-events-publisher

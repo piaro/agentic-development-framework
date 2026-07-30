@@ -1,0 +1,450 @@
+{
+  "schema_version": "1",
+  "compiler_version": "1",
+  "schema_root": "../../schemas/v1",
+  "schema_bundle_digest": "sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888",
+  "cases": [
+    {
+      "case_id": "normalized-index",
+      "source_variants": [
+        {
+          "requirements": [
+            {
+              "id": "evidence-after",
+              "phase": "before-merge",
+              "role": "Builder",
+              "result_schema": "result.evidence",
+              "assurance": "evidence-backed",
+              "depends_on": [
+                "analysis-root"
+              ],
+              "context": [
+                "matching-contracts",
+                "change"
+              ]
+            },
+            {
+              "id": "challenge-after",
+              "phase": "before-merge",
+              "role": "Challenger",
+              "result_schema": "result.challenge",
+              "depends_on": [
+                "evidence-after",
+                "analysis-root"
+              ],
+              "context": [
+                "dependency-results",
+                "affected-code"
+              ]
+            },
+            {
+              "id": "analysis-root",
+              "phase": "before-build",
+              "role": "Analyst",
+              "result_schema": "result.analysis",
+              "context": [
+                "repository-artifacts",
+                "change"
+              ]
+            }
+          ],
+          "rules": [
+            {
+              "id": "persistent.challenge",
+              "signal": "persistent-data-write",
+              "repository_phase": "post-build",
+              "requirement": "challenge-after",
+              "subjects": [
+                "binding.operation"
+              ]
+            },
+            {
+              "id": "baseline.analysis",
+              "when": "always",
+              "requirement": "analysis-root",
+              "subjects": [
+                "change.id"
+              ]
+            },
+            {
+              "id": "persistent.evidence",
+              "signal": "persistent-data-write",
+              "repository_phase": "post-build",
+              "requirement": "evidence-after",
+              "subjects": [
+                "binding.operation"
+              ]
+            }
+          ]
+        },
+        {
+          "requirements": [
+            {
+              "id": "analysis-root",
+              "phase": "before-build",
+              "role": "Analyst",
+              "result_schema": "result.analysis",
+              "context": [
+                "change",
+                "repository-artifacts"
+              ]
+            },
+            {
+              "id": "challenge-after",
+              "phase": "before-merge",
+              "role": "Challenger",
+              "result_schema": "result.challenge",
+              "depends_on": [
+                "analysis-root",
+                "evidence-after"
+              ],
+              "context": [
+                "affected-code",
+                "dependency-results"
+              ]
+            },
+            {
+              "id": "evidence-after",
+              "phase": "before-merge",
+              "role": "Builder",
+              "result_schema": "result.evidence",
+              "assurance": "evidence-backed",
+              "depends_on": [
+                "analysis-root"
+              ],
+              "context": [
+                "change",
+                "matching-contracts"
+              ]
+            }
+          ],
+          "rules": [
+            {
+              "id": "baseline.analysis",
+              "when": "always",
+              "requirement": "analysis-root",
+              "subjects": [
+                "change.id"
+              ]
+            },
+            {
+              "id": "persistent.evidence",
+              "signal": "persistent-data-write",
+              "repository_phase": "post-build",
+              "requirement": "evidence-after",
+              "subjects": [
+                "binding.operation"
+              ]
+            },
+            {
+              "id": "persistent.challenge",
+              "signal": "persistent-data-write",
+              "repository_phase": "post-build",
+              "requirement": "challenge-after",
+              "subjects": [
+                "binding.operation"
+              ]
+            }
+          ]
+        }
+      ],
+      "expected": {
+        "requirements": [
+          {
+            "id": "analysis-root",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis",
+            "depends_on": [],
+            "context": [
+              "change",
+              "repository-artifacts"
+            ],
+            "definition_digest": "sha256:326d61d6be9066cdd9dc3bd13a5fa9e73fc9b5ab19766e08d006b7c15035647c"
+          },
+          {
+            "id": "challenge-after",
+            "phase": "before-merge",
+            "role": "Challenger",
+            "result_schema": "result.challenge",
+            "depends_on": [
+              "analysis-root",
+              "evidence-after"
+            ],
+            "context": [
+              "affected-code",
+              "dependency-results"
+            ],
+            "definition_digest": "sha256:3b58bbe79cdd68e45bbb06fbc649ae10e588d7e1e4d847aad07c8b3b0cc79fd3"
+          },
+          {
+            "id": "evidence-after",
+            "phase": "before-merge",
+            "role": "Builder",
+            "result_schema": "result.evidence",
+            "assurance": "evidence-backed",
+            "depends_on": [
+              "analysis-root"
+            ],
+            "context": [
+              "change",
+              "matching-contracts"
+            ],
+            "definition_digest": "sha256:ea8fbf8919589d14f3c40a01b096ba855c162515da7cd341c2c8a4f298558e7b"
+          }
+        ],
+        "rules": [
+          {
+            "id": "baseline.analysis",
+            "requirement": "analysis-root",
+            "condition": "always",
+            "signal": null,
+            "repository_phase": null,
+            "subjects": [
+              "change.id"
+            ]
+          },
+          {
+            "id": "persistent.challenge",
+            "requirement": "challenge-after",
+            "condition": "signal",
+            "signal": "persistent-data-write",
+            "repository_phase": "post-build",
+            "subjects": [
+              "binding.operation"
+            ]
+          },
+          {
+            "id": "persistent.evidence",
+            "requirement": "evidence-after",
+            "condition": "signal",
+            "signal": "persistent-data-write",
+            "repository_phase": "post-build",
+            "subjects": [
+              "binding.operation"
+            ]
+          }
+        ],
+        "digest": "sha256:629c71300ad96f408537832509fdf83133eb48c553a740bf7ff8d58e2e614cf8"
+      }
+    }
+  ],
+  "invalid_cases": [
+    {
+      "case_id": "duplicate-requirement",
+      "source": {
+        "requirements": [
+          {
+            "id": "same",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          },
+          {
+            "id": "same",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          }
+        ]
+      },
+      "error": "duplicate requirement: same"
+    },
+    {
+      "case_id": "invalid-phase",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "during-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          }
+        ]
+      },
+      "error": "invalid phase: during-build"
+    },
+    {
+      "case_id": "invalid-role",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "before-build",
+            "role": "Reviewer",
+            "result_schema": "result.analysis"
+          }
+        ]
+      },
+      "error": "invalid role: Reviewer"
+    },
+    {
+      "case_id": "unsupported-result-schema",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.unknown"
+          }
+        ]
+      },
+      "error": "invalid refers to unsupported Result schema: result.unknown"
+    },
+    {
+      "case_id": "role-schema-mismatch",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "before-build",
+            "role": "Human",
+            "result_schema": "result.analysis"
+          }
+        ]
+      },
+      "error": "invalid cannot use role Human with result.analysis"
+    },
+    {
+      "case_id": "unknown-context-selector",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis",
+            "context": [
+              "unknown-context"
+            ]
+          }
+        ]
+      },
+      "error": "unknown context selector: unknown-context"
+    },
+    {
+      "case_id": "unknown-dependency",
+      "source": {
+        "requirements": [
+          {
+            "id": "invalid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis",
+            "depends_on": [
+              "missing"
+            ]
+          }
+        ]
+      },
+      "error": "invalid refers to unknown dependency: missing"
+    },
+    {
+      "case_id": "dependency-cycle",
+      "source": {
+        "requirements": [
+          {
+            "id": "a",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis",
+            "depends_on": [
+              "b"
+            ]
+          },
+          {
+            "id": "b",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis",
+            "depends_on": [
+              "a"
+            ]
+          }
+        ]
+      },
+      "error": "dependency cycle at: a"
+    },
+    {
+      "case_id": "duplicate-rule",
+      "source": {
+        "requirements": [
+          {
+            "id": "valid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          }
+        ],
+        "rules": [
+          {
+            "id": "same",
+            "when": "always",
+            "requirement": "valid"
+          },
+          {
+            "id": "same",
+            "when": "always",
+            "requirement": "valid"
+          }
+        ]
+      },
+      "error": "duplicate rule: same"
+    },
+    {
+      "case_id": "unknown-rule-requirement",
+      "source": {
+        "rules": [
+          {
+            "id": "invalid",
+            "when": "always",
+            "requirement": "missing"
+          }
+        ]
+      },
+      "error": "invalid refers to unknown requirement: missing"
+    },
+    {
+      "case_id": "unsupported-rule-condition",
+      "source": {
+        "requirements": [
+          {
+            "id": "valid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          }
+        ],
+        "rules": [
+          {
+            "id": "invalid",
+            "when": "sometimes",
+            "requirement": "valid"
+          }
+        ]
+      },
+      "error": "unsupported rule condition: sometimes"
+    },
+    {
+      "case_id": "missing-signal",
+      "source": {
+        "requirements": [
+          {
+            "id": "valid",
+            "phase": "before-build",
+            "role": "Analyst",
+            "result_schema": "result.analysis"
+          }
+        ],
+        "rules": [
+          {
+            "id": "invalid",
+            "requirement": "valid"
+          }
+        ]
+      },
+      "error": "invalid requires signal"
+    }
+  ]
+}

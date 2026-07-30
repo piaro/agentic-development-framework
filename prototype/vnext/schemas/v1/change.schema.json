@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/v1/change",
+  "type": "object",
+  "required": ["schema_version", "id", "title", "intent"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "pattern": "^change\\.[A-Za-z0-9._-]+$"},
+    "title": {"type": "string", "minLength": 1},
+    "intent": {"type": "string", "minLength": 1},
+    "base_revision": {"type": "string", "minLength": 1}
+  },
+  "additionalProperties": false
+}

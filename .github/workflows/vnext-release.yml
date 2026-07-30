@@ -1,0 +1,171 @@
+name: vNext Release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_id:
+        description: Logical Release source ID
+        required: true
+        default: remote:official
+        type: string
+      signer_key_id:
+        description: Public signer key ID
+        required: true
+        default: framework.release.prototype
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AGENTIC_RELEASE_SIGNING_KEY_HEX: ${{ secrets.AGENTIC_RELEASE_SIGNING_KEY_HEX }}
+      AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
+      AGENTIC_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
+      AGENTIC_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
+      AGENTIC_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/vnext
+
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v6
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal --component clippy,rustfmt
+          rustup default 1.89.0
+
+      - name: Run current Kit regression tests
+        run: |
+          sh -n bin/agentic-init
+          python3 -m py_compile bin/agentic
+          sh tests/test-init.sh
+
+      - name: Run vNext regression tests
+        run: sh tests/test-vnext-rust.sh
+
+      - name: Build and verify signed Release candidate
+        run: sh prototype/vnext/scripts/release-ci.sh
+
+      # This workflow deliberately stops at a reviewable CI artifact. Publishing
+      # to an external Release endpoint belongs to a separately approved job.
+      - name: Upload reviewable Release candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentic-vnext-release-candidate
+          path: dist/vnext/
+          if-no-files-found: error
+          retention-days: 14
+
+  build-binaries:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+            binary: agentic-vnext-rust-x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            binary: agentic-vnext-rust-aarch64-unknown-linux-gnu
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+            binary: agentic-vnext-rust-x86_64-apple-darwin
+          - runner: macos-15
+            target: aarch64-apple-darwin
+            binary: agentic-vnext-rust-aarch64-apple-darwin
+          - runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            binary: agentic-vnext-rust-x86_64-pc-windows-msvc.exe
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out reviewed source
+        uses: actions/checkout@v6
+
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+
+      - name: Build native Release binary
+        shell: bash
+        run: |
+          sh prototype/vnext/scripts/build-release-binary.sh \
+            "${{ matrix.target }}" \
+            "dist/binaries/${{ matrix.target }}"
+
+      - name: Validate Windows bootstrap syntax
+        if: matrix.target == 'x86_64-pc-windows-msvc'
+        shell: powershell
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path prototype/vnext/bootstrap/install.ps1),
+            [ref]$tokens,
+            [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_ }
+            exit 1
+          }
+
+      - name: Attest native Release binary provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/binaries/${{ matrix.target }}/${{ matrix.binary }}
+
+      - name: Upload binary candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentic-vnext-binary-${{ matrix.target }}
+          path: dist/binaries/${{ matrix.target }}/
+          if-no-files-found: error
+          retention-days: 14
+
+  assemble-binaries:
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Check out binary candidate controls
+        uses: actions/checkout@v6
+
+      - name: Download all native binary candidates
+        uses: actions/download-artifact@v5
+        with:
+          pattern: agentic-vnext-binary-*
+          path: dist/release-binaries
+          merge-multiple: true
+
+      - name: Validate binary records and create checksums
+        run: |
+          python3 prototype/vnext/scripts/verify-release-binaries.py \
+            dist/release-binaries \
+            "${{ github.sha }}" \
+            --write-checksums
+          sh prototype/vnext/scripts/verify-release-binaries.sh \
+            dist/release-binaries \
+            "${{ github.sha }}"
+
+      - name: Upload complete binary candidate set
+        uses: actions/upload-artifact@v7
+        with:
+          name: agentic-vnext-release-binaries
+          path: dist/release-binaries/
+          if-no-files-found: error
+          retention-days: 14

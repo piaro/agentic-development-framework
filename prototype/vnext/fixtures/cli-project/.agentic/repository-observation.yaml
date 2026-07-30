@@ -1,0 +1,34 @@
+schema_version: "3"
+phase: pre-build
+analysis:
+  roots:
+    - src
+artifacts:
+  - ref: code.place-order-handler
+    path: src/place_order.py
+    language: python
+    bindings:
+      symbols:
+        place_order:
+          logical_ref: operation.place-order
+          owner: team.ordering
+          authority_ref: decision.repository-bindings
+      resources:
+        orders:
+          logical_ref: data.orders
+          owner: team.ordering
+          authority_ref: decision.repository-bindings
+  - ref: code.order-events-publisher
+    path: src/publish_order.py
+    language: python
+    bindings:
+      symbols:
+        publish_order:
+          logical_ref: operation.place-order
+          owner: team.ordering
+          authority_ref: decision.repository-bindings
+      resources:
+        order_events:
+          logical_ref: integration.order-events
+          owner: team.ordering
+          authority_ref: decision.repository-bindings

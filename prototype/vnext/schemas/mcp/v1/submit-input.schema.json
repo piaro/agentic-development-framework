@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/mcp/v1/submit-input",
+  "title": "agentic_submit input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "change_id",
+    "action_id",
+    "context_digest",
+    "payload"
+  ],
+  "properties": {
+    "change_id": {
+      "type": "string",
+      "pattern": "^change\\.[A-Za-z0-9._-]+$"
+    },
+    "action_id": {
+      "type": "string",
+      "pattern": "^action\\.[A-Za-z0-9._-]+$"
+    },
+    "context_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "output_refs": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  }
+}

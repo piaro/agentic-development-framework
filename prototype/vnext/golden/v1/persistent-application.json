@@ -1,0 +1,12 @@
+{
+  "schema_version": "1",
+  "persistent_application_protocol_version": "1",
+  "schema_root": "../../schemas/v1",
+  "scenario_case": "application-lifecycle.json",
+  "document_formats": [
+    "yaml",
+    "markdown"
+  ],
+  "expected_checkpoints": 10,
+  "expected_result_records": 10
+}

@@ -1,0 +1,62 @@
+{
+  "schema_version": "1",
+  "suite_id": "agentic-vnext-golden-v1",
+  "cases": [
+    {
+      "kind": "canonicalization",
+      "path": "canonicalization.json"
+    },
+    {
+      "kind": "schema-validation",
+      "path": "schema-validation.json"
+    },
+    {
+      "kind": "rule-compilation",
+      "path": "rule-compilation.json"
+    },
+    {
+      "kind": "typed-fact-detection",
+      "path": "typed-fact-detection.json"
+    },
+    {
+      "kind": "kernel-decision",
+      "path": "kernel-decision.json"
+    },
+    {
+      "kind": "context-compilation",
+      "path": "context-compilation.json"
+    },
+    {
+      "kind": "project-snapshot",
+      "path": "project-snapshot.json"
+    },
+    {
+      "kind": "framework-lock",
+      "path": "framework-lock.json"
+    },
+    {
+      "kind": "result-submission",
+      "path": "result-submission.json"
+    },
+    {
+      "kind": "filesystem-project",
+      "path": "filesystem-project.json"
+    },
+    {
+      "kind": "persistent-application",
+      "path": "persistent-application.json"
+    },
+    {
+      "kind": "explain-report",
+      "path": "explain-report.json"
+    },
+    {
+      "kind": "application",
+      "path": "application-initial.json"
+    },
+    {
+      "kind": "application-scenario",
+      "path": "application-lifecycle.json"
+    }
+  ]
+}

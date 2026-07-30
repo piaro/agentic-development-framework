@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v1/release-manifest.schema.json",
+  "title": "Framework Release Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "assets"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "release_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "assets": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rules",
+        "schemas"
+      ],
+      "properties": {
+        "rules": {
+          "type": "string",
+          "minLength": 1
+        },
+        "schemas": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

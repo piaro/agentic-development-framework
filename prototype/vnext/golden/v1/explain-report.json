@@ -1,0 +1,159 @@
+{
+  "schema_version": "1",
+  "explain_report_schema_version": "1",
+  "schema_path": "../../schemas/outputs/v1/explain-report.schema.json",
+  "base_case": "application-initial.json",
+  "scenario_case": "application-lifecycle.json",
+  "checkpoints": [
+    {
+      "label": "initial",
+      "after_step": null,
+      "state": "needs-analysis",
+      "candidate_count": 3,
+      "requirement_count": 1,
+      "authority_statuses": [],
+      "report_digest": "sha256:c22e6eb515c643a8a2358ee2984ad7e580d1d9fb4f271d4e9be4ca423f22e148",
+      "text_digest": "sha256:1a26f6d50dd43a20785b45e1374358143ac466c4b29435dd89b5efa04f229f6e"
+    },
+    {
+      "label": "after-step-0",
+      "after_step": 0,
+      "state": "needs-analysis",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [],
+      "report_digest": "sha256:ab476b3471f5bcf2f58fd5d4977f88c02330dd8ac8620dea9195402c91193095",
+      "text_digest": "sha256:fed2ba599a3a0620da9b0170040cb01d8b4f6440ab8f6c8022c834826800b616"
+    },
+    {
+      "label": "after-step-1",
+      "after_step": 1,
+      "state": "needs-analysis",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [],
+      "report_digest": "sha256:104aca64be8ec3f8471ad1c6a7b844b696e3a15ebf889e28370b6ae918110298",
+      "text_digest": "sha256:dcb1c08593867074e5ad0bbe0b6d98ce239968de2aaac64c2d50e63fe5327763"
+    },
+    {
+      "label": "after-step-2",
+      "after_step": 2,
+      "state": "needs-human-decision",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "open"
+      ],
+      "report_digest": "sha256:ed5b2ed299c1747aaea8e891fc25f7c0bacc300ea14d41ff5e2c639e05b1b9a3",
+      "text_digest": "sha256:acd286f676a8a1f839f207ddb3c9d27f86bdf26aa73a0dbdd76423974a6055e9"
+    },
+    {
+      "label": "after-step-3",
+      "after_step": 3,
+      "state": "needs-decision-recording",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "answered-not-recorded"
+      ],
+      "report_digest": "sha256:e6ad89ae87eb5beb9e5eee3a2cbe80486ac41e9619a03e89252a7086fed19502",
+      "text_digest": "sha256:022377e2392eefe1698b130804dd92aa2d11e0dc94a1561325aec24586b49c94"
+    },
+    {
+      "label": "after-step-4",
+      "after_step": 4,
+      "state": "needs-decision-recording",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "answered-not-recorded"
+      ],
+      "report_digest": "sha256:3e39f4b0c8938fff8ca916349968c1b95fd22631dbfd11c8f2885fed68abd53f",
+      "text_digest": "sha256:5a425163f8f529c6f4ef537349acf8ed4dd443cbd8eb3eba8fff87be3f677067"
+    },
+    {
+      "label": "after-step-5",
+      "after_step": 5,
+      "state": "needs-analysis",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:0470d3b4964b693339e05be63cd0f62f6e7bafa34e3037b01aa6771118baf841",
+      "text_digest": "sha256:7cd6bd40e18bfb9b2ceedfe52030397eba5c125119f022fc6a05eab7981df0b2"
+    },
+    {
+      "label": "after-step-6",
+      "after_step": 6,
+      "state": "needs-analysis",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:a9bf4b3169d47939808fafe06ec35959ecd445b60724c0077742dd62bff35b81",
+      "text_digest": "sha256:429f01038d336b41594d5936844dfa95859b4b405a147e796831d5e6cd5f0e05"
+    },
+    {
+      "label": "after-step-7",
+      "after_step": 7,
+      "state": "needs-pre-build-challenge",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:32f1212115d4ced0777302d6ef8f28073359489bbb9b539a41f27ae2de73ac12",
+      "text_digest": "sha256:7dba2f45ef1704d8cf8541b6b2ad135ceceb8a7c0a2e67e53f6f23895ee28258"
+    },
+    {
+      "label": "after-step-8",
+      "after_step": 8,
+      "state": "ready-to-build",
+      "candidate_count": 3,
+      "requirement_count": 4,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:917fe62532a71c7b53917270841ebd3ab922fb19fe53ec3162392f9ff45efbf8",
+      "text_digest": "sha256:464da44f7ebff994dce403b562d80f506602242bdf00f3e2d9b969ace301fd84"
+    },
+    {
+      "label": "after-step-9",
+      "after_step": 9,
+      "state": "needs-evidence",
+      "candidate_count": 3,
+      "requirement_count": 6,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:8b48fb6678fe8bbfc1007de74c1d8114c3ad6be5052aa5f075eacc67e4874e39",
+      "text_digest": "sha256:3248a6ea7adbdb57d85243d67f7f704c2d5bea09d8bbbf544bd3c626633565bd"
+    },
+    {
+      "label": "after-step-10",
+      "after_step": 10,
+      "state": "needs-post-build-challenge",
+      "candidate_count": 3,
+      "requirement_count": 6,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:7d363be7f6a5e6afc4bc7476146c005b18ec6e002900501422ab0bae701fb9e5",
+      "text_digest": "sha256:4d99802c8594bdb6caea3dc8c26ba68f756c4615f29c5d240ac3f53fbbde4cb0"
+    },
+    {
+      "label": "after-step-11",
+      "after_step": 11,
+      "state": "ready-to-merge",
+      "candidate_count": 3,
+      "requirement_count": 6,
+      "authority_statuses": [
+        "recorded"
+      ],
+      "report_digest": "sha256:3d448b40db66dfcb3bb2110b0fe72cccc694a514c9c3ff97d4d1d4478c03ad33",
+      "text_digest": "sha256:ff79bbfb55c49390daf64f57b45c553abbf53dfb8f2f5622098f2134891eb884"
+    }
+  ]
+}

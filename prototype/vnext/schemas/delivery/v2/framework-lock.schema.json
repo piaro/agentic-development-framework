@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/framework-lock.schema.json",
+  "title": "Signed-delivery Framework Lock v2 Extension",
+  "description": "The v1 runtime identity plus a signed Release artifact identity.",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "framework_release",
+    "release_artifact"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2"
+    },
+    "release_artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "artifact_digest",
+        "source_id",
+        "signer_key_id"
+      ],
+      "properties": {
+        "artifact_digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$"
+        },
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "signer_key_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

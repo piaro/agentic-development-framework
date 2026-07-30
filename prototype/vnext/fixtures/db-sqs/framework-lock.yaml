@@ -1,0 +1,19 @@
+schema_version: "1"
+framework_release: prototype-vnext-dev
+protocols:
+  application: "1"
+  canonicalization: canonical-json-v1
+  context_compiler: "4"
+  data_model: "3"
+  explanation: "2"
+  kernel: "5"
+  project_snapshot: "1"
+  rule_compiler: "1"
+detectors:
+  typed-repository-fact: "3"
+schema_bundle:
+  version: "2"
+  digest: sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888
+rule_set:
+  source_digest: sha256:a615e4090b643ccc4e8b860035f5266ac57c4fe3dc54afc75dd877f2faa652f4
+  index_digest: sha256:1b28e64f307122dda15e7f03e07c71f50e6a0c7e99ce55cdd7c7bb4b9fc54a4e

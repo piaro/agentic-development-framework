@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/publish-receipt.schema.json",
+  "title": "Framework Release Publish Receipt v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "artifact_digest",
+    "archive_digest",
+    "signer_public_key",
+    "outputs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "artifact_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "archive_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "signer_public_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "outputs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "archive",
+        "framework_lock"
+      ],
+      "properties": {
+        "archive": {
+          "type": "string",
+          "minLength": 1
+        },
+        "framework_lock": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

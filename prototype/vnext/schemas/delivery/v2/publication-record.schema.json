@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/publication-record.schema.json",
+  "title": "Framework Release Publication Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "release_id",
+    "release_tag",
+    "source_revision",
+    "candidate_workflow_run_id",
+    "source_id",
+    "signer_key_id",
+    "artifact_digest",
+    "archive_digest",
+    "signer_public_key",
+    "asset_digests",
+    "binary_asset_digests"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "release_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "release_tag": {
+      "type": "string",
+      "pattern": "^framework-[A-Za-z0-9][A-Za-z0-9._-]*$"
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "candidate_workflow_run_id": {
+      "type": "string",
+      "pattern": "^[0-9]+$"
+    },
+    "source_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "signer_key_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "artifact_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "archive_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "signer_public_key": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "asset_digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "candidate-framework.lock",
+        "framework-release.tar",
+        "publish-receipt.json"
+      ],
+      "properties": {
+        "candidate-framework.lock": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "framework-release.tar": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "publish-receipt.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    },
+    "binary_asset_digests": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "SHA256SUMS",
+        "agentic-vnext-rust-aarch64-apple-darwin",
+        "agentic-vnext-rust-aarch64-apple-darwin.build.json",
+        "agentic-vnext-rust-aarch64-unknown-linux-gnu",
+        "agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json",
+        "agentic-vnext-rust-x86_64-apple-darwin",
+        "agentic-vnext-rust-x86_64-apple-darwin.build.json",
+        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe",
+        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json",
+        "agentic-vnext-rust-x86_64-unknown-linux-gnu",
+        "agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json"
+      ],
+      "properties": {
+        "SHA256SUMS": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-aarch64-apple-darwin": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-aarch64-apple-darwin.build.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-aarch64-unknown-linux-gnu": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-apple-darwin": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-apple-darwin.build.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-unknown-linux-gnu": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

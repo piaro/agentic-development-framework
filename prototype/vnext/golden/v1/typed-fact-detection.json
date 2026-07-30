@@ -1,0 +1,305 @@
+{
+  "schema_version": "1",
+  "detector_id": "typed-repository-fact",
+  "detector_version": "3",
+  "cases": [
+    {
+      "case_id": "recognized-facts",
+      "input_variants": [
+        {
+          "change_id": "change.place-order",
+          "facts": [
+            {
+              "kind": "message_publish",
+              "operation": "operation.place-order",
+              "integration": "integration.order-events",
+              "evidence_refs": [
+                "code.shared",
+                "code.publisher"
+              ]
+            },
+            {
+              "kind": "db_write",
+              "operation": "operation.place-order",
+              "data": "data.orders",
+              "evidence_refs": [
+                "code.handler"
+              ]
+            }
+          ],
+          "artifact_digests": {
+            "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "code.publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+          },
+          "coverage": {
+            "status": "complete",
+            "scope": "declared-artifacts",
+            "analyzed_refs": [
+              "code.handler",
+              "code.publisher"
+            ],
+            "gaps": []
+          }
+        },
+        {
+          "change_id": "change.place-order",
+          "facts": [
+            {
+              "kind": "db_write",
+              "operation": "operation.place-order",
+              "data": "data.orders",
+              "evidence_refs": [
+                "code.handler"
+              ]
+            },
+            {
+              "kind": "message_publish",
+              "operation": "operation.place-order",
+              "integration": "integration.order-events",
+              "evidence_refs": [
+                "code.publisher",
+                "code.shared"
+              ]
+            }
+          ],
+          "artifact_digests": {
+            "code.publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+          },
+          "coverage": {
+            "status": "complete",
+            "scope": "declared-artifacts",
+            "analyzed_refs": [
+              "code.publisher",
+              "code.handler"
+            ],
+            "gaps": []
+          }
+        }
+      ],
+      "expected": {
+        "change_id": "change.place-order",
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [
+            "code.handler",
+            "code.publisher"
+          ],
+          "gaps": []
+        },
+        "candidates": [
+          {
+            "signal": "distributed-effect",
+            "bindings": {
+              "operation": "operation.place-order",
+              "integration": "integration.order-events"
+            },
+            "evidence_refs": [
+              "code.publisher",
+              "code.shared"
+            ],
+            "detector_id": "typed-repository-fact",
+            "detector_version": "3",
+            "evidence_digest": "sha256:ce580745990341e5a30be71f83adde0815789c1920e9c817827ea5fd69b16f2d",
+            "fingerprint": "sha256:f0547174c17341e1bd2ece0e45b6f085bd17888fca12feec48f051acf68310d9"
+          },
+          {
+            "signal": "message-or-event-publish",
+            "bindings": {
+              "operation": "operation.place-order",
+              "integration": "integration.order-events"
+            },
+            "evidence_refs": [
+              "code.publisher",
+              "code.shared"
+            ],
+            "detector_id": "typed-repository-fact",
+            "detector_version": "3",
+            "evidence_digest": "sha256:ce580745990341e5a30be71f83adde0815789c1920e9c817827ea5fd69b16f2d",
+            "fingerprint": "sha256:9a1af2bd0dcbdd810e58a1ab3908f7546b9d293592efb2607967bb491f6cac04"
+          },
+          {
+            "signal": "persistent-data-write",
+            "bindings": {
+              "operation": "operation.place-order",
+              "data": "data.orders"
+            },
+            "evidence_refs": [
+              "code.handler"
+            ],
+            "detector_id": "typed-repository-fact",
+            "detector_version": "3",
+            "evidence_digest": "sha256:9c3a23580a5eb9e46c67e99e78e9074a853eca846efcf722b1573cc3b4244cca",
+            "fingerprint": "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b"
+          }
+        ],
+        "digest": "sha256:f40612412da52536fcb67a81a5dd82e8f2908c23f4a1a424d9e39905f278ada8"
+      }
+    },
+    {
+      "case_id": "complete-empty-scope",
+      "input_variants": [
+        {
+          "change_id": "change.docs-only",
+          "facts": [],
+          "artifact_digests": {},
+          "coverage": {
+            "status": "complete",
+            "scope": "declared-artifacts",
+            "analyzed_refs": [],
+            "gaps": []
+          }
+        }
+      ],
+      "expected": {
+        "change_id": "change.docs-only",
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        },
+        "candidates": [],
+        "digest": "sha256:c6799c82f14d54c18fa193f150924ce60338be91e81aa96e33a189c88fd9d1de"
+      }
+    },
+    {
+      "case_id": "coverage-not-reported",
+      "input_variants": [
+        {
+          "change_id": "change.unknown-coverage",
+          "facts": [],
+          "artifact_digests": {},
+          "coverage": null
+        }
+      ],
+      "expected": {
+        "change_id": "change.unknown-coverage",
+        "coverage": {
+          "status": "incomplete",
+          "scope": "unknown",
+          "analyzed_refs": [],
+          "gaps": [
+            {
+              "kind": "coverage-not-reported",
+              "reason": "Detector coverage was not reported"
+            }
+          ]
+        },
+        "candidates": [],
+        "digest": "sha256:91eec8e89566643f94fc37f6f295f9638329b9cf5714e080e9a9ad163ae44d22"
+      }
+    }
+  ],
+  "invalid_cases": [
+    {
+      "case_id": "missing-operation",
+      "input": {
+        "change_id": "change.invalid",
+        "facts": [
+          {
+            "kind": "db_write",
+            "data": "data.orders"
+          }
+        ],
+        "artifact_digests": {},
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        }
+      },
+      "error": "repository fact 0 field operation must be a string"
+    },
+    {
+      "case_id": "non-string-binding",
+      "input": {
+        "change_id": "change.invalid",
+        "facts": [
+          {
+            "kind": "message_publish",
+            "operation": "operation.place-order",
+            "integration": 42
+          }
+        ],
+        "artifact_digests": {},
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        }
+      },
+      "error": "repository fact 0 field integration must be a string"
+    },
+    {
+      "case_id": "invalid-evidence-refs",
+      "input": {
+        "change_id": "change.invalid",
+        "facts": [
+          {
+            "kind": "db_write",
+            "operation": "operation.place-order",
+            "data": "data.orders",
+            "evidence_refs": "code.handler"
+          }
+        ],
+        "artifact_digests": {},
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        }
+      },
+      "error": "repository fact 0 field evidence_refs must be an array"
+    },
+    {
+      "case_id": "non-string-evidence-ref",
+      "input": {
+        "change_id": "change.invalid",
+        "facts": [
+          {
+            "kind": "db_write",
+            "operation": "operation.place-order",
+            "data": "data.orders",
+            "evidence_refs": [
+              42
+            ]
+          }
+        ],
+        "artifact_digests": {},
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        }
+      },
+      "error": "repository fact 0 field evidence_refs items must be strings"
+    },
+    {
+      "case_id": "unknown-fact-kind",
+      "input": {
+        "change_id": "change.invalid",
+        "facts": [
+          {
+            "kind": "cache_read",
+            "operation": "operation.place-order",
+            "evidence_refs": []
+          }
+        ],
+        "artifact_digests": {},
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [],
+          "gaps": []
+        }
+      },
+      "error": "repository fact 0 has unsupported kind: cache_read"
+    }
+  ]
+}

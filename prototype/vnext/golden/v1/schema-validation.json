@@ -1,0 +1,228 @@
+{
+  "schema_version": "1",
+  "schema_bundle_version": "2",
+  "schema_bundle_digest": "sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888",
+  "schema_root": "../../schemas/v1",
+  "cases": [
+    {
+      "case_id": "valid-contract",
+      "record_kind": "contract",
+      "record": {
+        "schema_version": "1",
+        "id": "contract.golden",
+        "applies_to": [
+          "operation.golden"
+        ],
+        "clauses": [
+          {
+            "id": "stable-output",
+            "text": "同じ入力には同じ結果を返す"
+          }
+        ]
+      },
+      "valid": true
+    },
+    {
+      "case_id": "invalid-contract-unknown-field",
+      "record_kind": "contract",
+      "record": {
+        "schema_version": "1",
+        "id": "contract.golden",
+        "applies_to": [],
+        "clauses": [],
+        "implicit_rule": true
+      },
+      "valid": false,
+      "error_path": "$.implicit_rule"
+    },
+    {
+      "case_id": "valid-analysis-result",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-analysis",
+        "change_id": "change.golden",
+        "action_id": "action.golden-analysis",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {
+          "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "output_refs": [],
+        "freshness_refs": {
+          "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "analysis-complete|change.golden",
+              "definition_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "status": "satisfied",
+              "summary": "対象範囲と既存Contractを確認した",
+              "basis_refs": [
+                "change.golden"
+              ],
+              "input_refs": {
+                "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              },
+              "freshness_refs": {
+                "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+              }
+            }
+          ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "case_id": "invalid-result-role",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-role",
+        "change_id": "change.golden",
+        "action_id": "action.golden-role",
+        "role": "Builder",
+        "result_schema": "result.analysis",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {
+          "outcomes": []
+        }
+      },
+      "valid": false,
+      "error_path": "$.role"
+    },
+    {
+      "case_id": "invalid-status-only-outcome",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-status-only",
+        "change_id": "change.golden",
+        "action_id": "action.golden-status-only",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "analysis-complete|change.golden",
+              "definition_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "status": "satisfied"
+            }
+          ]
+        }
+      },
+      "valid": false,
+      "error_path": "$.payload.outcomes[0]"
+    },
+    {
+      "case_id": "invalid-unknown-result-schema",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-unknown",
+        "change_id": "change.golden",
+        "action_id": "action.golden-unknown",
+        "role": "Analyst",
+        "result_schema": "result.unknown",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {}
+      },
+      "valid": false,
+      "error_path": "$.result_schema"
+    },
+    {
+      "case_id": "valid-not-applicable-signal-review",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-not-applicable",
+        "change_id": "change.golden",
+        "action_id": "action.golden-not-applicable",
+        "role": "Analyst",
+        "result_schema": "result.risk-signal-review",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {
+          "reviewed_candidates": [
+            {
+              "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "status": "not-applicable",
+              "reason": "Detectorの誤検出である",
+              "basis_refs": ["code.golden"]
+            }
+          ],
+          "outcomes": []
+        }
+      },
+      "valid": true
+    },
+    {
+      "case_id": "invalid-legacy-excluded-signal-review",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-legacy-excluded",
+        "change_id": "change.golden",
+        "action_id": "action.golden-legacy-excluded",
+        "role": "Analyst",
+        "result_schema": "result.risk-signal-review",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {
+          "reviewed_candidates": [
+            {
+              "fingerprint": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "status": "excluded",
+              "reason": "旧保存値",
+              "basis_refs": ["code.golden"]
+            }
+          ],
+          "outcomes": []
+        }
+      },
+      "valid": false,
+      "error_path": "$.payload.reviewed_candidates[0].status"
+    },
+    {
+      "case_id": "valid-human-answer",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-human",
+        "change_id": "change.golden",
+        "action_id": "action.golden-human",
+        "role": "Human",
+        "result_schema": "result.human-answer",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {},
+        "output_refs": [],
+        "freshness_refs": {},
+        "payload": {
+          "answers": [
+            {
+              "request_id": "decision-request.golden",
+              "selection": "option.accept"
+            }
+          ]
+        }
+      },
+      "valid": true
+    }
+  ]
+}

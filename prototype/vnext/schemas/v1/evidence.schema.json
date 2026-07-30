@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/v1/evidence",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "change_id",
+    "requirement_instances",
+    "method",
+    "outcome",
+    "summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "pattern": "^evidence\\.[A-Za-z0-9._-]+$"},
+    "change_id": {"type": "string", "pattern": "^change\\.[A-Za-z0-9._-]+$"},
+    "requirement_instances": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "contract_clause_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "git_revision": {"type": "string", "minLength": 1},
+    "method": {"type": "string", "minLength": 1},
+    "condition": {"type": "string", "minLength": 1},
+    "outcome": {"type": "string", "enum": ["passed", "failed", "inconclusive"]},
+    "summary": {"type": "string", "minLength": 1},
+    "artifact": {"type": "object"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,198 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/next-response.schema.json",
+  "title": "Next Response v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "change_id",
+    "state",
+    "next_action",
+    "context",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "change_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "state": {
+      "type": "string",
+      "minLength": 1
+    },
+    "next_action": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "id",
+            "role",
+            "action",
+            "reason",
+            "result_schema",
+            "requirement_instances",
+            "candidate_fingerprints"
+          ],
+          "properties": {
+            "id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string",
+              "minLength": 1
+            },
+            "action": {
+              "type": "string",
+              "minLength": 1
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "result_schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "requirement_instances": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "candidate_fingerprints": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "context": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "action_id",
+            "role",
+            "source_refs",
+            "source_digests",
+            "instance_source_digests",
+            "contract_clause_projection_version",
+            "contract_clauses",
+            "contract_clauses_digest",
+            "payload",
+            "digest"
+          ],
+          "properties": {
+            "action_id": {
+              "type": "string",
+              "minLength": 1
+            },
+            "role": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_refs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "source_digests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            "instance_source_digests": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              }
+            },
+            "contract_clause_projection_version": {
+              "const": "1"
+            },
+            "contract_clauses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "contract_id",
+                  "clause_id",
+                  "clause_ref",
+                  "text",
+                  "applies_to",
+                  "authority_ref",
+                  "digest",
+                  "selected_for"
+                ],
+                "properties": {
+                  "contract_id": {"type": "string", "minLength": 1},
+                  "clause_id": {"type": "string", "minLength": 1},
+                  "clause_ref": {"type": "string", "minLength": 1},
+                  "text": {"type": "string", "minLength": 1},
+                  "applies_to": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                    "uniqueItems": true
+                  },
+                  "authority_ref": {
+                    "anyOf": [
+                      {"type": "string", "minLength": 1},
+                      {"type": "null"}
+                    ]
+                  },
+                  "digest": {"type": "string", "minLength": 1},
+                  "selected_for": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                    "uniqueItems": true
+                  }
+                }
+              }
+            },
+            "contract_clauses_digest": {
+              "type": "string",
+              "minLength": 1
+            },
+            "payload": {
+              "type": "object"
+            },
+            "digest": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    },
+    "diagnostics": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

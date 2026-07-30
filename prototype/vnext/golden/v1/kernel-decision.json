@@ -1,0 +1,619 @@
+{
+  "schema_version": "1",
+  "kernel_version": "5",
+  "schema_root": "../../schemas/v1",
+  "common": {
+    "change_id": "change.place-order",
+    "artifact_digests": {
+      "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "facts": [
+      {
+        "kind": "db_write",
+        "operation": "operation.place-order",
+        "data": "data.orders",
+        "evidence_refs": [
+          "code.handler"
+        ]
+      }
+    ],
+    "coverage": {
+      "status": "complete",
+      "scope": "declared-artifacts",
+      "analyzed_refs": [
+        "code.handler"
+      ],
+      "gaps": []
+    },
+    "result_records": {
+      "review": {
+        "result_schema": "result.risk-signal-review",
+        "role": "Analyst",
+        "payload": {
+          "reviewed_candidates": [
+            {
+              "fingerprint": "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b",
+              "status": "confirmed"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "analysis": {
+        "result_schema": "result.analysis",
+        "role": "Analyst",
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "analysis-ready|operation.place-order",
+              "definition_digest": "sha256:69cf2023eaf3982c07b0109747931436ab487687c649f07e19440ffdea1137dc",
+              "status": "satisfied"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "stale-analysis": {
+        "result_schema": "result.analysis",
+        "role": "Analyst",
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "analysis-ready|operation.place-order",
+              "definition_digest": "sha256:69cf2023eaf3982c07b0109747931436ab487687c649f07e19440ffdea1137dc",
+              "status": "satisfied"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      },
+      "design-challenge": {
+        "result_schema": "result.challenge",
+        "role": "Challenger",
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "design-challenged|operation.place-order",
+              "definition_digest": "sha256:c20232b0142b2976220482eef8aa0679d93b4eed40a79a7fe75c1133db53f7d0",
+              "status": "satisfied"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "evidence": {
+        "result_schema": "result.evidence",
+        "role": "Builder",
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "evidence-recorded|operation.place-order",
+              "definition_digest": "sha256:353488893843cc483f67e3aa34210e0213e9e0997f730afd8bc72e800b736dd4",
+              "status": "satisfied"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "implementation-challenge": {
+        "result_schema": "result.challenge",
+        "role": "Challenger",
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "implementation-challenged|operation.place-order",
+              "definition_digest": "sha256:38de5d49c44e0e3d0cb1c78e7f20b1eb6f1196ce866ac2ad77e164f3086b165c",
+              "status": "satisfied"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "decision-request": {
+        "result_schema": "result.analysis",
+        "role": "Analyst",
+        "payload": {
+          "decision_requests": [
+            {
+              "id": "request.boundary"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      },
+      "human-answer": {
+        "result_schema": "result.human-answer",
+        "role": "Human",
+        "payload": {
+          "answers": [
+            {
+              "request_id": "request.boundary"
+            }
+          ]
+        },
+        "freshness_refs": {
+          "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+        }
+      }
+    },
+    "rule_source": {
+      "requirements": [
+        {
+          "id": "risk-signals-reviewed",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.risk-signal-review"
+        },
+        {
+          "id": "analysis-ready",
+          "phase": "before-build",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "depends_on": [
+            "risk-signals-reviewed"
+          ]
+        },
+        {
+          "id": "design-challenged",
+          "phase": "before-build",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "depends_on": [
+            "analysis-ready"
+          ]
+        },
+        {
+          "id": "evidence-recorded",
+          "phase": "before-merge",
+          "role": "Builder",
+          "result_schema": "result.evidence"
+        },
+        {
+          "id": "implementation-challenged",
+          "phase": "before-merge",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "depends_on": [
+            "evidence-recorded"
+          ]
+        }
+      ],
+      "rules": [
+        {
+          "id": "baseline.review",
+          "when": "always",
+          "requirement": "risk-signals-reviewed",
+          "subjects": [
+            "change.id"
+          ]
+        },
+        {
+          "id": "data.analysis",
+          "signal": "persistent-data-write",
+          "requirement": "analysis-ready",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "data.design-challenge",
+          "signal": "persistent-data-write",
+          "requirement": "design-challenged",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "data.evidence",
+          "signal": "persistent-data-write",
+          "repository_phase": "post-build",
+          "requirement": "evidence-recorded",
+          "subjects": [
+            "binding.operation"
+          ]
+        },
+        {
+          "id": "data.implementation-challenge",
+          "signal": "persistent-data-write",
+          "repository_phase": "post-build",
+          "requirement": "implementation-challenged",
+          "subjects": [
+            "binding.operation"
+          ]
+        }
+      ]
+    }
+  },
+  "cases": [
+    {
+      "case_id": "unreviewed-signal",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": []
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "action": {
+          "id": "action.e5d1e25c450f2e3c",
+          "role": "Analyst",
+          "action": "review-risk-signals",
+          "result_schema": "result.risk-signal-review",
+          "instance_keys": [
+            "risk-signals-reviewed|change.place-order"
+          ],
+          "candidate_fingerprints": [
+            "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b"
+          ]
+        },
+        "instance_statuses": {
+          "risk-signals-reviewed|change.place-order": "unsatisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:cd6a3485193c2e680a6b13080432f717bbd24fe1592e146bcbe0009df1cc2833"
+      }
+    },
+    {
+      "case_id": "incomplete-detection-coverage",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [],
+        "coverage": {
+          "status": "incomplete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [
+            "code.handler"
+          ],
+          "gaps": [
+            {
+              "kind": "unmapped-observation",
+              "ref": "symbol.place_order",
+              "reason": "domain binding is missing"
+            }
+          ]
+        }
+      },
+      "expected": {
+        "state": "blocked-detection",
+        "action": null,
+        "instance_statuses": {},
+        "diagnostics": [
+          "detection coverage incomplete: unmapped-observation (symbol.place_order): domain binding is missing"
+        ],
+        "decision_digest": "sha256:ea7d92acb386e8c24380d3ef1efea58177d9f5af958dda01508b50c0700d5290"
+      }
+    },
+    {
+      "case_id": "analysis-required",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review"
+        ]
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "action": {
+          "id": "action.c92ca4097348acd5",
+          "role": "Analyst",
+          "action": "analyze-requirements",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "analysis-ready|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "unsatisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:f53e1aa54489a88eef644a52c9c9a836efabfb965a520861ef1ffc75b0eb1c0c"
+      }
+    },
+    {
+      "case_id": "stale-analysis",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "stale-analysis"
+        ]
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "action": {
+          "id": "action.c92ca4097348acd5",
+          "role": "Analyst",
+          "action": "analyze-requirements",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "analysis-ready|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "unsatisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:f53e1aa54489a88eef644a52c9c9a836efabfb965a520861ef1ffc75b0eb1c0c"
+      }
+    },
+    {
+      "case_id": "design-challenge-required",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "analysis"
+        ]
+      },
+      "expected": {
+        "state": "needs-pre-build-challenge",
+        "action": {
+          "id": "action.37005fa3068fa02c",
+          "role": "Challenger",
+          "action": "challenge-result",
+          "result_schema": "result.challenge",
+          "instance_keys": [
+            "design-challenged|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "satisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:925a1c855d0896e53b18249321f66821b062c283af985ab95fac11da290270f9"
+      }
+    },
+    {
+      "case_id": "human-decision-required",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "decision-request"
+        ]
+      },
+      "expected": {
+        "state": "needs-human-decision",
+        "action": {
+          "id": "action.4c0ddfc8946e42cd",
+          "role": "Human",
+          "action": "answer-decision-request",
+          "result_schema": "result.human-answer",
+          "instance_keys": [],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "unsatisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:1d8c2992483049c517952d1f149308283b6fbbeecaed57393294db5b2a106123"
+      }
+    },
+    {
+      "case_id": "decision-recording-required",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "decision-request",
+          "human-answer"
+        ]
+      },
+      "expected": {
+        "state": "needs-decision-recording",
+        "action": {
+          "id": "action.9ed98b64dfa9fba3",
+          "role": "Analyst",
+          "action": "record-human-decision",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "analysis-ready|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "unsatisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:3beb709754cadc4880601013527dece6f24f9e2b22c64ef730b8a386294385a4"
+      }
+    },
+    {
+      "case_id": "recorded-decision-returns-to-analysis",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "decision-request",
+          "human-answer"
+        ],
+        "decisions": [
+          {
+            "id": "decision.boundary",
+            "status": "accepted",
+            "resolves": [
+              "request.boundary"
+            ]
+          }
+        ],
+        "contracts": [
+          {
+            "clauses": [
+              {
+                "authority_ref": "decision.boundary"
+              }
+            ]
+          }
+        ]
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "action": {
+          "id": "action.c92ca4097348acd5",
+          "role": "Analyst",
+          "action": "analyze-requirements",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "analysis-ready|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "unsatisfied",
+          "design-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:f53e1aa54489a88eef644a52c9c9a836efabfb965a520861ef1ffc75b0eb1c0c"
+      }
+    },
+    {
+      "case_id": "ready-to-build",
+      "input": {
+        "repository_phase": "pre-build",
+        "result_refs": [
+          "review",
+          "analysis",
+          "design-challenge"
+        ]
+      },
+      "expected": {
+        "state": "ready-to-build",
+        "action": {
+          "id": "action.7298bff69acdb1bb",
+          "role": "Builder",
+          "action": "implement-change",
+          "result_schema": "result.build",
+          "instance_keys": [],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "satisfied",
+          "design-challenged|operation.place-order": "satisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:cfe2b330d88d8e28e0d3176153611c7919df6acdfb5269cd2877a9bab4360e4d"
+      }
+    },
+    {
+      "case_id": "evidence-required",
+      "input": {
+        "repository_phase": "post-build",
+        "result_refs": [
+          "review",
+          "analysis",
+          "design-challenge"
+        ]
+      },
+      "expected": {
+        "state": "needs-evidence",
+        "action": {
+          "id": "action.a7a3446e4d6d2956",
+          "role": "Builder",
+          "action": "record-evidence",
+          "result_schema": "result.evidence",
+          "instance_keys": [
+            "evidence-recorded|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "satisfied",
+          "design-challenged|operation.place-order": "satisfied",
+          "evidence-recorded|operation.place-order": "unsatisfied",
+          "implementation-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:21925e428a81766c43791920a41b5cae0bb136d7d18e751df4f61c80ec610af1"
+      }
+    },
+    {
+      "case_id": "implementation-challenge-required",
+      "input": {
+        "repository_phase": "post-build",
+        "result_refs": [
+          "review",
+          "analysis",
+          "design-challenge",
+          "evidence"
+        ]
+      },
+      "expected": {
+        "state": "needs-post-build-challenge",
+        "action": {
+          "id": "action.fe9711025ee98fda",
+          "role": "Challenger",
+          "action": "challenge-result",
+          "result_schema": "result.challenge",
+          "instance_keys": [
+            "implementation-challenged|operation.place-order"
+          ],
+          "candidate_fingerprints": []
+        },
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "satisfied",
+          "design-challenged|operation.place-order": "satisfied",
+          "evidence-recorded|operation.place-order": "satisfied",
+          "implementation-challenged|operation.place-order": "unsatisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:ebedae6862d45e24c1ab01a6d256f2b8b8733f1fa068ec22251b9f2cb761aeaa"
+      }
+    },
+    {
+      "case_id": "ready-to-merge",
+      "input": {
+        "repository_phase": "post-build",
+        "result_refs": [
+          "review",
+          "analysis",
+          "design-challenge",
+          "evidence",
+          "implementation-challenge"
+        ]
+      },
+      "expected": {
+        "state": "ready-to-merge",
+        "action": null,
+        "instance_statuses": {
+          "analysis-ready|operation.place-order": "satisfied",
+          "design-challenged|operation.place-order": "satisfied",
+          "evidence-recorded|operation.place-order": "satisfied",
+          "implementation-challenged|operation.place-order": "satisfied",
+          "risk-signals-reviewed|change.place-order": "satisfied"
+        },
+        "diagnostics": [],
+        "decision_digest": "sha256:760e57bfa027ebf16ca10a2c68ca04a3d2c25eed2736d34683031ee889ff6ef8"
+      }
+    }
+  ]
+}

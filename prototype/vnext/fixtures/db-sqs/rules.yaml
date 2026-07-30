@@ -1,0 +1,203 @@
+requirements:
+  - id: risk-signals-reviewed
+    phase: before-build
+    role: Analyst
+    result_schema: result.risk-signal-review
+    context:
+      - change
+      - repository-artifacts
+
+  - id: affected-data-confirmed
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - risk-signals-reviewed
+    context:
+      - change
+      - affected-code
+
+  - id: operation-boundaries-confirmed
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - risk-signals-reviewed
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+      - affected-code
+
+  - id: data-contracts-ready
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - operation-boundaries-confirmed
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+
+  - id: distributed-effect-contracts-ready
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - operation-boundaries-confirmed
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+
+  - id: platform-behavior-verified
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - risk-signals-reviewed
+    context:
+      - change
+      - affected-code
+
+  - id: design-challenged
+    phase: before-build
+    role: Challenger
+    result_schema: result.challenge
+    depends_on:
+      - data-contracts-ready
+      - distributed-effect-contracts-ready
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+      - dependency-results
+      - affected-code
+
+  - id: data-evidence-recorded
+    phase: before-merge
+    role: Builder
+    result_schema: result.evidence
+    assurance: evidence-backed
+    context:
+      - change
+      - matching-contracts
+      - affected-code
+
+  - id: data-implementation-challenged
+    phase: before-merge
+    role: Challenger
+    result_schema: result.challenge
+    depends_on:
+      - data-evidence-recorded
+    context:
+      - change
+      - matching-contracts
+      - dependency-results
+      - affected-code
+
+  - id: distributed-effect-evidence-recorded
+    phase: before-merge
+    role: Builder
+    result_schema: result.evidence
+    assurance: evidence-backed
+    context:
+      - change
+      - matching-contracts
+      - affected-code
+
+  - id: distributed-effect-implementation-challenged
+    phase: before-merge
+    role: Challenger
+    result_schema: result.challenge
+    depends_on:
+      - distributed-effect-evidence-recorded
+    context:
+      - change
+      - matching-contracts
+      - dependency-results
+      - affected-code
+
+rules:
+  - id: baseline.review-risk-signals
+    when: always
+    requirement: risk-signals-reviewed
+    subjects:
+      - change.id
+
+  - id: persistent-data.identify-affected-data
+    signal: persistent-data-write
+    requirement: affected-data-confirmed
+    subjects:
+      - binding.data
+
+  - id: persistent-data.confirm-operation-boundary
+    signal: persistent-data-write
+    requirement: operation-boundaries-confirmed
+    subjects:
+      - binding.operation
+
+  - id: persistent-data.prepare-contracts
+    signal: persistent-data-write
+    requirement: data-contracts-ready
+    subjects:
+      - binding.data
+
+  - id: persistent-data.challenge-design
+    signal: persistent-data-write
+    requirement: design-challenged
+    subjects:
+      - binding.operation
+
+  - id: distributed-effect.confirm-operation-boundary
+    signal: distributed-effect
+    requirement: operation-boundaries-confirmed
+    subjects:
+      - binding.operation
+
+  - id: distributed-effect.prepare-contracts
+    signal: distributed-effect
+    requirement: distributed-effect-contracts-ready
+    subjects:
+      - binding.integration
+
+  - id: distributed-effect.verify-platform
+    signal: distributed-effect
+    requirement: platform-behavior-verified
+    subjects:
+      - binding.integration
+
+  - id: distributed-effect.challenge-design
+    signal: distributed-effect
+    requirement: design-challenged
+    subjects:
+      - binding.operation
+
+  - id: persistent-data.record-evidence
+    signal: persistent-data-write
+    repository_phase: post-build
+    requirement: data-evidence-recorded
+    subjects:
+      - binding.operation
+
+  - id: persistent-data.challenge-implementation
+    signal: persistent-data-write
+    repository_phase: post-build
+    requirement: data-implementation-challenged
+    subjects:
+      - binding.operation
+
+  - id: distributed-effect.record-evidence
+    signal: distributed-effect
+    repository_phase: post-build
+    requirement: distributed-effect-evidence-recorded
+    subjects:
+      - binding.integration
+
+  - id: distributed-effect.challenge-implementation
+    signal: distributed-effect
+    repository_phase: post-build
+    requirement: distributed-effect-implementation-challenged
+    subjects:
+      - binding.operation

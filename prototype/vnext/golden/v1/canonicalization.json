@@ -1,0 +1,61 @@
+{
+  "schema_version": "1",
+  "canonicalization_version": "canonical-json-v1",
+  "number_scope": "integers-only",
+  "cases": [
+    {
+      "case_id": "ordered-object",
+      "value": {
+        "z": 0,
+        "a": 1
+      },
+      "canonical_json": "{\"a\":1,\"z\":0}",
+      "digest": "sha256:b55af27c4bd5f02ebeca8f901b84d2940b22e7bea7230e4d06f275d903bfdd72"
+    },
+    {
+      "case_id": "nested-unicode",
+      "value": {
+        "message": "注文✓",
+        "items": [
+          3,
+          {
+            "β": true,
+            "a": null
+          }
+        ]
+      },
+      "canonical_json": "{\"items\":[3,{\"a\":null,\"β\":true}],\"message\":\"注文✓\"}",
+      "digest": "sha256:6cff156a7ea8633f8453faf477f3293a3a6d9b4c77df2df5b1d2c26770e59a4b"
+    },
+    {
+      "case_id": "escaped-text",
+      "value": {
+        "text": "line1\n\"quoted\"\\end"
+      },
+      "canonical_json": "{\"text\":\"line1\\n\\\"quoted\\\"\\\\end\"}",
+      "digest": "sha256:21198495208faf8ceece7ebb6532cf120243c0aecf91d218cd7073b2e39160ba"
+    },
+    {
+      "case_id": "primitive-array",
+      "value": [
+        null,
+        true,
+        false,
+        -7,
+        0,
+        42
+      ],
+      "canonical_json": "[null,true,false,-7,0,42]",
+      "digest": "sha256:5d9256d3c88f3c7d8d506d15a82339fc3bbea4f867de5afaabeb0d14914e3c6f"
+    }
+  ],
+  "invalid_cases": [
+    {
+      "case_id": "floating-point-is-not-normalized",
+      "value": {
+        "ratio": 1.5
+      },
+      "error": "floating-point-not-supported"
+    }
+  ]
+}

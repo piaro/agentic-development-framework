@@ -1,0 +1,14 @@
+schema_version: "1"
+id: contract.order-lifecycle
+change_id: change.place-order
+applies_to:
+  - operation.place-order
+  - data.orders
+  - integration.order-events
+clauses:
+  - id: orders-source-of-truth
+    text: 受理済み注文の正本はordersテーブルとする
+    authority_ref: decision.order-model
+  - id: order-created-once
+    text: 同じ受付IDから注文を複数作成しない
+    authority_ref: decision.order-model

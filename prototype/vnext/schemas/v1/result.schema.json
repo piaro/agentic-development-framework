@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/v1/result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "change_id",
+    "action_id",
+    "role",
+    "result_schema",
+    "context_digest",
+    "input_refs",
+    "output_refs",
+    "freshness_refs",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "pattern": "^result\\.[A-Za-z0-9._-]+$"},
+    "change_id": {"type": "string", "pattern": "^change\\.[A-Za-z0-9._-]+$"},
+    "action_id": {"type": "string", "pattern": "^action\\.[A-Za-z0-9._-]+$"},
+    "role": {
+      "type": "string",
+      "enum": ["Analyst", "Human", "Builder", "Challenger"]
+    },
+    "result_schema": {"type": "string", "pattern": "^result\\.[A-Za-z0-9._-]+$"},
+    "context_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "input_refs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "output_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "freshness_refs": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-f]{64}$"
+      }
+    },
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": false
+}

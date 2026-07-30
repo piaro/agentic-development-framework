@@ -370,5 +370,6 @@ if "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" change ready update-w
 fi
 
 sh "$KIT_ROOT/tests/test-authority.sh"
+sh "$KIT_ROOT/tests/test-vnext.sh"
 
 printf 'all tests passed\n'

@@ -1,0 +1,460 @@
+{
+  "schema_version": "1",
+  "case_id": "db-sqs.full-lifecycle",
+  "base_case": "application-initial.json",
+  "steps": [
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "reviewed_candidates": [
+            {
+              "fingerprint": "sha256:f0547174c17341e1bd2ece0e45b6f085bd17888fca12feec48f051acf68310d9",
+              "status": "confirmed",
+              "reason": "typed factとコード参照を確認した",
+              "basis_refs": ["code.order-events-publisher"]
+            },
+            {
+              "fingerprint": "sha256:9a1af2bd0dcbdd810e58a1ab3908f7546b9d293592efb2607967bb491f6cac04",
+              "status": "confirmed",
+              "reason": "typed factとコード参照を確認した",
+              "basis_refs": ["code.order-events-publisher"]
+            },
+            {
+              "fingerprint": "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b",
+              "status": "confirmed",
+              "reason": "typed factとコード参照を確認した",
+              "basis_refs": ["code.place-order-handler"]
+            }
+          ],
+          "outcomes": [
+            {
+              "instance_key": "risk-signals-reviewed|change.place-order",
+              "definition_digest": "sha256:72d8372b8155563324202a01a084beb3daa421ccea4a452235fd0260944b98c1",
+              "status": "satisfied",
+              "summary": "risk-signals-reviewedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "snapshot_digest": "sha256:66774998bdeae6452e45bdf849a2fbc4af118343b7bf006c441447685b9c7127",
+        "decision_digest": "sha256:2814ecde0e19b165a898fbb193405ba702ceb802b01a66609f616e26e174598a",
+        "context_digest": "sha256:75e91d7eb73e0f8691f3913d8360c9c93b6097e1e30bc54d4b89d5792f4292d9",
+        "action": {
+          "id": "action.c86d1876be57a3b7",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "operation-boundaries-confirmed|operation.place-order"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "operation-boundaries-confirmed|operation.place-order",
+              "definition_digest": "sha256:e2fc4250692256aad996006913c6036448c3482a6a349e8efde80f01de924ed7",
+              "status": "satisfied",
+              "summary": "operation-boundaries-confirmedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler",
+                "contract.order-lifecycle",
+                "decision.order-model"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "snapshot_digest": "sha256:625bc8f0e802f7818b658f8b9500cb0b9627d52b4991fbfc35cb4c93e2d1c07d",
+        "decision_digest": "sha256:c636e6c901e7d03d4ecfc15466b20d42915c94ed6a25bcff51397c951ddabdef",
+        "context_digest": "sha256:70098bacdfff3dedc08b45ee047a45dae7a4408492109b4f565e463384af5760",
+        "action": {
+          "id": "action.6a642959225680b6",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "distributed-effect-contracts-ready|integration.order-events"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [],
+          "decision_requests": [
+            {
+              "id": "decision-request.submission-result",
+              "question": "DB保存後にSQS送信が失敗した場合、受付結果を何と定義するか",
+              "known_fact_refs": [
+                "contract.order-lifecycle",
+                "decision.order-model"
+              ],
+              "options": [
+                {
+                  "id": "fail-order",
+                  "impact": "送信結果を確定できるまで注文を失敗として扱う"
+                },
+                {
+                  "id": "accepted-and-retry",
+                  "impact": "注文を成功とし、SQS送信を再試行する"
+                }
+              ],
+              "recommendation": {
+                "option_id": "accepted-and-retry",
+                "reason": "DBとSQSを同じcommitで確定できないため"
+              },
+              "required_authority": "team:order-product-owner"
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-human-decision",
+        "snapshot_digest": "sha256:e1268b670bb4d8635b605f502560f773e4eb67acd2d23ed5a2e7228ac2731acf",
+        "decision_digest": "sha256:24e7524bd51513fbf2fb7847872bebfdc53644f09cf3eed08cfc493b33357c17",
+        "context_digest": "sha256:476bbbb14788c348877a6ddb1d2c29b4bde24bbbd8f8c45ada4825ba8335023c",
+        "action": {
+          "id": "action.a5ce67b153296089",
+          "role": "Human",
+          "result_schema": "result.human-answer",
+          "instance_keys": []
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "answers": [
+            {
+              "request_id": "decision-request.submission-result",
+              "selection": "accepted-and-retry",
+              "actor_ref": "team:order-product-owner",
+              "answered_at": "2026-07-26T00:00:00Z"
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-decision-recording",
+        "snapshot_digest": "sha256:07c92cba81d720a1d1d6ff92a1433ef6ef5f64193544510e955b75c187c440b3",
+        "decision_digest": "sha256:02e2b277ab04a943475bf08deb7c0b315b18031f0031b3b6a00fa97193170a56",
+        "context_digest": "sha256:d05a49c64e7aa6a3abd48f9a6bf0a06944486baf47b792a969b2f520b5a81156",
+        "action": {
+          "id": "action.17d89df5e568d5cc",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "distributed-effect-contracts-ready|integration.order-events"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "upsert-decision",
+      "input": {
+        "schema_version": "1",
+        "id": "decision.submission-result",
+        "change_id": "change.place-order",
+        "status": "accepted",
+        "title": "DB保存完了を注文受付成功とする",
+        "resolves": ["decision-request.submission-result"]
+      }
+    },
+    {
+      "operation": "upsert-contract",
+      "input": {
+        "schema_version": "1",
+        "id": "contract.order-lifecycle",
+        "change_id": "change.place-order",
+        "applies_to": [
+          "operation.place-order",
+          "data.orders",
+          "integration.order-events"
+        ],
+        "clauses": [
+          {
+            "id": "orders-source-of-truth",
+            "text": "受理済み注文の正本はordersテーブルとする",
+            "authority_ref": "decision.order-model"
+          },
+          {
+            "id": "submission-result",
+            "text": "DB保存完了を受付成功とし、SQS送信失敗は再試行する",
+            "authority_ref": "decision.submission-result"
+          }
+        ]
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "distributed-effect-contracts-ready|integration.order-events",
+              "definition_digest": "sha256:6fbe0db143dc78a8129902f3cc3c065005c8480a315191d7cb5686bb13632dff",
+              "status": "satisfied",
+              "summary": "distributed-effect-contracts-readyをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "contract.order-lifecycle",
+                "decision.order-model"
+              ]
+            }
+          ]
+        },
+        "output_refs": [
+          "contract.order-lifecycle",
+          "decision.submission-result"
+        ]
+      },
+      "expected": {
+        "state": "needs-analysis",
+        "snapshot_digest": "sha256:bd46cb99f41db5a5b38e173e3efec3900854b60396d4c93156994ea75e411fef",
+        "decision_digest": "sha256:364a72f2e5dbb25d916363e634c17b93f9c9492db631cb8909779f8d3b767ec6",
+        "context_digest": "sha256:3a208e7520fef34f088147d6102dae626d59061d2317d4a46c0828533dea3e90",
+        "action": {
+          "id": "action.c86d1876be57a3b7",
+          "role": "Analyst",
+          "result_schema": "result.analysis",
+          "instance_keys": [
+            "operation-boundaries-confirmed|operation.place-order"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "operation-boundaries-confirmed|operation.place-order",
+              "definition_digest": "sha256:e2fc4250692256aad996006913c6036448c3482a6a349e8efde80f01de924ed7",
+              "status": "satisfied",
+              "summary": "operation-boundaries-confirmedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler",
+                "contract.order-lifecycle",
+                "decision.order-model",
+                "decision.submission-result"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-pre-build-challenge",
+        "snapshot_digest": "sha256:78a06f3334587a3e3b6709bb51824641ef9621455a44fb3f4be6f6076def9443",
+        "decision_digest": "sha256:9bc33fdf3e13253e90b76b088d90f0a29b410f0c22087f40fc460ae099c1478b",
+        "context_digest": "sha256:ec4789c7172c705e022e2f0d56edc180efb12ffa92876ae8cb18eb2231a7f026",
+        "action": {
+          "id": "action.921c56f3ffbf5770",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "instance_keys": [
+            "design-challenged|operation.place-order"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "design-challenged|operation.place-order",
+              "definition_digest": "sha256:e23a8f4dfbf58ef331fef0e0ea68552a163d0462c6f31315929a36856bd8958d",
+              "status": "satisfied",
+              "summary": "design-challengedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler",
+                "contract.order-lifecycle",
+                "decision.order-model",
+                "decision.submission-result",
+                "result.3cfe35a1e43a1d7a775a"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "ready-to-build",
+        "snapshot_digest": "sha256:6d5f2aacf1cf6c90ab445ffc437cac8cbc9fbe7b1a7e45f716991574ee607d69",
+        "decision_digest": "sha256:3862850773dbcd7802438b962d6de98fb5a5d22b8f711910a016508e4b887b37",
+        "context_digest": "sha256:7a641c88833beb3d489a04aeaf31ef7e1af9a69a53ef80e961b57fd432be8d3f",
+        "action": {
+          "id": "action.7298bff69acdb1bb",
+          "role": "Builder",
+          "result_schema": "result.build",
+          "instance_keys": []
+        }
+      }
+    },
+    {
+      "operation": "complete-build",
+      "input": {
+        "repository": {
+          "phase": "post-build",
+          "revision": "golden-r2",
+          "artifacts": [
+          {
+            "ref": "code.place-order-handler",
+            "digest": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+            "applies_to": [
+              "operation.place-order",
+              "data.orders"
+            ]
+          },
+          {
+            "ref": "code.order-events-publisher",
+            "digest": "sha256:8888888888888888888888888888888888888888888888888888888888888888",
+            "applies_to": [
+              "operation.place-order",
+              "integration.order-events"
+            ]
+          }
+          ],
+          "coverage": {
+            "status": "complete",
+            "scope": "declared-artifacts",
+            "analyzed_refs": [
+              "code.order-events-publisher",
+              "code.place-order-handler"
+            ],
+            "gaps": []
+          },
+          "facts": [
+            {
+              "kind": "db_write",
+              "operation": "operation.place-order",
+              "data": "data.orders",
+              "evidence_refs": ["code.place-order-handler"]
+            },
+            {
+              "kind": "message_publish",
+              "operation": "operation.place-order",
+              "integration": "integration.order-events",
+              "evidence_refs": ["code.order-events-publisher"]
+            }
+          ]
+        },
+        "payload": {
+          "summary": "実装を完了した"
+        },
+        "output_refs": [
+          "code.order-events-publisher",
+          "code.place-order-handler"
+        ]
+      },
+      "expected": {
+        "state": "needs-evidence",
+        "snapshot_digest": "sha256:d146847cb379da47d246667dbece3ab2a6fa047dadc3cce9cc3639364f3897c9",
+        "decision_digest": "sha256:ef016dcf47bdeaf98f359cc2710a53029d61afef4b82d094db8d3a4de6fb0c9c",
+        "context_digest": "sha256:fc3e1266bab751b975ffc8a94f16d420e4a908e758179aef536b5eba446e6a23",
+        "action": {
+          "id": "action.09f00a9d8e74cce9",
+          "role": "Builder",
+          "result_schema": "result.evidence",
+          "instance_keys": [
+            "data-evidence-recorded|operation.place-order"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "data-evidence-recorded|operation.place-order",
+              "definition_digest": "sha256:0f6aeb9d489e9f9217ae52f48a544cb2d7e6006ffea5c9b77126d0dfe7b122ef",
+              "status": "satisfied",
+              "summary": "data-evidence-recordedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler",
+                "contract.order-lifecycle"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "needs-post-build-challenge",
+        "snapshot_digest": "sha256:7c9c246cb3522b80068f52e21d022ced1676820138d7b92338da5dad02657102",
+        "decision_digest": "sha256:fbfcbb20f73c0a40e2bfe55b47d206f65080782498f00b6d72f4fe3324488158",
+        "context_digest": "sha256:5fea6c0ac61f8422506f2c111c618580ee1f7dd7e97ca45b5d8c37fff839ecba",
+        "action": {
+          "id": "action.d6bb346ee05b334a",
+          "role": "Challenger",
+          "result_schema": "result.challenge",
+          "instance_keys": [
+            "data-implementation-challenged|operation.place-order"
+          ]
+        }
+      }
+    },
+    {
+      "operation": "submit-current",
+      "input": {
+        "payload": {
+          "outcomes": [
+            {
+              "instance_key": "data-implementation-challenged|operation.place-order",
+              "definition_digest": "sha256:d75460ff6ae5a1423b37f7337a83fa1474678ac93a3754e59fc01ccbf050cc74",
+              "status": "satisfied",
+              "summary": "data-implementation-challengedをgolden scenarioで確認した",
+              "basis_refs": [
+                "change.place-order",
+                "code.order-events-publisher",
+                "code.place-order-handler",
+                "contract.order-lifecycle"
+              ]
+            }
+          ]
+        },
+        "output_refs": []
+      },
+      "expected": {
+        "state": "ready-to-merge",
+        "snapshot_digest": "sha256:c56600597231c8df333e9ce95c948ec832707bfb0873613f730cb3d32ce92bff",
+        "decision_digest": "sha256:54fb70bae7c14cdabf787da5f34f7083a9d323c76ac735cd2294e1eaa03e0864",
+        "context_digest": null,
+        "action": null
+      }
+    }
+  ]
+}

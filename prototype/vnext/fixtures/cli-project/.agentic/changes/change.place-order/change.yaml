@@ -1,0 +1,4 @@
+schema_version: "1"
+id: change.place-order
+title: Place orderを永続化し、注文作成イベントを発行する
+intent: 1回の受付でordersへ保存し、order-eventsへ通知する

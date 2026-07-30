@@ -1,0 +1,465 @@
+{
+  "schema_version": "1",
+  "context_compiler_version": "4",
+  "common": {
+    "snapshot": {
+      "change_id": "change.place-order",
+      "change": {
+        "id": "change.place-order",
+        "title": "注文を保存する"
+      },
+      "contracts": [
+        {
+          "id": "contract.order",
+          "applies_to": [
+            "operation.place-order",
+            "data.orders"
+          ],
+          "clauses": [
+            {
+              "authority_ref": "decision.order"
+            }
+          ]
+        },
+        {
+          "id": "contract.unrelated",
+          "applies_to": [
+            "operation.other"
+          ],
+          "clauses": [
+            {
+              "authority_ref": "decision.unrelated"
+            }
+          ]
+        }
+      ],
+      "decisions": [
+        {
+          "id": "decision.order"
+        },
+        {
+          "id": "decision.unrelated"
+        }
+      ],
+      "results": [
+        {
+          "id": "result.dependency",
+          "payload": {
+            "outcomes": [
+              {
+                "instance_key": "dependency-check|operation.place-order"
+              }
+            ]
+          }
+        },
+        {
+          "id": "result.unrelated",
+          "payload": {
+            "outcomes": []
+          }
+        }
+      ],
+      "evidence": [
+        {
+          "id": "evidence.data",
+          "applies_to": [
+            "data.orders"
+          ]
+        },
+        {
+          "id": "evidence.instance",
+          "requirement_instances": [
+            "data-analysis|data.orders"
+          ]
+        },
+        {
+          "id": "evidence.unrelated",
+          "applies_to": [
+            "data.other"
+          ]
+        }
+      ],
+      "repository": {
+        "phase": "pre-build",
+        "artifacts": [
+          {
+            "ref": "code.handler",
+            "applies_to": [
+              "operation.place-order",
+              "data.orders"
+            ]
+          },
+          {
+            "ref": "code.publisher",
+            "applies_to": [
+              "integration.events"
+            ]
+          }
+        ],
+        "coverage": {
+          "status": "complete",
+          "scope": "declared-artifacts",
+          "analyzed_refs": [
+            "code.handler",
+            "code.publisher"
+          ],
+          "gaps": []
+        },
+        "facts": [
+          {
+            "kind": "db_write",
+            "operation": "operation.place-order",
+            "data": "data.orders",
+            "evidence_refs": [
+              "code.handler"
+            ]
+          }
+        ]
+      },
+      "artifact_digests": {
+        "change.place-order": "sha256:0101010101010101010101010101010101010101010101010101010101010101",
+        "contract.order": "sha256:0202020202020202020202020202020202020202020202020202020202020202",
+        "contract.unrelated": "sha256:0303030303030303030303030303030303030303030303030303030303030303",
+        "decision.order": "sha256:0404040404040404040404040404040404040404040404040404040404040404",
+        "decision.unrelated": "sha256:0505050505050505050505050505050505050505050505050505050505050505",
+        "result.dependency": "sha256:0606060606060606060606060606060606060606060606060606060606060606",
+        "result.unrelated": "sha256:0707070707070707070707070707070707070707070707070707070707070707",
+        "evidence.data": "sha256:0808080808080808080808080808080808080808080808080808080808080808",
+        "evidence.instance": "sha256:0909090909090909090909090909090909090909090909090909090909090909",
+        "evidence.unrelated": "sha256:1010101010101010101010101010101010101010101010101010101010101010",
+        "code.handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "code.publisher": "sha256:1212121212121212121212121212121212121212121212121212121212121212"
+      }
+    },
+    "requirement_instances": {
+      "risk": {
+        "requirement_id": "risk-signals-reviewed",
+        "subject_refs": [
+          "change.place-order"
+        ],
+        "instance_key": "risk-signals-reviewed|change.place-order",
+        "selected_by": [
+          "baseline.review"
+        ],
+        "definition_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "phase": "before-build",
+        "role": "Analyst",
+        "result_schema": "result.risk-signal-review",
+        "depends_on": [],
+        "context": [
+          "change",
+          "repository-artifacts"
+        ],
+        "status": "unsatisfied"
+      },
+      "operation": {
+        "requirement_id": "operation-analysis",
+        "subject_refs": [
+          "operation.place-order"
+        ],
+        "instance_key": "operation-analysis|operation.place-order",
+        "selected_by": [
+          "data.operation"
+        ],
+        "definition_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "phase": "before-build",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "depends_on": [],
+        "context": [
+          "change",
+          "affected-code",
+          "matching-contracts",
+          "matching-decisions"
+        ],
+        "status": "unsatisfied"
+      },
+      "data": {
+        "requirement_id": "data-analysis",
+        "subject_refs": [
+          "data.orders"
+        ],
+        "instance_key": "data-analysis|data.orders",
+        "selected_by": [
+          "data.details"
+        ],
+        "definition_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "phase": "before-build",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "depends_on": [
+          "dependency-check"
+        ],
+        "context": [
+          "change",
+          "dependency-results",
+          "matching-evidence"
+        ],
+        "status": "unsatisfied"
+      },
+      "dependency": {
+        "requirement_id": "dependency-check",
+        "subject_refs": [
+          "operation.place-order"
+        ],
+        "instance_key": "dependency-check|operation.place-order",
+        "selected_by": [
+          "baseline.dependency"
+        ],
+        "definition_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "phase": "before-build",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "depends_on": [],
+        "context": [],
+        "status": "satisfied"
+      },
+      "broad": {
+        "requirement_id": "broad-review",
+        "subject_refs": [
+          "change.place-order"
+        ],
+        "instance_key": "broad-review|change.place-order",
+        "selected_by": [
+          "baseline.broad"
+        ],
+        "definition_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "phase": "before-build",
+        "role": "Analyst",
+        "result_schema": "result.analysis",
+        "depends_on": [],
+        "context": [
+          "contracts",
+          "decisions",
+          "results",
+          "evidence"
+        ],
+        "status": "unsatisfied"
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "risk-review",
+      "state": "needs-analysis",
+      "all_instance_refs": [
+        "risk"
+      ],
+      "action": {
+        "id": "action.risk",
+        "role": "Analyst",
+        "action": "review-risk-signals",
+        "instance_refs": [
+          "risk"
+        ],
+        "reason": "Signal候補を確認する",
+        "expected_result_schema": "result.risk-signal-review",
+        "candidate_fingerprints": [
+          "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b"
+        ]
+      },
+      "expected": {
+        "action_id": "action.risk",
+        "role": "Analyst",
+        "source_refs": [
+          "change.place-order",
+          "code.handler",
+          "code.publisher"
+        ],
+        "instance_source_refs": {
+          "risk-signals-reviewed|change.place-order": [
+            "change.place-order",
+            "code.handler",
+            "code.publisher"
+          ]
+        },
+        "signal_candidate_fingerprints": [
+          "sha256:acbb56e1c5547184e75027da42f812c71db728261319c8e7a3113253c27f394b"
+        ],
+        "digest": "sha256:aba75204473c3eb0a50d8574bf7719a66c0f32e235a1fb5d943202954300ca64"
+      }
+    },
+    {
+      "case_id": "matching-and-dependency-selectors",
+      "state": "needs-analysis",
+      "all_instance_refs": [
+        "dependency",
+        "operation",
+        "data"
+      ],
+      "action": {
+        "id": "action.analysis",
+        "role": "Analyst",
+        "action": "analyze-requirements",
+        "instance_refs": [
+          "operation",
+          "data"
+        ],
+        "reason": "対象別の情報を確認する",
+        "expected_result_schema": "result.analysis"
+      },
+      "expected": {
+        "action_id": "action.analysis",
+        "role": "Analyst",
+        "source_refs": [
+          "change.place-order",
+          "code.handler",
+          "contract.order",
+          "decision.order",
+          "evidence.data",
+          "evidence.instance",
+          "result.dependency"
+        ],
+        "instance_source_refs": {
+          "operation-analysis|operation.place-order": [
+            "change.place-order",
+            "code.handler",
+            "contract.order",
+            "decision.order"
+          ],
+          "data-analysis|data.orders": [
+            "change.place-order",
+            "evidence.data",
+            "evidence.instance",
+            "result.dependency"
+          ]
+        },
+        "signal_candidate_fingerprints": [],
+        "digest": "sha256:3fcabe3c3271623bf56c07b4e655e4792c5ab5161ab5b2a26c442b88f12285a8"
+      }
+    },
+    {
+      "case_id": "broad-selectors",
+      "state": "needs-analysis",
+      "all_instance_refs": [
+        "broad"
+      ],
+      "action": {
+        "id": "action.broad",
+        "role": "Analyst",
+        "action": "analyze-requirements",
+        "instance_refs": [
+          "broad"
+        ],
+        "reason": "全カテゴリを確認する",
+        "expected_result_schema": "result.analysis"
+      },
+      "expected": {
+        "action_id": "action.broad",
+        "role": "Analyst",
+        "source_refs": [
+          "contract.order",
+          "contract.unrelated",
+          "decision.order",
+          "decision.unrelated",
+          "evidence.data",
+          "evidence.instance",
+          "evidence.unrelated",
+          "result.dependency",
+          "result.unrelated"
+        ],
+        "instance_source_refs": {
+          "broad-review|change.place-order": [
+            "contract.order",
+            "contract.unrelated",
+            "decision.order",
+            "decision.unrelated",
+            "evidence.data",
+            "evidence.instance",
+            "evidence.unrelated",
+            "result.dependency",
+            "result.unrelated"
+          ]
+        },
+        "signal_candidate_fingerprints": [],
+        "digest": "sha256:284758c13353814982e3ef1093f059530c626b810bd10b4d4e5f7049e196dff9"
+      }
+    },
+    {
+      "case_id": "human-answer-action",
+      "state": "needs-human-decision",
+      "all_instance_refs": [],
+      "action": {
+        "id": "action.human",
+        "role": "Human",
+        "action": "answer-decision-request",
+        "instance_refs": [],
+        "reason": "判断する",
+        "expected_result_schema": "result.human-answer"
+      },
+      "expected": {
+        "action_id": "action.human",
+        "role": "Human",
+        "source_refs": [
+          "change.place-order",
+          "result.dependency",
+          "result.unrelated"
+        ],
+        "instance_source_refs": {},
+        "signal_candidate_fingerprints": [],
+        "digest": "sha256:9961a90be6c33109f9c99128c1faa0df94be3b72eb4243a2f63fa7ae4ae9bffd"
+      }
+    },
+    {
+      "case_id": "implement-action",
+      "state": "ready-to-build",
+      "all_instance_refs": [],
+      "action": {
+        "id": "action.build",
+        "role": "Builder",
+        "action": "implement-change",
+        "instance_refs": [],
+        "reason": "実装する",
+        "expected_result_schema": "result.build"
+      },
+      "expected": {
+        "action_id": "action.build",
+        "role": "Builder",
+        "source_refs": [
+          "change.place-order",
+          "code.handler",
+          "code.publisher",
+          "contract.order",
+          "contract.unrelated",
+          "decision.order",
+          "decision.unrelated",
+          "result.dependency",
+          "result.unrelated"
+        ],
+        "instance_source_refs": {},
+        "signal_candidate_fingerprints": [],
+        "digest": "sha256:29c337f03fab9c97d500fd8963312b8a614ce93b3122ec5fe5b898d7095a1431"
+      }
+    },
+    {
+      "case_id": "generic-action-without-instances",
+      "state": "needs-analysis",
+      "all_instance_refs": [],
+      "action": {
+        "id": "action.generic",
+        "role": "Analyst",
+        "action": "record-human-decision",
+        "instance_refs": [],
+        "reason": "記録する",
+        "expected_result_schema": "result.analysis"
+      },
+      "expected": {
+        "action_id": "action.generic",
+        "role": "Analyst",
+        "source_refs": [
+          "change.place-order"
+        ],
+        "instance_source_refs": {},
+        "signal_candidate_fingerprints": [],
+        "digest": "sha256:1d369a32c2f00008a5fdd9c705ef0e512fec97b6c9ae5bd07c0fd3609b6dad4c"
+      }
+    },
+    {
+      "case_id": "no-action",
+      "state": "ready-to-merge",
+      "all_instance_refs": [],
+      "action": null,
+      "expected": null
+    }
+  ]
+}

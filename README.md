@@ -2,6 +2,8 @@
 
 AIエージェントを前提に、Repository内の仕様・判断・実装・検証を接続する開発コントロールプレーンです。
 
+次期構成の検討内容は`FRAMEWORK-REVIEW.md`、現行CLIへ未接続の検証実装は`prototype/vnext/README.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackまでを配布候補として検証しています。
+
 ## 目的
 
 Agentic Development Kitは、エージェントへ実装を依頼する前に「何が正しいか」「誰が決めたか」「何を証拠に完了とするか」を明示し、変更中に見つかった未決定事項を安全に人へ戻すための仕組みです。

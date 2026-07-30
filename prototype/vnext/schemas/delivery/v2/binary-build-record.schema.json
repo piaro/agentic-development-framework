@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/binary-build-record.schema.json",
+  "title": "Framework Release Binary Build Record v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "binary_name",
+    "target",
+    "source_revision",
+    "sha256",
+    "size",
+    "rustc_version"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "binary_name": {
+      "type": "string",
+      "pattern": "^agentic-vnext-rust-[A-Za-z0-9._-]+(?:\\.exe)?$"
+    },
+    "target": {
+      "enum": [
+        "aarch64-apple-darwin",
+        "aarch64-unknown-linux-gnu",
+        "x86_64-apple-darwin",
+        "x86_64-pc-windows-msvc",
+        "x86_64-unknown-linux-gnu"
+      ]
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "sha256": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "size": {
+      "type": "integer"
+    },
+    "rustc_version": {
+      "type": "string",
+      "pattern": "^rustc 1\\.89\\.0 "
+    }
+  }
+}

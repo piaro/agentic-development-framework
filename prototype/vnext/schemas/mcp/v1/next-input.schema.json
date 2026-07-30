@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/mcp/v1/next-input",
+  "title": "agentic_next input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "change_id"
+  ],
+  "properties": {
+    "change_id": {
+      "type": "string",
+      "pattern": "^change\\.[A-Za-z0-9._-]+$"
+    },
+    "require_clean": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}

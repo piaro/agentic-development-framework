@@ -1,0 +1,154 @@
+name: Publish vNext Framework Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_run_id:
+        description: Successful vNext Release candidate workflow run ID
+        required: true
+        type: string
+      release_tag:
+        description: Must be framework-<release_id>
+        required: true
+        type: string
+
+concurrency:
+  group: vnext-framework-release-publication
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-candidate:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    outputs:
+      source_revision: ${{ steps.candidate.outputs.source_revision }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AGENTIC_RELEASE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
+      AGENTIC_RELEASE_SOURCE_ID: ${{ vars.AGENTIC_RELEASE_SOURCE_ID }}
+      AGENTIC_RELEASE_SIGNER_KEY_ID: ${{ vars.AGENTIC_RELEASE_SIGNER_KEY_ID }}
+      AGENTIC_RELEASE_TAG: ${{ inputs.release_tag }}
+      AGENTIC_RELEASE_REQUIRE_ATTESTATIONS: "1"
+
+    steps:
+      - name: Check out publication controls
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Validate candidate workflow identity
+        id: candidate
+        run: |
+          source_revision=$(sh prototype/vnext/scripts/inspect-candidate-run.sh \
+            "${{ inputs.candidate_run_id }}")
+          echo "source_revision=$source_revision" >> "$GITHUB_OUTPUT"
+
+      - name: Check out the candidate source revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.candidate.outputs.source_revision }}
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+
+      - name: Build candidate verifier
+        run: cargo build --manifest-path prototype/vnext/rust/Cargo.toml --release --locked
+
+      - name: Download the named candidate Artifact
+        uses: actions/download-artifact@v5
+        with:
+          name: agentic-vnext-release-candidate
+          path: candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download the complete binary candidate set
+        uses: actions/download-artifact@v5
+        with:
+          name: agentic-vnext-release-binaries
+          path: binaries
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Revalidate candidate before approval
+        env:
+          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/prototype/vnext/rust/target/release/agentic-vnext-rust
+        run: |
+          sh prototype/vnext/scripts/verify-release-candidate.sh candidate
+          sh prototype/vnext/scripts/verify-release-binaries.sh \
+            binaries \
+            "${{ steps.candidate.outputs.source_revision }}"
+
+  publish:
+    needs: inspect-candidate
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: vnext-release
+    permissions:
+      actions: read
+      attestations: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      AGENTIC_RELEASE_CANDIDATE_RUN_ID: ${{ inputs.candidate_run_id }}
+      AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
+      AGENTIC_RELEASE_SOURCE_ID: ${{ vars.AGENTIC_RELEASE_SOURCE_ID }}
+      AGENTIC_RELEASE_SIGNER_KEY_ID: ${{ vars.AGENTIC_RELEASE_SIGNER_KEY_ID }}
+      AGENTIC_RELEASE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+      AGENTIC_RELEASE_REQUIRE_ATTESTATIONS: "1"
+
+    steps:
+      - name: Check out the exact candidate revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.inspect-candidate.outputs.source_revision }}
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install 1.89.0 --profile minimal
+          rustup default 1.89.0
+
+      - name: Build publication verifier
+        run: cargo build --manifest-path prototype/vnext/rust/Cargo.toml --release --locked
+
+      - name: Download candidate again after approval
+        uses: actions/download-artifact@v5
+        with:
+          name: agentic-vnext-release-candidate
+          path: candidate
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Download binaries again after approval
+        uses: actions/download-artifact@v5
+        with:
+          name: agentic-vnext-release-binaries
+          path: binaries
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Publish draft, verify uploaded bytes, then make public
+        env:
+          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/prototype/vnext/rust/target/release/agentic-vnext-rust
+        run: |
+          sh prototype/vnext/scripts/publish-github-release.sh \
+            candidate \
+            binaries \
+            "${{ inputs.release_tag }}" \
+            "${{ needs.inspect-candidate.outputs.source_revision }}"

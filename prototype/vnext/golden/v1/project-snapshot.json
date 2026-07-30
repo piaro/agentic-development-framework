@@ -1,0 +1,156 @@
+{
+  "schema_version": "1",
+  "snapshot_protocol_version": "1",
+  "schema_root": "../../schemas/v1",
+  "base_case": "application-initial.json",
+  "unrelated_records": {
+    "contracts": [
+      {
+        "schema_version": "1",
+        "id": "contract.unrelated",
+        "change_id": "change.unrelated",
+        "applies_to": [
+          "operation.unrelated"
+        ],
+        "clauses": [
+          {
+            "id": "unrelated-rule",
+            "text": "別Changeだけに適用する",
+            "authority_ref": "decision.unrelated"
+          }
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "schema_version": "1",
+        "id": "decision.unrelated",
+        "change_id": "change.unrelated",
+        "status": "accepted",
+        "title": "別Changeの判断",
+        "resolves": []
+      }
+    ],
+    "evidence": [
+      {
+        "schema_version": "1",
+        "id": "evidence.unrelated",
+        "change_id": "change.unrelated",
+        "requirement_instances": [
+          "unrelated|operation.unrelated"
+        ],
+        "method": "test",
+        "outcome": "passed",
+        "summary": "別ChangeのEvidence"
+      }
+    ]
+  },
+  "multi_change_records": {
+    "changes": [
+      {
+        "schema_version": "1",
+        "id": "change.retry-order-events",
+        "title": "注文作成イベントの再試行を追加する",
+        "intent": "既存の注文受付規範を再利用して送信を再試行する"
+      }
+    ],
+    "contracts": [
+      {
+        "schema_version": "1",
+        "id": "contract.shared-order-submission",
+        "applies_to": [
+          "operation.place-order",
+          "integration.order-events"
+        ],
+        "clauses": [
+          {
+            "id": "submission-result",
+            "text": "DB保存完了を受付成功とし、イベント送信失敗は再試行する",
+            "authority_ref": "decision.shared-order-submission"
+          }
+        ]
+      }
+    ],
+    "decisions": [
+      {
+        "schema_version": "1",
+        "id": "decision.shared-order-submission",
+        "status": "accepted",
+        "title": "DB保存完了を注文受付成功とする",
+        "resolves": [
+          "decision-request.submission-result"
+        ]
+      }
+    ]
+  },
+  "cases": [
+    {
+      "case_id": "base-project",
+      "change_id": "change.place-order"
+    },
+    {
+      "case_id": "reversed-record-order",
+      "change_id": "change.place-order",
+      "reverse_record_collections": true
+    },
+    {
+      "case_id": "unrelated-records-ignored",
+      "change_id": "change.place-order",
+      "append_unrelated_records": true
+    },
+    {
+      "case_id": "shared-records-visible-to-second-change",
+      "change_id": "change.retry-order-events",
+      "append_multi_change_records": true,
+      "expected": {
+        "change_id": "change.retry-order-events",
+        "contract_ids": [
+          "contract.shared-order-submission"
+        ],
+        "decision_ids": [
+          "decision.shared-order-submission"
+        ],
+        "result_ids": [],
+        "evidence_ids": [],
+        "repository_phase": "pre-build",
+        "artifact_digests": {
+          "change.retry-order-events": "sha256:8f832211a911111b183b32fd0e7860abae6a19dd18bbf0888deef0f4b4780074",
+          "contract.shared-order-submission": "sha256:a399c87f66bb65966ace25c1006c9c534e47fb1473807e050c17c7f8bce67402",
+          "contract.shared-order-submission#submission-result": "sha256:94dcaf2a94b5b9bf12ff174be3d390b312c1e1fac9768da80774337d0c72da26",
+          "decision.shared-order-submission": "sha256:d9fd5125b28863d8893f6658b4431a58210d676dfa9ec778ef6917e47b36a329",
+          "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+        },
+        "digest": "sha256:48eaecbf865f27ab306c994a48ba1a5b57a09c0d03332063828cbbfc451f17f5"
+      }
+    }
+  ],
+  "invalid_cases": [
+    {
+      "case_id": "unknown-change",
+      "change_id": "change.missing",
+      "error": "unknown change: change.missing"
+    }
+  ],
+  "expected": {
+    "change_id": "change.place-order",
+    "contract_ids": [
+      "contract.order-lifecycle"
+    ],
+    "decision_ids": [
+      "decision.order-model"
+    ],
+    "result_ids": [],
+    "evidence_ids": [],
+    "repository_phase": "pre-build",
+    "artifact_digests": {
+      "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
+      "contract.order-lifecycle": "sha256:9f6784558ea69ecb56694aa107f4fed8e17f727bbc2b6699cf95a7b0dac602a2",
+      "contract.order-lifecycle#orders-source-of-truth": "sha256:24b95af486da75993c4b1788f7628d69ea588cd97bb0344aa054fdb4da1794a9",
+      "decision.order-model": "sha256:bec113df76236953ad3781f9c7069c51e7e4d5692db6de33cbb9dac91196bed3",
+      "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222"
+    },
+    "digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360"
+  }
+}

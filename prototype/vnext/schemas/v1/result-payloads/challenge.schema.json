@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/v1/result-payloads/challenge",
+  "x-result-schema": "result.challenge",
+  "x-allowed-roles": ["Challenger"],
+  "type": "object",
+  "required": ["outcomes"],
+  "properties": {
+    "outcomes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "instance_key",
+          "definition_digest",
+          "status",
+          "summary",
+          "basis_refs"
+        ],
+        "properties": {
+          "instance_key": {"type": "string", "minLength": 1},
+          "definition_digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["satisfied", "unsatisfied", "inconclusive"]
+          },
+          "summary": {"type": "string", "minLength": 1},
+          "basis_refs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "input_refs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          },
+          "freshness_refs": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "pattern": "^sha256:[0-9a-f]{64}$"
+            }
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

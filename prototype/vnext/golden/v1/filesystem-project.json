@@ -1,0 +1,104 @@
+{
+  "schema_version": "1",
+  "filesystem_project_protocol_version": "2",
+  "schema_root": "../../schemas/v1",
+  "base_case": "application-initial.json",
+  "result_case": "result-submission.json",
+  "scenario_case": "application-lifecycle.json",
+  "decision_step": 4,
+  "contract_step": 5,
+  "expected_initial_snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
+  "expected_result_snapshot_digest": "sha256:66774998bdeae6452e45bdf849a2fbc4af118343b7bf006c441447685b9c7127",
+  "expected_updated_snapshot_digest": "sha256:5f4f1c91730b17591b7215e2faf1083b9a3e15da676c050187c590f07b15fb35",
+  "markdown_prose": "## Operational rationale\n\nThe orders table remains authoritative while event delivery is retried.",
+  "shared_contract_concurrency": {
+    "initial": {
+      "schema_version": "1",
+      "id": "contract.shared-concurrency",
+      "applies_to": [
+        "data.orders"
+      ],
+      "clauses": [
+        {
+          "id": "concurrency-policy",
+          "text": "初期の並行更新規範"
+        }
+      ]
+    },
+    "first_update": {
+      "schema_version": "1",
+      "id": "contract.shared-concurrency",
+      "applies_to": [
+        "data.orders"
+      ],
+      "clauses": [
+        {
+          "id": "concurrency-policy",
+          "text": "先に確定した並行更新規範"
+        }
+      ]
+    },
+    "stale_update": {
+      "schema_version": "1",
+      "id": "contract.shared-concurrency",
+      "applies_to": [
+        "data.orders"
+      ],
+      "clauses": [
+        {
+          "id": "concurrency-policy",
+          "text": "古い版を基にした上書き"
+        }
+      ]
+    },
+    "missing_digest_error": "Shared Contract update requires expected digest",
+    "stale_error": "stale Contract update",
+    "expected_text": "先に確定した並行更新規範"
+  },
+  "formats": [
+    {
+      "document_format": "yaml",
+      "contract_path": "contracts/contract.order-lifecycle.yaml",
+      "initial_paths": [
+        ".agentic/changes/change.place-order/change.yaml",
+        "contracts/contract.order-lifecycle.yaml",
+        "decisions/decision.order-model.yaml"
+      ],
+      "updated_paths": [
+        ".agentic/changes/change.place-order/change.yaml",
+        "contracts/contract.order-lifecycle.yaml",
+        "decisions/decision.order-model.yaml",
+        "decisions/decision.submission-result.yaml",
+        ".agentic/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
+      ]
+    },
+    {
+      "document_format": "markdown",
+      "contract_path": "contracts/contract.order-lifecycle.md",
+      "initial_paths": [
+        ".agentic/changes/change.place-order/change.md",
+        "contracts/contract.order-lifecycle.md",
+        "decisions/decision.order-model.md"
+      ],
+      "updated_paths": [
+        ".agentic/changes/change.place-order/change.md",
+        "contracts/contract.order-lifecycle.md",
+        "decisions/decision.order-model.md",
+        "decisions/decision.submission-result.md",
+        ".agentic/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
+      ]
+    }
+  ],
+  "invalid_source_roots": [
+    {
+      "case_id": "escaping-contract-root",
+      "contract_root": "../contracts",
+      "error": "escapes repository"
+    },
+    {
+      "case_id": "generated-contract-root",
+      "contract_root": ".agentic/cache/contracts",
+      "error": "generated/local"
+    }
+  ]
+}

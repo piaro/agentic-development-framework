@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/trusted-release-keys.schema.json",
+  "title": "Trusted Framework Release Keys v1 (legacy)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "keys"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "keys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "algorithm",
+          "public_key",
+          "allowed_sources"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "algorithm": {
+            "const": "ed25519"
+          },
+          "public_key": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$"
+          },
+          "allowed_sources": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    }
+  }
+}

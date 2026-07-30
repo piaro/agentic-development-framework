@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/v1/decision",
+  "type": "object",
+  "required": ["schema_version", "id", "status", "title", "resolves"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "pattern": "^decision\\.[A-Za-z0-9._-]+$"},
+    "change_id": {"type": "string", "pattern": "^change\\.[A-Za-z0-9._-]+$"},
+    "status": {
+      "type": "string",
+      "enum": ["proposed", "accepted", "superseded", "rejected"]
+    },
+    "title": {"type": "string", "minLength": 1},
+    "resolves": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,6 @@
+schema_version: "1"
+id: decision.repository-bindings
+change_id: change.place-order
+status: accepted
+title: ソース上の関数・リソースと注文ドメインの論理IDの対応を承認する
+resolves: []
