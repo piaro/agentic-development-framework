@@ -1,41 +1,46 @@
 //! Mechanical observations extracted from Rust syntax.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_rust(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Rust parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Rust parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Rust source contains a syntax error".to_owned());
-    }
+    observe_tree(
+        source,
+        &tree_sitter_rust::LANGUAGE.into(),
+        "Rust",
+        collect_root,
+    )
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, None, observations);
 }
 
 fn collect_observations(
     node: Node<'_>,
     source: &[u8],
+    enclosing_impl: Option<&str>,
     enclosing_symbol: Option<&str>,
     observations: &mut Vec<SourceObservation>,
 ) {
-    let declared_symbol = if node.kind() == "function_item" {
-        node.child_by_field_name("name")
-            .and_then(|name| name.utf8_text(source).ok())
+    let declared_impl = if node.kind() == "impl_item" {
+        node.child_by_field_name("type")
+            .and_then(|type_node| crate::source_detection::canonical_node_text(type_node, source))
     } else {
         None
     };
-    let symbol = declared_symbol.or(enclosing_symbol);
+    let impl_name = declared_impl.as_deref().or(enclosing_impl);
+    let declared_symbol = if node.kind() == "function_item" {
+        node.child_by_field_name("name")
+            .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match impl_name {
+                Some(impl_name) => format!("{impl_name}::{name}"),
+                None => name.to_owned(),
+            })
+    } else {
+        None
+    };
+    let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "call_expression"
         && let Some(observation) = observation_for_call(node, source, symbol)
@@ -45,7 +50,7 @@ fn collect_observations(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, observations);
+        collect_observations(child, source, impl_name, symbol, observations);
     }
 }
 
@@ -55,19 +60,17 @@ fn observation_for_call(
     symbol: Option<&str>,
 ) -> Option<SourceObservation> {
     let callable = call.child_by_field_name("function")?;
+    let callable = if callable.kind() == "generic_function" {
+        callable.child_by_field_name("function")?
+    } else {
+        callable
+    };
     if callable.kind() != "field_expression" {
         return None;
     }
     let receiver = callable.child_by_field_name("value")?;
     let field = callable.child_by_field_name("field")?;
-    let method = field.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: call.start_position().row + 1,
-    })
+    observation_from_nodes("rust", receiver, field, call, source, symbol)
 }
 
 #[cfg(test)]
@@ -98,7 +101,7 @@ impl OrderService {
             vec![
                 SourceObservation {
                     kind: SourceObservationKind::DbWrite,
-                    symbol: "cancel_order".to_owned(),
+                    symbol: "OrderService::cancel_order".to_owned(),
                     resource: "self.orders".to_owned(),
                     method: "delete".to_owned(),
                     line: 9,
@@ -140,6 +143,41 @@ fn place_order(order: Order) {
                 method: "save".to_owned(),
                 line: 3,
             }]
+        );
+    }
+
+    #[test]
+    fn observes_turbofish_calls_and_normalizes_multiline_receivers() {
+        let observations = observe_rust(
+            r#"
+fn place_order(order: Order) {
+    client
+        .table("orders")
+        .insert::<Order>(order);
+}
+"#,
+        )
+        .unwrap();
+        let insert = observations
+            .iter()
+            .find(|observation| observation.method == "insert")
+            .unwrap();
+        assert_eq!(insert.resource, "client.table(\"orders\")");
+    }
+
+    #[test]
+    fn qualifies_same_named_methods_by_impl_type() {
+        let observations = observe_rust(
+            "impl A { fn save(&self) { orders.insert(1); } }\n\
+             impl B { fn save(&self) { orders.insert(1); } }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            observations
+                .iter()
+                .map(|observation| observation.symbol.as_str())
+                .collect::<Vec<_>>(),
+            vec!["A::save", "B::save"]
         );
     }
 

@@ -1,26 +1,14 @@
 //! Mechanical observations extracted from Go syntax.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_go(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_go::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Go parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Go parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Go source contains a syntax error".to_owned());
-    }
+    observe_tree(source, &tree_sitter_go::LANGUAGE.into(), "Go", collect_root)
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, observations);
 }
 
 fn collect_observations(
@@ -32,10 +20,19 @@ fn collect_observations(
     let declared_symbol = if matches!(node.kind(), "function_declaration" | "method_declaration") {
         node.child_by_field_name("name")
             .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| {
+                if node.kind() == "method_declaration" {
+                    receiver_type(node, source)
+                        .map(|receiver| format!("{receiver}.{name}"))
+                        .unwrap_or_else(|| name.to_owned())
+                } else {
+                    name.to_owned()
+                }
+            })
     } else {
         None
     };
-    let symbol = declared_symbol.or(enclosing_symbol);
+    let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "call_expression"
         && let Some(observation) = observation_for_call(node, source, symbol)
@@ -49,6 +46,26 @@ fn collect_observations(
     }
 }
 
+fn receiver_type(method: Node<'_>, source: &[u8]) -> Option<String> {
+    let receiver = method.child_by_field_name("receiver")?;
+    descendant_of_kind(receiver, "type_identifier")
+        .and_then(|node| node.utf8_text(source).ok())
+        .map(str::to_owned)
+}
+
+fn descendant_of_kind<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
+    if node.kind() == kind {
+        return Some(node);
+    }
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if let Some(found) = descendant_of_kind(child, kind) {
+            return Some(found);
+        }
+    }
+    None
+}
+
 fn observation_for_call(
     call: Node<'_>,
     source: &[u8],
@@ -60,14 +77,7 @@ fn observation_for_call(
     }
     let receiver = callable.child_by_field_name("operand")?;
     let field = callable.child_by_field_name("field")?;
-    let method = field.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: call.start_position().row + 1,
-    })
+    observation_from_nodes("go", receiver, field, call, source, symbol)
 }
 
 #[cfg(test)]
@@ -98,7 +108,7 @@ func (service *OrderService) CancelOrder(order Order) {
             vec![
                 SourceObservation {
                     kind: SourceObservationKind::DbWrite,
-                    symbol: "CancelOrder".to_owned(),
+                    symbol: "OrderService.CancelOrder".to_owned(),
                     resource: "orders".to_owned(),
                     method: "Delete".to_owned(),
                     line: 10,
@@ -142,6 +152,23 @@ func PlaceOrder(order Order) {
                 method: "Save".to_owned(),
                 line: 5,
             }]
+        );
+    }
+
+    #[test]
+    fn qualifies_same_named_methods_by_receiver_type() {
+        let observations = observe_go(
+            "package ordering\n\
+             func (a *A) Save() { orders.Insert(1) }\n\
+             func (b *B) Save() { orders.Insert(1) }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            observations
+                .iter()
+                .map(|observation| observation.symbol.as_str())
+                .collect::<Vec<_>>(),
+            vec!["A.Save", "B.Save"]
         );
     }
 

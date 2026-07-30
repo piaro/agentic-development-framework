@@ -1,44 +1,62 @@
 //! Mechanical observations extracted from Java syntax.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_java(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_java::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Java parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Java parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Java source contains a syntax error".to_owned());
-    }
+    observe_tree(
+        source,
+        &tree_sitter_java::LANGUAGE.into(),
+        "Java",
+        collect_root,
+    )
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, None, observations);
 }
 
 fn collect_observations(
     node: Node<'_>,
     source: &[u8],
+    enclosing_type: Option<&str>,
     enclosing_symbol: Option<&str>,
     observations: &mut Vec<SourceObservation>,
 ) {
+    let declared_type = if matches!(
+        node.kind(),
+        "class_declaration"
+            | "record_declaration"
+            | "enum_declaration"
+            | "interface_declaration"
+            | "annotation_type_declaration"
+    ) {
+        node.child_by_field_name("name")
+            .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match enclosing_type {
+                Some(parent) => format!("{parent}.{name}"),
+                None => name.to_owned(),
+            })
+    } else {
+        None
+    };
+    let type_name = declared_type.as_deref().or(enclosing_type);
     let declared_symbol = if matches!(
         node.kind(),
         "method_declaration" | "constructor_declaration"
     ) {
         node.child_by_field_name("name")
             .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match type_name {
+                Some(type_name) => format!("{type_name}.{name}"),
+                None => name.to_owned(),
+            })
+    } else if node.kind() == "static_initializer" {
+        type_name.map(|type_name| format!("{type_name}.<static>"))
     } else {
         None
     };
-    let symbol = declared_symbol.or(enclosing_symbol);
+    let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "method_invocation"
         && let Some(observation) = observation_for_invocation(node, source, symbol)
@@ -48,7 +66,7 @@ fn collect_observations(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, observations);
+        collect_observations(child, source, type_name, symbol, observations);
     }
 }
 
@@ -59,14 +77,7 @@ fn observation_for_invocation(
 ) -> Option<SourceObservation> {
     let receiver = invocation.child_by_field_name("object")?;
     let name = invocation.child_by_field_name("name")?;
-    let method = name.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: invocation.start_position().row + 1,
-    })
+    observation_from_nodes("java", receiver, name, invocation, source, symbol)
 }
 
 #[cfg(test)]
@@ -97,21 +108,21 @@ final class OrderService {
             vec![
                 SourceObservation {
                     kind: SourceObservationKind::DbWrite,
-                    symbol: "placeOrder".to_owned(),
+                    symbol: "OrderService.placeOrder".to_owned(),
                     resource: "orders".to_owned(),
                     method: "insert".to_owned(),
                     line: 8,
                 },
                 SourceObservation {
                     kind: SourceObservationKind::MessagePublish,
-                    symbol: "placeOrder".to_owned(),
+                    symbol: "OrderService.placeOrder".to_owned(),
                     resource: "orderEvents".to_owned(),
                     method: "publish".to_owned(),
                     line: 9,
                 },
                 SourceObservation {
                     kind: SourceObservationKind::OtherMethodCall,
-                    symbol: "OrderService".to_owned(),
+                    symbol: "OrderService.OrderService".to_owned(),
                     resource: "audit".to_owned(),
                     method: "save".to_owned(),
                     line: 4,
@@ -134,6 +145,29 @@ class OrderService {
         )
         .unwrap();
         assert!(observations.is_empty());
+    }
+
+    #[test]
+    fn qualifies_same_named_methods_by_declaring_type() {
+        let observations = observe_java(
+            "class A { void save() { orders.insert(null); } }\n\
+             class B { void save() { orders.insert(null); } }\n",
+        )
+        .unwrap();
+        assert_eq!(
+            observations
+                .iter()
+                .map(|observation| observation.symbol.as_str())
+                .collect::<Vec<_>>(),
+            vec!["A.save", "B.save"]
+        );
+    }
+
+    #[test]
+    fn names_static_initializer_blocks() {
+        let observations =
+            observe_java("class Service { static { orders.insert(null); } }").unwrap();
+        assert_eq!(observations[0].symbol, "Service.<static>");
     }
 
     #[test]

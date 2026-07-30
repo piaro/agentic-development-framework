@@ -373,7 +373,7 @@ sources:
 
 | ファイル | 役割 |
 |---|---|
-| `rust/src/source_detection.rs` | 対応・inventory対象言語の登録と、言語非依存な観測形式を定義 |
+| `rust/src/source_detection.rs` | 対応・inventory対象言語の登録、共通parse・正規化・分類・整列処理、言語横断conformanceを定義 |
 | `rust/src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
 | `rust/src/java_detection.rs` | Java構文からmethod・constructor・呼出先・物理resourceを観測 |
 | `rust/src/kotlin_detection.rs` | Kotlin構文からfunction・navigation call・物理resourceを観測 |
@@ -402,7 +402,11 @@ sources:
 - InMemory Adapterはテスト用です。Filesystem StoreではChange、Contract、Decision、Result、Evidenceを保存しますが、発行済みAction自体は保存せず、正本から再生成します。
 - 実Projectの通常経路では、Observation Schema v4に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。
 - 現在の言語DetectorはPython、Java、Kotlin、Go、Rust、Ruby、JavaScript、JSX、TypeScript、TSXに対応します。PHP、C#、Swift、Scala、C、C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
-- 組込み分類はDB書込みの`insert`・`update`・`delete`と、message送信の`publish`・`send_message`です。SQLAlchemyの`session.execute`やDjangoの`model.save`などは、`resource.method`ごとに`kind`、owner、承認DecisionをBindingすると検出できます。Bindingのない未対応methodは`unsupported-observation`で停止します。aliasと動的dispatchは今後のDetector追加対象です。
+- `.js`・`.mjs`・`.cjs`もJSXを受理します。source拡張子はASCIIの大文字小文字を区別せず、Git inventoryでも同じ規則を使います。
+- receiverは構文tokenを連結した1行の物理IDへ正規化します。たとえば複数行の`client .table("orders")`は`client.table("orders")`になります。同じ行に同一呼出しが複数あっても観測を重複除去しません。
+- 組込み分類は言語ごとの自然な綴りだけを対象とします。Python・Ruby・Rustは`send_message`、Java・Kotlin・JavaScript・TypeScript系は`sendMessage`、Goは`SendMessage`です。DB書込みもGoだけ`Insert`・`Update`・`Delete`、その他は小文字で始まる綴りです。`Send`や`save`など曖昧またはframework固有の名前は、`resource.method`ごとに`kind`、owner、承認DecisionをBindingします。
+- Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
+- class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializerにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。

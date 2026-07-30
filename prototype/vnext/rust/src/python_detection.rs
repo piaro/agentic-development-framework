@@ -4,42 +4,62 @@
 //! function or receiver to a project-owned logical ID is handled by the Git
 //! repository Adapter's reviewed Binding Record.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_python(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_python::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Python parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Python parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Python source contains a syntax error".to_owned());
-    }
+    observe_tree(
+        source,
+        &tree_sitter_python::LANGUAGE.into(),
+        "Python",
+        collect_root,
+    )
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, None, observations);
 }
 
 fn collect_observations(
     node: Node<'_>,
     source: &[u8],
+    enclosing_class: Option<&str>,
     enclosing_symbol: Option<&str>,
     observations: &mut Vec<SourceObservation>,
 ) {
-    let symbol = if node.kind() == "function_definition" {
+    let declared_class = if node.kind() == "class_definition" {
         node.child_by_field_name("name")
             .and_then(|name| name.utf8_text(source).ok())
-            .or(enclosing_symbol)
+            .map(|name| match enclosing_class {
+                Some(parent) => format!("{parent}.{name}"),
+                None => name.to_owned(),
+            })
     } else {
-        enclosing_symbol
+        None
     };
+    let class_name = declared_class.as_deref().or(enclosing_class);
+    let declared_symbol = if node.kind() == "function_definition" {
+        node.child_by_field_name("name")
+            .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match class_name {
+                Some(class_name) => format!("{class_name}.{name}"),
+                None => name.to_owned(),
+            })
+    } else if node.kind() == "lambda" {
+        assigned_name(node, source).map(|name| match class_name {
+            Some(class_name) => format!("{class_name}.{name}"),
+            None => name,
+        })
+    } else {
+        None
+    };
+    let class_body_symbol = declared_class
+        .as_deref()
+        .map(|name| format!("{name}.<body>"));
+    let symbol = declared_symbol
+        .as_deref()
+        .or(class_body_symbol.as_deref())
+        .or(enclosing_symbol);
 
     if node.kind() == "call"
         && let Some(observation) = observation_for_call(node, source, symbol)
@@ -49,8 +69,18 @@ fn collect_observations(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, observations);
+        collect_observations(child, source, class_name, symbol, observations);
     }
+}
+
+fn assigned_name(node: Node<'_>, source: &[u8]) -> Option<String> {
+    let parent = node.parent()?;
+    if parent.kind() != "assignment" {
+        return None;
+    }
+    parent
+        .child_by_field_name("left")
+        .and_then(|left| crate::source_detection::canonical_node_text(left, source))
 }
 
 fn observation_for_call(
@@ -64,14 +94,7 @@ fn observation_for_call(
     }
     let receiver = callable.child_by_field_name("object")?;
     let attribute = callable.child_by_field_name("attribute")?;
-    let method = attribute.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: call.start_position().row + 1,
-    })
+    observation_from_nodes("python", receiver, attribute, call, source, symbol)
 }
 
 #[cfg(test)]
@@ -146,6 +169,15 @@ def place_order(order):
                 line: 3,
             }]
         );
+    }
+
+    #[test]
+    fn names_assigned_lambdas_and_class_body_calls() {
+        let lambda = observe_python("place = lambda order: orders.insert(order)\n").unwrap();
+        assert_eq!(lambda[0].symbol, "place");
+
+        let class_body = observe_python("class Service:\n    orders.insert(None)\n").unwrap();
+        assert_eq!(class_body[0].symbol, "Service.<body>");
     }
 
     #[test]

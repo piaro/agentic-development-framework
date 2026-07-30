@@ -1,41 +1,52 @@
 //! Mechanical observations extracted from Ruby syntax.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_ruby(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_ruby::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Ruby parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Ruby parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Ruby source contains a syntax error".to_owned());
-    }
+    observe_tree(
+        source,
+        &tree_sitter_ruby::LANGUAGE.into(),
+        "Ruby",
+        collect_root,
+    )
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, None, observations);
 }
 
 fn collect_observations(
     node: Node<'_>,
     source: &[u8],
+    enclosing_type: Option<&str>,
     enclosing_symbol: Option<&str>,
     observations: &mut Vec<SourceObservation>,
 ) {
-    let declared_symbol = if matches!(node.kind(), "method" | "singleton_method") {
+    let declared_type = if matches!(node.kind(), "class" | "module") {
         node.child_by_field_name("name")
-            .and_then(|name| name.utf8_text(source).ok())
+            .or_else(|| node.named_child(0))
+            .and_then(|name| crate::source_detection::canonical_node_text(name, source))
+            .map(|name| match enclosing_type {
+                Some(parent) => format!("{parent}::{name}"),
+                None => name,
+            })
     } else {
         None
     };
-    let symbol = declared_symbol.or(enclosing_symbol);
+    let type_name = declared_type.as_deref().or(enclosing_type);
+    let declared_symbol = if matches!(node.kind(), "method" | "singleton_method") {
+        node.child_by_field_name("name")
+            .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match (type_name, node.kind()) {
+                (Some(type_name), "singleton_method") => format!("{type_name}.{name}"),
+                (Some(type_name), _) => format!("{type_name}#{name}"),
+                (None, _) => name.to_owned(),
+            })
+    } else {
+        None
+    };
+    let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "call"
         && let Some(observation) = observation_for_call(node, source, symbol)
@@ -45,7 +56,7 @@ fn collect_observations(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, observations);
+        collect_observations(child, source, type_name, symbol, observations);
     }
 }
 
@@ -56,14 +67,7 @@ fn observation_for_call(
 ) -> Option<SourceObservation> {
     let receiver = call.child_by_field_name("receiver")?;
     let name = call.child_by_field_name("method")?;
-    let method = name.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: call.start_position().row + 1,
-    })
+    observation_from_nodes("ruby", receiver, name, call, source, symbol)
 }
 
 #[cfg(test)]
@@ -94,21 +98,21 @@ end
             vec![
                 SourceObservation {
                     kind: SourceObservationKind::DbWrite,
-                    symbol: "cancel_order".to_owned(),
-                    resource: "orders".to_owned(),
-                    method: "delete".to_owned(),
-                    line: 9,
-                },
-                SourceObservation {
-                    kind: SourceObservationKind::DbWrite,
-                    symbol: "place_order".to_owned(),
+                    symbol: "OrderService#place_order".to_owned(),
                     resource: "orders".to_owned(),
                     method: "insert".to_owned(),
                     line: 4,
                 },
                 SourceObservation {
+                    kind: SourceObservationKind::DbWrite,
+                    symbol: "OrderService.cancel_order".to_owned(),
+                    resource: "orders".to_owned(),
+                    method: "delete".to_owned(),
+                    line: 9,
+                },
+                SourceObservation {
                     kind: SourceObservationKind::MessagePublish,
-                    symbol: "place_order".to_owned(),
+                    symbol: "OrderService#place_order".to_owned(),
                     resource: "order_events".to_owned(),
                     method: "publish".to_owned(),
                     line: 5,

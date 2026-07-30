@@ -166,7 +166,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     )
     .unwrap();
     fs::write(
-        root.join("src/Service.java"),
+        root.join("src/Service.JAVA"),
         "class Service { void save() { orders.insert(null); } }\n",
     )
     .unwrap();
@@ -226,11 +226,11 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_eq!(typescript["resources"][0], "events");
     let java = artifacts
         .iter()
-        .find(|artifact| artifact["path"] == "src/Service.java")
+        .find(|artifact| artifact["path"] == "src/Service.JAVA")
         .unwrap();
     assert_eq!(java["language"], "java");
     assert_eq!(java["detector_status"], "supported");
-    assert_eq!(java["symbols"][0], "save");
+    assert_eq!(java["symbols"][0], "Service.save");
     assert_eq!(java["resources"][0], "orders");
     let go = artifacts
         .iter()
@@ -269,22 +269,39 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
 
 #[test]
 fn typescript_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/place_order.ts",
+        "typescript",
+        "export function place_order(order: Order) {\n  orders.insert(order);\n}\n",
+        "place_order",
+    );
+}
+
+fn assert_language_artifact_runs_through_real_loader(
+    path: &str,
+    language: &str,
+    source: &str,
+    symbol: &str,
+) {
     let project = TestProject::new();
     fs::remove_file(project.root.join("src/place_order.py")).unwrap();
-    fs::write(
-        project.root.join("src/place_order.ts"),
-        "export function place_order(order: Order) {\n  orders.insert(order);\n}\n",
-    )
-    .unwrap();
+    fs::write(project.root.join(path), source).unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
-    observation["artifacts"][0]["path"] = Value::String("src/place_order.ts".to_owned());
-    observation["artifacts"][0]["language"] = Value::String("typescript".to_owned());
+    observation["artifacts"][0]["path"] = Value::String(path.to_owned());
+    observation["artifacts"][0]["language"] = Value::String(language.to_owned());
+    observation["artifacts"][0]["bindings"]["symbols"] = json!({
+        (symbol): {
+            "logical_ref": "operation.place-order",
+            "owner": "team.ordering",
+            "authority_ref": "decision.repository-bindings",
+        },
+    });
     write_yaml(&observation_path, &observation);
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "use typescript source"],
+        &["commit", "--quiet", "-m", "use language fixture"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
@@ -617,10 +634,21 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
 
 #[test]
 fn java_artifact_runs_through_the_real_project_loader() {
+    assert_language_artifact_runs_through_real_loader(
+        "src/OrderService.java",
+        "java",
+        "class OrderService {\n  void place_order(Order order) {\n    orders.insert(order);\n  }\n}\n",
+        "place_order",
+    );
+}
+
+#[test]
+fn ambiguous_short_symbol_binding_blocks_same_named_methods() {
     let project = TestProject::new();
     fs::write(
-        project.root.join("src/OrderService.java"),
-        "class OrderService {\n  void place_order(Order order) {\n    orders.insert(order);\n  }\n}\n",
+        project.root.join("src/duplicate_service.java"),
+        "class A { void save() { orders.insert(null); } }\n\
+         class B { void save() { orders.insert(null); } }\n",
     )
     .unwrap();
     let observation_path = project.root.join(".agentic/repository-observation.yaml");
@@ -629,12 +657,12 @@ fn java_artifact_runs_through_the_real_project_loader() {
         .as_array_mut()
         .unwrap()
         .push(json!({
-            "ref": "code.order-service",
-            "path": "src/OrderService.java",
+            "ref": "code.duplicate-service-java",
+            "path": "src/duplicate_service.java",
             "language": "java",
             "bindings": {
                 "symbols": {
-                    "place_order": {
+                    "save": {
                         "logical_ref": "operation.place-order",
                         "owner": "team.ordering",
                         "authority_ref": "decision.repository-bindings",
@@ -654,14 +682,23 @@ fn java_artifact_runs_through_the_real_project_loader() {
     run_git(&project.root, &["add", "-A"]);
     run_git(
         &project.root,
-        &["commit", "--quiet", "-m", "declare java source"],
+        &["commit", "--quiet", "-m", "add duplicate methods"],
     );
 
     let output = project.run(&["next", "change.place-order", "--format", "json"]);
     assert_success(&output);
     let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "needs-analysis");
-    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(output["state"], "blocked-detection");
+    assert!(
+        output["diagnostics"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|item| {
+                item.as_str()
+                    .is_some_and(|message| message.contains("ambiguous-symbol-binding"))
+            })
+    );
 }
 
 #[test]
@@ -708,198 +745,42 @@ fn declared_inventory_only_language_reports_unsupported_language() {
 
 #[test]
 fn go_artifact_runs_through_the_real_project_loader() {
-    let project = TestProject::new();
-    fs::write(
-        project.root.join("src/order_service.go"),
+    assert_language_artifact_runs_through_real_loader(
+        "src/order_service.go",
+        "go",
         "package service\n\nfunc PlaceOrder(order Order) {\n    orders.Insert(order)\n}\n",
-    )
-    .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
-    let mut observation = read_yaml(&observation_path);
-    observation["artifacts"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({
-            "ref": "code.order-service-go",
-            "path": "src/order_service.go",
-            "language": "go",
-            "bindings": {
-                "symbols": {
-                    "PlaceOrder": {
-                        "logical_ref": "operation.place-order",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "resources": {
-                    "orders": {
-                        "logical_ref": "data.orders",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "methods": {},
-            },
-        }));
-    write_yaml(&observation_path, &observation);
-    run_git(&project.root, &["add", "-A"]);
-    run_git(
-        &project.root,
-        &["commit", "--quiet", "-m", "declare go source"],
+        "PlaceOrder",
     );
-
-    let output = project.run(&["next", "change.place-order", "--format", "json"]);
-    assert_success(&output);
-    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "needs-analysis");
-    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]
 fn rust_artifact_runs_through_the_real_project_loader() {
-    let project = TestProject::new();
-    fs::write(
-        project.root.join("src/order_service.rs"),
+    assert_language_artifact_runs_through_real_loader(
+        "src/order_service.rs",
+        "rust",
         "fn place_order(order: Order) {\n    orders.insert(order);\n}\n",
-    )
-    .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
-    let mut observation = read_yaml(&observation_path);
-    observation["artifacts"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({
-            "ref": "code.order-service-rust",
-            "path": "src/order_service.rs",
-            "language": "rust",
-            "bindings": {
-                "symbols": {
-                    "place_order": {
-                        "logical_ref": "operation.place-order",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "resources": {
-                    "orders": {
-                        "logical_ref": "data.orders",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "methods": {},
-            },
-        }));
-    write_yaml(&observation_path, &observation);
-    run_git(&project.root, &["add", "-A"]);
-    run_git(
-        &project.root,
-        &["commit", "--quiet", "-m", "declare rust source"],
+        "place_order",
     );
-
-    let output = project.run(&["next", "change.place-order", "--format", "json"]);
-    assert_success(&output);
-    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "needs-analysis");
-    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]
 fn kotlin_artifact_runs_through_the_real_project_loader() {
-    let project = TestProject::new();
-    fs::write(
-        project.root.join("src/OrderService.kt"),
+    assert_language_artifact_runs_through_real_loader(
+        "src/OrderService.kt",
+        "kotlin",
         "fun placeOrder(order: Order) {\n    orders.insert(order)\n}\n",
-    )
-    .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
-    let mut observation = read_yaml(&observation_path);
-    observation["artifacts"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({
-            "ref": "code.order-service-kotlin",
-            "path": "src/OrderService.kt",
-            "language": "kotlin",
-            "bindings": {
-                "symbols": {
-                    "placeOrder": {
-                        "logical_ref": "operation.place-order",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "resources": {
-                    "orders": {
-                        "logical_ref": "data.orders",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "methods": {},
-            },
-        }));
-    write_yaml(&observation_path, &observation);
-    run_git(&project.root, &["add", "-A"]);
-    run_git(
-        &project.root,
-        &["commit", "--quiet", "-m", "declare kotlin source"],
+        "placeOrder",
     );
-
-    let output = project.run(&["next", "change.place-order", "--format", "json"]);
-    assert_success(&output);
-    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "needs-analysis");
-    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]
 fn ruby_artifact_runs_through_the_real_project_loader() {
-    let project = TestProject::new();
-    fs::write(
-        project.root.join("src/order_service.rb"),
+    assert_language_artifact_runs_through_real_loader(
+        "src/order_service.rb",
+        "ruby",
         "def place_order(order)\n  orders.insert(order)\nend\n",
-    )
-    .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
-    let mut observation = read_yaml(&observation_path);
-    observation["artifacts"]
-        .as_array_mut()
-        .unwrap()
-        .push(json!({
-            "ref": "code.order-service-ruby",
-            "path": "src/order_service.rb",
-            "language": "ruby",
-            "bindings": {
-                "symbols": {
-                    "place_order": {
-                        "logical_ref": "operation.place-order",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "resources": {
-                    "orders": {
-                        "logical_ref": "data.orders",
-                        "owner": "team.ordering",
-                        "authority_ref": "decision.repository-bindings",
-                    },
-                },
-                "methods": {},
-            },
-        }));
-    write_yaml(&observation_path, &observation);
-    run_git(&project.root, &["add", "-A"]);
-    run_git(
-        &project.root,
-        &["commit", "--quiet", "-m", "declare ruby source"],
+        "place_order",
     );
-
-    let output = project.run(&["next", "change.place-order", "--format", "json"]);
-    assert_success(&output);
-    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(output["state"], "needs-analysis");
-    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
 }
 
 #[test]

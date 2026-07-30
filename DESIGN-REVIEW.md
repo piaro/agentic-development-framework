@@ -130,6 +130,8 @@ Binding Recordはartifact単位の`applies_to`ではなく、関数名と物理r
 
 その後、Observation Schema v4で言語非依存の観測形式とDetector登録表を追加し、Pythonに加えてJava、Kotlin、Go、Rust、Ruby、JavaScript、JSX、TypeScript、TSXを同じGit Adapterへ接続した。PHPなどの主要source拡張子もinventory対象とし、Detector未実装の言語を初期観測から黙って除外しない。framework固有APIは`resource.method`単位のBindingへ`db_write`または`message_publish`、owner、承認Decisionを記録することで追加できる。これによりSQLAlchemyの`session.execute`、Djangoの`model.save`、Spring Dataの`repository.save`、Railsの`model.save`を導入先の判断で分類できるが、alias、動的dispatch、query内容の意味解析は引き続きcoverage外としてfail closedに扱う。
 
+Detector追加後の実project検証で、JSX入り`.js`、複数行receiver、同一行の同一call、Rust turbofish、computed property、大文字拡張子、同名methodの物理identityに共通欠陥が見つかった。parse・receiver正規化・言語別の組込みmethod分類・確定的整列を共通engineへ集約し、観測は重複除去しない。class・impl・receiver内のsymbolは型名で修飾し、従来の短縮Binding keyはartifact内で一意な場合だけ互換利用する。同名symbolに対する短縮keyは`ambiguous-symbol-binding`としてfail closedにする。言語横断conformanceとCLIの共通fixtureが、この境界を新しいDetectorにも要求する。
+
 ### 2.3 保証しているのは「問うたこと」であり「確認されたこと」ではない
 
 13.8 の末尾は「Kernelは設計や実装が意味的に正しいかを判定しない。必要なResult、参照先、入力内容の一致、検証範囲、承認、Evidenceが揃っているかだけを機械的な進行条件とする」と正直に書いている。これ自体は正しい。

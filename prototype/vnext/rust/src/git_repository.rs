@@ -180,6 +180,7 @@ impl GitRepositoryAdapter {
                     Err(error) => gaps.push(coverage_gap("parse-error", Some(reference), error)),
                     Ok(observations) => {
                         analyzed_refs.push(reference.to_owned());
+                        let symbol_aliases = symbol_aliases(&observations);
                         for observation in observations {
                             if observation.kind == SourceObservationKind::OtherMethodCall
                                 && !bindings.resources.contains_key(&observation.resource)
@@ -201,6 +202,7 @@ impl GitRepositoryAdapter {
                                 &observation,
                                 reference,
                                 &bindings,
+                                &symbol_aliases,
                                 &mut facts,
                                 &mut gaps,
                             );
@@ -235,6 +237,7 @@ impl GitRepositoryAdapter {
 
         artifacts.sort_by(|left, right| left["ref"].as_str().cmp(&right["ref"].as_str()));
         facts.sort_by_key(canonical_value);
+        facts.dedup();
         analyzed_refs.sort();
         sort_gaps(&mut gaps);
         let coverage = json!({
@@ -521,10 +524,34 @@ fn bind_observation(
     observation: &SourceObservation,
     artifact_ref: &str,
     bindings: &ArtifactBinding,
+    symbol_aliases: &BTreeMap<String, BTreeSet<String>>,
     facts: &mut Vec<Value>,
     gaps: &mut Vec<Value>,
 ) {
-    let Some(symbol) = bindings.symbols.get(&observation.symbol) else {
+    let short_symbol = unqualified_symbol(&observation.symbol);
+    let symbol = bindings.symbols.get(&observation.symbol).or_else(|| {
+        symbol_aliases
+            .get(short_symbol)
+            .filter(|qualified| qualified.len() == 1)
+            .and_then(|_| bindings.symbols.get(short_symbol))
+    });
+    let Some(symbol) = symbol else {
+        let ambiguity = symbol_aliases
+            .get(short_symbol)
+            .filter(|qualified| qualified.len() > 1);
+        if let Some(qualified) = ambiguity
+            && bindings.symbols.contains_key(short_symbol)
+        {
+            gaps.push(coverage_gap(
+                "ambiguous-symbol-binding",
+                Some(artifact_ref),
+                format!(
+                    "symbol binding {short_symbol} matches multiple physical symbols: {}",
+                    qualified.iter().cloned().collect::<Vec<_>>().join(", ")
+                ),
+            ));
+            return;
+        }
         gaps.push(coverage_gap(
             "unmapped-observation",
             Some(artifact_ref),
@@ -618,6 +645,25 @@ fn bind_observation(
         "binding_authority_refs": binding_authority_refs.into_iter().collect::<Vec<_>>(),
         "binding_owners": binding_owners.into_iter().collect::<Vec<_>>(),
     }));
+}
+
+fn symbol_aliases(observations: &[SourceObservation]) -> BTreeMap<String, BTreeSet<String>> {
+    let mut aliases = BTreeMap::<String, BTreeSet<String>>::new();
+    for observation in observations {
+        aliases
+            .entry(unqualified_symbol(&observation.symbol).to_owned())
+            .or_default()
+            .insert(observation.symbol.clone());
+    }
+    aliases
+}
+
+fn unqualified_symbol(symbol: &str) -> &str {
+    symbol
+        .rsplit_once("::")
+        .map(|(_, name)| name)
+        .or_else(|| symbol.rsplit_once(['.', '#']).map(|(_, name)| name))
+        .unwrap_or(symbol)
 }
 
 fn coverage_gap(kind: &str, reference: Option<&str>, reason: String) -> Value {

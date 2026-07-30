@@ -1,42 +1,56 @@
 //! Mechanical observations extracted from Kotlin syntax.
 
-use crate::source_detection::{SourceObservation, classify_method};
-use tree_sitter::{Node, Parser};
+use crate::source_detection::{SourceObservation, observation_from_nodes, observe_tree};
+use tree_sitter::Node;
 
 pub fn observe_kotlin(source: &str) -> Result<Vec<SourceObservation>, String> {
-    let mut parser = Parser::new();
-    parser
-        .set_language(&tree_sitter_kotlin_ng::LANGUAGE.into())
-        .map_err(|error| format!("cannot initialize Kotlin parser: {error}"))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| "Kotlin parser returned no syntax tree".to_owned())?;
-    let root = tree.root_node();
-    if root.has_error() {
-        return Err("Kotlin source contains a syntax error".to_owned());
-    }
+    observe_tree(
+        source,
+        &tree_sitter_kotlin_ng::LANGUAGE.into(),
+        "Kotlin",
+        collect_root,
+    )
+}
 
-    let mut observations = Vec::new();
-    collect_observations(root, source.as_bytes(), None, &mut observations);
-    observations.sort();
-    observations.dedup();
-    Ok(observations)
+fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
+    collect_observations(node, source, None, None, observations);
 }
 
 fn collect_observations(
     node: Node<'_>,
     source: &[u8],
+    enclosing_type: Option<&str>,
     enclosing_symbol: Option<&str>,
     observations: &mut Vec<SourceObservation>,
 ) {
+    let declared_type = if matches!(
+        node.kind(),
+        "class_declaration" | "object_declaration" | "companion_object"
+    ) {
+        node.child_by_field_name("name")
+            .or_else(|| first_named_child_of_kind(node, "type_identifier"))
+            .or_else(|| first_named_child_of_kind(node, "identifier"))
+            .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match enclosing_type {
+                Some(parent) => format!("{parent}.{name}"),
+                None => name.to_owned(),
+            })
+    } else {
+        None
+    };
+    let type_name = declared_type.as_deref().or(enclosing_type);
     let declared_symbol = if node.kind() == "function_declaration" {
         node.child_by_field_name("name")
             .or_else(|| first_named_child_of_kind(node, "identifier"))
             .and_then(|name| name.utf8_text(source).ok())
+            .map(|name| match type_name {
+                Some(type_name) => format!("{type_name}.{name}"),
+                None => name.to_owned(),
+            })
     } else {
         None
     };
-    let symbol = declared_symbol.or(enclosing_symbol);
+    let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "call_expression"
         && let Some(observation) = observation_for_call(node, source, symbol)
@@ -46,7 +60,7 @@ fn collect_observations(
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, observations);
+        collect_observations(child, source, type_name, symbol, observations);
     }
 }
 
@@ -66,14 +80,7 @@ fn observation_for_call(
     if receiver.id() == method_node.id() {
         return None;
     }
-    let method = method_node.utf8_text(source).ok()?;
-    Some(SourceObservation {
-        kind: classify_method(method),
-        symbol: symbol.unwrap_or("<module>").to_owned(),
-        resource: receiver.utf8_text(source).ok()?.to_owned(),
-        method: method.to_owned(),
-        line: call.start_position().row + 1,
-    })
+    observation_from_nodes("kotlin", receiver, method_node, call, source, symbol)
 }
 
 fn first_named_child_of_kind<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
@@ -110,7 +117,7 @@ class OrderService {
             vec![
                 SourceObservation {
                     kind: SourceObservationKind::DbWrite,
-                    symbol: "cancelOrder".to_owned(),
+                    symbol: "OrderService.cancelOrder".to_owned(),
                     resource: "orders".to_owned(),
                     method: "delete".to_owned(),
                     line: 9,
