@@ -139,6 +139,7 @@ impl FrameworkCatalog {
                 GOOGLE_CLOUD_PUBSUB,
                 &[
                     "google-cloud-pubsub",
+                    "google/cloud-pubsub",
                     "@google-cloud/pubsub",
                     "google.cloud:google-cloud-pubsub",
                     "google.cloud.pubsub",
@@ -992,6 +993,19 @@ mod tests {
         assert_eq!(
             candidates[0].evidence,
             vec!["project-manifest:pyproject.toml"]
+        );
+
+        let mut catalog = FrameworkCatalog::default();
+        catalog.record_manifest(
+            "composer.json",
+            r#"{"require":{"google/cloud-pubsub":"^1"}}"#,
+        );
+        let candidates =
+            catalog.candidates("app/service.php", "php", "", &[observation("publish")]);
+        assert_eq!(candidates[0].framework, GOOGLE_CLOUD_PUBSUB);
+        assert_eq!(
+            candidates[0].evidence,
+            vec!["project-manifest:composer.json"]
         );
     }
 

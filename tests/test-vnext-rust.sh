@@ -23,6 +23,12 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
+  -- benchmark "$KIT_ROOT/prototype/vnext/benchmarks/major-frameworks-v1" \
+  --format text
+cargo run \
+  --manifest-path "$RUST_ROOT/Cargo.toml" \
+  --locked \
+  --quiet \
   -- verify-canonicalization "$KIT_ROOT/prototype/vnext/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \

@@ -1,0 +1,6 @@
+{
+  "require": {
+    "laravel/framework": "12.20.0",
+    "google/cloud-pubsub": "1.49.1"
+  }
+}

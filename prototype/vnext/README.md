@@ -55,6 +55,7 @@ Project Snapshot
 - 6種類のResult payload Schemaと、Result種別ごとの許可Role検証
 - outcomeの結論・根拠参照と、発行Contextに対する参照整合性の検証
 - 全ChangeのEvidence履歴と現在の入力digestから生成する条項単位のContract Health表示と、明示policyによる定期CIゲート
+- 主要8 ORM・8 messaging frameworkをproject単位で測るDetector品質benchmark
 - Schema bundleのversionとdigestを固定するFramework lock
 - JSONだけで構成したcanonicalization・Schema・Rule Compiler・Detector・Thin Kernel・Context Compiler・Project Snapshot・Framework lock・Result submit・Application golden fixture
 - golden fixtureによる完全なKernelDecisionとContext digestの互換性検査
@@ -162,6 +163,22 @@ jobs:
           --format json
           --require-clean
 ```
+
+### Rust Detector Benchmark
+
+`benchmark`は、review済みの正解データと明示閾値を持つ固定corpusに対して、source observationとframework candidateのprecision／recallを測ります。浮動小数点や実行時間を合否に使わず、0〜10000のbasis pointで決定的に集計します。
+
+同梱の`major-frameworks-v1`は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMと、Amazon SQS、Celery、Apache Kafka、RabbitMQ、Azure Service Bus、Redis Streams、Google Cloud Pub/Sub、NATSを組み合わせた8つのproject fixtureです。外部sourceのコピーではなく、各frameworkの典型的な呼出し形とmanifest根拠を再現する最小corpusです。
+
+```sh
+agentic benchmark \
+  prototype/vnext/benchmarks/major-frameworks-v1 \
+  --format text
+```
+
+現在の基準は、SQLAlchemyの書込み種別を自動決定できない`session.execute`を含む17 receiver callと17 framework candidateのprecision／recallがすべて100%です。構文エラーは常に失敗し、corpusの`minimum_scores`を下回ると詳細Reportをstdoutへ出して終了code 1になります。Reportはmanifest・source・dependency manifest全体の`corpus_digest`も返します。正解値・閾値をDetectorが自動更新することはありません。
+
+corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Reportは`schemas/outputs/v1/detector-benchmark-report.schema.json`に従います。各projectは`authored-fixture`または`external-snapshot`のprovenance、license、外部snapshotならRepository URLと40桁のGit revisionを必須とします。runnerはoffline・read-onlyで、corpus root外へのpathやsymlink escapeを拒否します。実際の外部Repository snapshotを追加する場合も、sourceのライセンスとrevisionをreviewしたうえで、同じcorpus契約へ人が正解を記入します。
 
 ## 実行
 
@@ -480,6 +497,7 @@ sources:
 | `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
 | `rust/src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
 | `rust/src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
+| `rust/src/detector_benchmark.rs` | review済みcorpusに対するDetector・framework候補のprecision／recallと閾値判定を生成 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
 | `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
@@ -488,6 +506,7 @@ sources:
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
+| `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
 | `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
@@ -495,6 +514,7 @@ sources:
 | `rust/` | build済みバイナリ移行を検証するRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
 | `agentic_vnext/application.py` | `next`と`submit`のModule呼出順を管理 |
 | `fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
+| `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging frameworkを組み合わせた8 projectの品質corpus |
 
 ## 現時点の制約
 
@@ -510,6 +530,7 @@ sources:
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - `project observe`のDraft v3は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
+- Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。

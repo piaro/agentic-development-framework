@@ -1,0 +1,331 @@
+schema_version: "1"
+id: major-frameworks-v1
+minimum_scores:
+  observation_precision_bps: 10000
+  observation_recall_bps: 10000
+  framework_precision_bps: 10000
+  framework_recall_bps: 10000
+projects:
+  - id: python-django-sqs
+    root: projects/python-django-sqs
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - requirements.txt
+    cases:
+      - path: shop/service.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: place_order
+            resource: order
+            method: save
+            line: 2
+          - kind: message_publish
+            symbol: place_order
+            resource: sqs
+            method: send_message
+            line: 3
+        expected_framework_candidates:
+          - framework: django-orm
+            symbol: place_order
+            resource: order
+            method: save
+            line: 2
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: amazon-sqs
+            symbol: place_order
+            resource: sqs
+            method: send_message
+            line: 3
+            suggested_kind: message_publish
+            method_binding_required: false
+
+  - id: python-sqlalchemy-celery
+    root: projects/python-sqlalchemy-celery
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - requirements.txt
+    cases:
+      - path: app/service.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: place_order
+            resource: session
+            method: add
+            line: 2
+          - kind: other_method_call
+            symbol: place_order
+            resource: tasks.process_order
+            method: delay
+            line: 4
+          - kind: other_method_call
+            symbol: place_order
+            resource: session
+            method: execute
+            line: 3
+        expected_framework_candidates:
+          - framework: sqlalchemy
+            symbol: place_order
+            resource: session
+            method: add
+            line: 2
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: celery
+            symbol: place_order
+            resource: tasks.process_order
+            method: delay
+            line: 4
+            suggested_kind: message_publish
+            method_binding_required: true
+          - framework: sqlalchemy
+            symbol: place_order
+            resource: session
+            method: execute
+            line: 3
+            suggested_kind: null
+            method_binding_required: true
+
+  - id: typescript-prisma-kafka
+    root: projects/typescript-prisma-kafka
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - package.json
+    cases:
+      - path: src/service.ts
+        language: typescript
+        expected_observations:
+          - kind: other_method_call
+            symbol: placeOrder
+            resource: prisma.order
+            method: create
+            line: 2
+          - kind: other_method_call
+            symbol: placeOrder
+            resource: kafka
+            method: send
+            line: 3
+        expected_framework_candidates:
+          - framework: prisma
+            symbol: placeOrder
+            resource: prisma.order
+            method: create
+            line: 2
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: apache-kafka
+            symbol: placeOrder
+            resource: kafka
+            method: send
+            line: 3
+            suggested_kind: message_publish
+            method_binding_required: true
+
+  - id: java-spring-rabbit
+    root: projects/java-spring-rabbit
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - pom.xml
+    cases:
+      - path: src/OrderService.java
+        language: java
+        expected_observations:
+          - kind: other_method_call
+            symbol: OrderService.placeOrder
+            resource: repository
+            method: save
+            line: 3
+          - kind: other_method_call
+            symbol: OrderService.placeOrder
+            resource: channel
+            method: basicPublish
+            line: 4
+        expected_framework_candidates:
+          - framework: spring-data-jpa
+            symbol: OrderService.placeOrder
+            resource: repository
+            method: save
+            line: 3
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: rabbitmq
+            symbol: OrderService.placeOrder
+            resource: channel
+            method: basicPublish
+            line: 4
+            suggested_kind: message_publish
+            method_binding_required: true
+
+  - id: csharp-ef-servicebus
+    root: projects/csharp-ef-servicebus
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - app.csproj
+    cases:
+      - path: src/OrderService.cs
+        language: csharp
+        expected_observations:
+          - kind: other_method_call
+            symbol: OrderService.PlaceOrder
+            resource: db
+            method: SaveChangesAsync
+            line: 3
+          - kind: other_method_call
+            symbol: OrderService.PlaceOrder
+            resource: sender
+            method: SendMessageAsync
+            line: 4
+        expected_framework_candidates:
+          - framework: entity-framework-core
+            symbol: OrderService.PlaceOrder
+            resource: db
+            method: SaveChangesAsync
+            line: 3
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: azure-service-bus
+            symbol: OrderService.PlaceOrder
+            resource: sender
+            method: SendMessageAsync
+            line: 4
+            suggested_kind: message_publish
+            method_binding_required: true
+
+  - id: ruby-rails-redis
+    root: projects/ruby-rails-redis
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - Gemfile
+    cases:
+      - path: app/services/order_service.rb
+        language: ruby
+        expected_observations:
+          - kind: other_method_call
+            symbol: OrderService#place_order
+            resource: order
+            method: save!
+            line: 3
+          - kind: other_method_call
+            symbol: OrderService#place_order
+            resource: redis
+            method: xadd
+            line: 4
+        expected_framework_candidates:
+          - framework: rails-active-record
+            symbol: OrderService#place_order
+            resource: order
+            method: save!
+            line: 3
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: redis-streams
+            symbol: OrderService#place_order
+            resource: redis
+            method: xadd
+            line: 4
+            suggested_kind: message_publish
+            method_binding_required: true
+
+  - id: php-laravel-pubsub
+    root: projects/php-laravel-pubsub
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - composer.json
+    cases:
+      - path: app/OrderService.php
+        language: php
+        expected_observations:
+          - kind: other_method_call
+            symbol: placeOrder
+            resource: $order
+            method: save
+            line: 3
+          - kind: message_publish
+            symbol: placeOrder
+            resource: $topic
+            method: publish
+            line: 4
+        expected_framework_candidates:
+          - framework: laravel-eloquent
+            symbol: placeOrder
+            resource: $order
+            method: save
+            line: 3
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: google-cloud-pubsub
+            symbol: placeOrder
+            resource: $topic
+            method: publish
+            line: 4
+            suggested_kind: message_publish
+            method_binding_required: false
+
+  - id: go-gorm-nats
+    root: projects/go-gorm-nats
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests:
+      - go.mod
+    cases:
+      - path: service.go
+        language: go
+        expected_observations:
+          - kind: other_method_call
+            symbol: PlaceOrder
+            resource: db
+            method: Create
+            line: 4
+          - kind: message_publish
+            symbol: PlaceOrder
+            resource: nc
+            method: Publish
+            line: 5
+        expected_framework_candidates:
+          - framework: gorm
+            symbol: PlaceOrder
+            resource: db
+            method: Create
+            line: 4
+            suggested_kind: db_write
+            method_binding_required: true
+          - framework: nats
+            symbol: PlaceOrder
+            resource: nc
+            method: Publish
+            line: 5
+            suggested_kind: message_publish
+            method_binding_required: false

@@ -6,6 +6,7 @@ use agentic_vnext_rust::contract_health_gate::{ContractHealthGateReport, Contrac
 use agentic_vnext_rust::delivery::{
     install_release, read_framework_lock, rollback_framework_lock, switch_framework_lock,
 };
+use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
 use agentic_vnext_rust::mcp_server::run_stdio_server;
 use agentic_vnext_rust::project_runtime::LoadedProject;
 use agentic_vnext_rust::project_setup::{
@@ -180,6 +181,30 @@ fn main() -> ExitCode {
             }
         };
         return match run_contract_health(&options) {
+            Ok((output, passed)) => {
+                print!("{output}");
+                if passed {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "benchmark" {
+        let options = match parse_benchmark_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                benchmark_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_benchmark(&options) {
             Ok((output, passed)) => {
                 print!("{output}");
                 if passed {
@@ -850,6 +875,11 @@ struct RepositoryCommand {
     require_clean: bool,
 }
 
+struct BenchmarkCommand {
+    corpus_root: PathBuf,
+    format: OutputFormat,
+}
+
 struct McpCommand {
     project_root: PathBuf,
     release: Option<PathBuf>,
@@ -1267,6 +1297,33 @@ fn parse_repository_command(
     })
 }
 
+fn parse_benchmark_command(arguments: &[String]) -> Result<BenchmarkCommand, String> {
+    let corpus_root = arguments
+        .first()
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| "benchmark requires a corpus root".to_owned())
+        .map(PathBuf::from)?;
+    let mut format = OutputFormat::Text;
+    let mut index = 1;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--format" => {
+                format = match flag_value(arguments, &mut index, "--format")? {
+                    "text" => OutputFormat::Text,
+                    "json" => OutputFormat::Json,
+                    other => return Err(format!("unsupported output format: {other}")),
+                };
+            }
+            other => return Err(format!("unknown benchmark argument: {other}")),
+        }
+        index += 1;
+    }
+    Ok(BenchmarkCommand {
+        corpus_root,
+        format,
+    })
+}
+
 fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String, String> {
     ensure_project_initialized(&options.project_root)?;
     let project = LoadedProject::load(
@@ -1364,6 +1421,18 @@ fn run_contract_health(options: &RepositoryCommand) -> Result<(String, bool), St
     }
 }
 
+fn run_benchmark(options: &BenchmarkCommand) -> Result<(String, bool), String> {
+    let report = run_detector_benchmark(&options.corpus_root).map_err(|error| error.to_string())?;
+    let passed = report.passed();
+    let output = match options.format {
+        OutputFormat::Text => report.render_text(),
+        OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
+            .map(|value| value + "\n")
+            .map_err(|error| error.to_string())?,
+    };
+    Ok((output, passed))
+}
+
 fn ensure_project_initialized(project_root: &std::path::Path) -> Result<(), String> {
     let config = project_root.join(".agentic/config.yaml");
     if config.is_file() {
@@ -1399,6 +1468,7 @@ usage:\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
+  agentic benchmark <corpus-root> [--format <text|json>]\n\
   agentic mcp [--project <root>] [--release <root>]\n\
   agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
   agentic binary <install|update|status|rollback> ...\n\
@@ -1457,6 +1527,10 @@ fn repository_usage(command: &str) {
          [--project <root>] [--release <root>] \
          [--policy <path>] [--format <text|json>] [--require-clean]"
     );
+}
+
+fn benchmark_usage() {
+    eprintln!("usage: agentic benchmark <corpus-root> [--format <text|json>]");
 }
 
 fn project_management_usage() {

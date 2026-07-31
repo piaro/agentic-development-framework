@@ -1,0 +1,5 @@
+<dependencies>
+  <artifactId>spring-data-jpa</artifactId>
+  <artifactId>amqp-client</artifactId>
+  <groupId>com.rabbitmq</groupId>
+</dependencies>
