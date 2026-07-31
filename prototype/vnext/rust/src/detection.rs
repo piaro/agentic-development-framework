@@ -6,8 +6,7 @@
 
 use crate::canonical_digest;
 use crate::signal_catalog::{
-    TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION, repository_fact_definition,
-    validate_signal_candidate,
+    SignalCatalogRegistry, TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -63,14 +62,37 @@ pub fn detect_typed_facts(
     coverage: &Value,
     artifact_digests: &BTreeMap<String, String>,
 ) -> Result<DetectionReport, DetectionError> {
+    let signal_registry = SignalCatalogRegistry::built_in()
+        .map_err(|error| DetectionError::new(error.to_string()))?;
+    detect_typed_facts_with_registry(
+        change_id,
+        facts,
+        coverage,
+        artifact_digests,
+        &signal_registry,
+    )
+}
+
+/// Convert typed facts with one already-validated Signal Catalog Registry.
+///
+/// Application orchestration uses this entry point so Rule compilation and
+/// detection cannot accidentally resolve against different catalogs.
+pub fn detect_typed_facts_with_registry(
+    change_id: &str,
+    facts: &[Value],
+    coverage: &Value,
+    artifact_digests: &BTreeMap<String, String>,
+    signal_registry: &SignalCatalogRegistry,
+) -> Result<DetectionReport, DetectionError> {
     let coverage = detection_coverage(coverage)?;
     let mut detected = BTreeMap::<String, (String, SignalBindings, Vec<String>)>::new();
     for (fact_index, fact) in facts.iter().enumerate() {
         let fact = fact.as_object().ok_or_else(|| {
             DetectionError::new(format!("repository fact {fact_index} must be an object"))
         })?;
-        for (signal, bindings) in signals_for(fact, fact_index)? {
-            validate_signal_candidate(&signal, DETECTOR_ID, DETECTOR_VERSION, &bindings)
+        for (signal, bindings) in signals_for(fact, fact_index, signal_registry)? {
+            signal_registry
+                .validate_signal_candidate(&signal, DETECTOR_ID, DETECTOR_VERSION, &bindings)
                 .map_err(|error| DetectionError::new(error.to_string()))?;
             let mut evidence_refs = optional_string_array(fact, "evidence_refs", fact_index)?;
             evidence_refs.sort();
@@ -155,31 +177,34 @@ pub fn detect_typed_facts(
 fn signals_for(
     fact: &Map<String, Value>,
     fact_index: usize,
+    signal_registry: &SignalCatalogRegistry,
 ) -> Result<Vec<DetectedSignal>, DetectionError> {
     let kind = fact.get("kind").and_then(Value::as_str).ok_or_else(|| {
         DetectionError::new(format!(
             "repository fact {fact_index} field kind must be a string"
         ))
     })?;
-    let definition = repository_fact_definition(kind).ok_or_else(|| {
-        DetectionError::new(format!(
-            "repository fact {fact_index} has unsupported kind: {kind}"
-        ))
-    })?;
+    let definition = signal_registry
+        .repository_fact_definition(kind)
+        .ok_or_else(|| {
+            DetectionError::new(format!(
+                "repository fact {fact_index} has unsupported kind: {kind}"
+            ))
+        })?;
     let bindings = definition
         .bindings
         .iter()
         .map(|binding| {
             Ok((
                 binding.binding.to_owned(),
-                required_string(fact, binding.fact_field, fact_index)?.to_owned(),
+                required_string(fact, &binding.fact_field, fact_index)?.to_owned(),
             ))
         })
         .collect::<Result<BTreeMap<_, _>, DetectionError>>()?;
     Ok(definition
         .emits
         .iter()
-        .map(|signal| ((*signal).to_owned(), bindings.clone()))
+        .map(|signal| (signal.clone(), bindings.clone()))
         .collect())
 }
 
@@ -366,6 +391,37 @@ impl std::error::Error for DetectionError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signal_catalog::test_signal_registry;
+
+    #[test]
+    fn resolves_facts_with_the_injected_registry() {
+        let report = detect_typed_facts_with_registry(
+            "change.custom",
+            &[json!({
+                "kind": "test_write",
+                "operation": "operation.custom",
+                "target": "target.custom",
+            })],
+            &json!({
+                "status": "complete",
+                "scope": "declared-artifacts",
+                "analyzed_refs": [],
+                "gaps": [],
+            }),
+            &BTreeMap::new(),
+            &test_signal_registry(),
+        )
+        .unwrap();
+        assert_eq!(report.candidates.len(), 1);
+        assert_eq!(report.candidates[0].signal, "test-resource-write");
+        assert_eq!(
+            report.candidates[0].bindings,
+            BTreeMap::from([
+                ("operation".to_owned(), "operation.custom".to_owned()),
+                ("target".to_owned(), "target.custom".to_owned()),
+            ])
+        );
+    }
 
     #[test]
     fn rejects_unknown_fact_kinds() {

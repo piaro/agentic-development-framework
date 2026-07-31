@@ -17,7 +17,7 @@ use agentic_vnext_rust::release_publisher::{
     PublishOptions, publish_release, signing_seed_from_environment,
 };
 use agentic_vnext_rust::remote_delivery::{fetch_release, install_release_archive};
-use agentic_vnext_rust::signal_catalog::SignalDomainCatalog;
+use agentic_vnext_rust::signal_catalog::SignalCatalogRegistry;
 use agentic_vnext_rust::{
     verify_application_suite, verify_canonicalization_suite, verify_context_suite,
     verify_detection_suite, verify_explain_suite, verify_filesystem_project_suite,
@@ -1481,7 +1481,9 @@ fn run_benchmark(options: &BenchmarkCommand) -> Result<(String, bool), String> {
 }
 
 fn run_catalog(options: &CatalogCommand) -> Result<String, String> {
-    let catalog = SignalDomainCatalog::build().map_err(|error| error.to_string())?;
+    let catalog = SignalCatalogRegistry::built_in()
+        .map_err(|error| error.to_string())?
+        .catalog();
     match options.format {
         OutputFormat::Text => Ok(catalog.render_text()),
         OutputFormat::Json => serde_json::to_string_pretty(&catalog.as_value())

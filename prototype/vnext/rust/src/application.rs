@@ -7,13 +7,14 @@
 use crate::canonical_digest;
 use crate::context::{ContextCompiler, GeneratedContext};
 use crate::contract_health::{ContractHealthReport, build_contract_health_report};
-use crate::detection::detect_typed_facts;
+use crate::detection::detect_typed_facts_with_registry;
 use crate::explain::{ExplainReport, ExplanationBuilder};
 use crate::framework_lock::{FrameworkLock, validate_framework_lock};
 use crate::kernel::{KernelDecision, ProjectSnapshot, ThinKernel};
 use crate::project::build_project_snapshot;
-use crate::rules::{RuleIndex, compile_rule_index};
+use crate::rules::{RuleIndex, compile_rule_index_with_registry};
 use crate::schema::SchemaRegistry;
+use crate::signal_catalog::SignalCatalogRegistry;
 use crate::submission::{ResultSubmission, prepare_result};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -63,6 +64,7 @@ pub struct Application<'a, Store: ProjectStore> {
     rule_index: RuleIndex,
     framework_lock: FrameworkLock,
     schema_registry: &'a SchemaRegistry,
+    signal_registry: SignalCatalogRegistry,
     issued: BTreeMap<(String, String), GeneratedContext>,
 }
 
@@ -73,8 +75,27 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
         framework_lock_source: &Value,
         schema_registry: &'a SchemaRegistry,
     ) -> Result<Self, ApplicationError> {
-        let rule_index = compile_rule_index(rule_source, schema_registry)
+        let signal_registry = SignalCatalogRegistry::built_in()
             .map_err(|error| application_error(error.to_string()))?;
+        Self::with_store_and_signal_registry(
+            store,
+            rule_source,
+            framework_lock_source,
+            schema_registry,
+            signal_registry,
+        )
+    }
+
+    pub fn with_store_and_signal_registry(
+        store: Store,
+        rule_source: &Value,
+        framework_lock_source: &Value,
+        schema_registry: &'a SchemaRegistry,
+        signal_registry: SignalCatalogRegistry,
+    ) -> Result<Self, ApplicationError> {
+        let rule_index =
+            compile_rule_index_with_registry(rule_source, schema_registry, &signal_registry)
+                .map_err(|error| application_error(error.to_string()))?;
         // A partial Framework upgrade must stop before any Project evaluation.
         let framework_lock = validate_framework_lock(
             framework_lock_source,
@@ -88,6 +109,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             rule_index,
             framework_lock,
             schema_registry,
+            signal_registry,
             issued: BTreeMap::new(),
         })
     }
@@ -95,7 +117,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
     pub fn next(&mut self, change_id: &str) -> Result<ApplicationResponse, ApplicationError> {
         // State is deliberately recomputed instead of restored from process memory.
         let snapshot = self.snapshot(change_id)?;
-        let detection = detect_typed_facts(
+        let detection = detect_typed_facts_with_registry(
             change_id,
             snapshot.repository["facts"]
                 .as_array()
@@ -103,6 +125,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
                 .unwrap_or(&[]),
             &snapshot.repository["coverage"],
             &snapshot.artifact_digests,
+            &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
         let contract_health = self
@@ -180,7 +203,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
     /// Recompute the current decision and its trace without issuing an Action.
     pub fn explain(&self, change_id: &str) -> Result<ExplainReport, ApplicationError> {
         let snapshot = self.snapshot(change_id)?;
-        let detection = detect_typed_facts(
+        let detection = detect_typed_facts_with_registry(
             change_id,
             snapshot.repository["facts"]
                 .as_array()
@@ -188,6 +211,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
                 .unwrap_or(&[]),
             &snapshot.repository["coverage"],
             &snapshot.artifact_digests,
+            &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
         let contract_health = self
@@ -263,6 +287,10 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
 
     pub fn framework_lock_digest(&self) -> &str {
         &self.framework_lock.digest
+    }
+
+    pub fn signal_catalog_digest(&self) -> &str {
+        self.signal_registry.digest()
     }
 }
 

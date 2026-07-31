@@ -14,116 +14,46 @@ pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "1";
 pub const TYPED_FACT_DETECTOR_ID: &str = "typed-repository-fact";
 pub const TYPED_FACT_DETECTOR_VERSION: &str = "3";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SignalDomainDefinition {
-    pub id: &'static str,
-    pub title: &'static str,
-    pub description: &'static str,
-    pub signals: &'static [&'static str],
+    pub id: String,
+    pub title: String,
+    pub description: String,
+    pub signals: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SignalDefinition {
-    pub id: &'static str,
-    pub domain: &'static str,
-    pub detector_id: &'static str,
-    pub detector_version: &'static str,
-    pub bindings: &'static [&'static str],
+    pub id: String,
+    pub domain: String,
+    pub detector_id: String,
+    pub detector_version: String,
+    pub bindings: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FactBindingDefinition {
-    pub binding: &'static str,
-    pub fact_field: &'static str,
+    pub binding: String,
+    pub fact_field: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct RepositoryFactDefinition {
-    pub id: &'static str,
-    pub bindings: &'static [FactBindingDefinition],
-    pub emits: &'static [&'static str],
+    pub id: String,
+    pub bindings: Vec<FactBindingDefinition>,
+    pub emits: Vec<String>,
 }
-
-const SIGNAL_DOMAIN_DEFINITIONS: [SignalDomainDefinition; 2] = [
-    SignalDomainDefinition {
-        id: "data-persistence",
-        title: "Data persistence",
-        description: "Durable writes to application-owned data",
-        signals: &["persistent-data-write"],
-    },
-    SignalDomainDefinition {
-        id: "distributed-integration",
-        title: "Distributed integration",
-        description: "Effects crossing a process or service boundary",
-        signals: &["distributed-effect", "message-or-event-publish"],
-    },
-];
-
-const SIGNAL_DEFINITIONS: [SignalDefinition; 3] = [
-    SignalDefinition {
-        id: "distributed-effect",
-        domain: "distributed-integration",
-        detector_id: TYPED_FACT_DETECTOR_ID,
-        detector_version: TYPED_FACT_DETECTOR_VERSION,
-        bindings: &["integration", "operation"],
-    },
-    SignalDefinition {
-        id: "message-or-event-publish",
-        domain: "distributed-integration",
-        detector_id: TYPED_FACT_DETECTOR_ID,
-        detector_version: TYPED_FACT_DETECTOR_VERSION,
-        bindings: &["integration", "operation"],
-    },
-    SignalDefinition {
-        id: "persistent-data-write",
-        domain: "data-persistence",
-        detector_id: TYPED_FACT_DETECTOR_ID,
-        detector_version: TYPED_FACT_DETECTOR_VERSION,
-        bindings: &["data", "operation"],
-    },
-];
-
-const REPOSITORY_FACT_DEFINITIONS: [RepositoryFactDefinition; 2] = [
-    RepositoryFactDefinition {
-        id: "db_write",
-        bindings: &[
-            FactBindingDefinition {
-                binding: "data",
-                fact_field: "data",
-            },
-            FactBindingDefinition {
-                binding: "operation",
-                fact_field: "operation",
-            },
-        ],
-        emits: &["persistent-data-write"],
-    },
-    RepositoryFactDefinition {
-        id: "message_publish",
-        bindings: &[
-            FactBindingDefinition {
-                binding: "integration",
-                fact_field: "integration",
-            },
-            FactBindingDefinition {
-                binding: "operation",
-                fact_field: "operation",
-            },
-        ],
-        emits: &["distributed-effect", "message-or-event-publish"],
-    },
-];
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct DetectorIdentity {
-    pub id: &'static str,
-    pub version: &'static str,
+    pub id: String,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct SignalDomainCatalog {
-    pub schema_version: &'static str,
-    pub catalog_version: &'static str,
+    pub schema_version: String,
+    pub catalog_version: String,
     pub detector: DetectorIdentity,
     pub domains: Vec<SignalDomainDefinition>,
     pub signals: Vec<SignalDefinition>,
@@ -132,35 +62,6 @@ pub struct SignalDomainCatalog {
 }
 
 impl SignalDomainCatalog {
-    pub fn build() -> Result<Self, SignalCatalogError> {
-        validate_catalog()?;
-        let body = json!({
-            "schema_version": "1",
-            "catalog_version": SIGNAL_DOMAIN_CATALOG_VERSION,
-            "detector": {
-                "id": TYPED_FACT_DETECTOR_ID,
-                "version": TYPED_FACT_DETECTOR_VERSION,
-            },
-            "domains": SIGNAL_DOMAIN_DEFINITIONS,
-            "signals": SIGNAL_DEFINITIONS,
-            "fact_kinds": REPOSITORY_FACT_DEFINITIONS,
-        });
-        let digest =
-            canonical_digest(&body).map_err(|error| SignalCatalogError::new(error.to_string()))?;
-        Ok(Self {
-            schema_version: "1",
-            catalog_version: SIGNAL_DOMAIN_CATALOG_VERSION,
-            detector: DetectorIdentity {
-                id: TYPED_FACT_DETECTOR_ID,
-                version: TYPED_FACT_DETECTOR_VERSION,
-            },
-            domains: SIGNAL_DOMAIN_DEFINITIONS.to_vec(),
-            signals: SIGNAL_DEFINITIONS.to_vec(),
-            fact_kinds: REPOSITORY_FACT_DEFINITIONS.to_vec(),
-            digest,
-        })
-    }
-
     pub fn as_value(&self) -> Value {
         serde_json::to_value(self).expect("Signal Domain Catalog contains serializable fields")
     }
@@ -187,90 +88,316 @@ impl SignalDomainCatalog {
     }
 }
 
-pub fn signal_definition(id: &str) -> Option<&'static SignalDefinition> {
-    SIGNAL_DEFINITIONS
-        .iter()
-        .find(|definition| definition.id == id)
+/// Validated, deterministic lookup boundary used by every Signal consumer.
+///
+/// The first implementation contains only built-in definitions. Keeping the
+/// definitions owned and indexed here allows signed Release and reviewed
+/// Project catalogs to be merged later without changing Detector or Rule
+/// Compiler lookup behavior.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignalCatalogRegistry {
+    catalog_version: String,
+    detector: DetectorIdentity,
+    domains: BTreeMap<String, SignalDomainDefinition>,
+    signals: BTreeMap<String, SignalDefinition>,
+    fact_kinds: BTreeMap<String, RepositoryFactDefinition>,
+    digest: String,
 }
 
-pub fn repository_fact_definition(id: &str) -> Option<&'static RepositoryFactDefinition> {
-    REPOSITORY_FACT_DEFINITIONS
-        .iter()
-        .find(|definition| definition.id == id)
-}
-
-pub fn validate_signal_candidate(
-    signal: &str,
-    detector_id: &str,
-    detector_version: &str,
-    bindings: &BTreeMap<String, String>,
-) -> Result<(), SignalCatalogError> {
-    let definition = signal_definition(signal)
-        .ok_or_else(|| SignalCatalogError::new(format!("unknown signal: {signal}")))?;
-    if definition.detector_id != detector_id || definition.detector_version != detector_version {
-        return Err(SignalCatalogError::new(format!(
-            "signal {signal} must be produced by {} {}",
-            definition.detector_id, definition.detector_version
-        )));
+impl SignalCatalogRegistry {
+    pub fn built_in() -> Result<Self, SignalCatalogError> {
+        Self::from_definitions(
+            SIGNAL_DOMAIN_CATALOG_VERSION,
+            DetectorIdentity {
+                id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+            },
+            vec![
+                SignalDomainDefinition {
+                    id: "data-persistence".to_owned(),
+                    title: "Data persistence".to_owned(),
+                    description: "Durable writes to application-owned data".to_owned(),
+                    signals: strings(&["persistent-data-write"]),
+                },
+                SignalDomainDefinition {
+                    id: "distributed-integration".to_owned(),
+                    title: "Distributed integration".to_owned(),
+                    description: "Effects crossing a process or service boundary".to_owned(),
+                    signals: strings(&["distributed-effect", "message-or-event-publish"]),
+                },
+            ],
+            vec![
+                SignalDefinition {
+                    id: "distributed-effect".to_owned(),
+                    domain: "distributed-integration".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["integration", "operation"]),
+                },
+                SignalDefinition {
+                    id: "message-or-event-publish".to_owned(),
+                    domain: "distributed-integration".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["integration", "operation"]),
+                },
+                SignalDefinition {
+                    id: "persistent-data-write".to_owned(),
+                    domain: "data-persistence".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["data", "operation"]),
+                },
+            ],
+            vec![
+                RepositoryFactDefinition {
+                    id: "db_write".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "data".to_owned(),
+                            fact_field: "data".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["persistent-data-write"]),
+                },
+                RepositoryFactDefinition {
+                    id: "message_publish".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "integration".to_owned(),
+                            fact_field: "integration".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["distributed-effect", "message-or-event-publish"]),
+                },
+            ],
+        )
     }
-    let actual = bindings.keys().map(String::as_str).collect::<BTreeSet<_>>();
-    let expected = definition.bindings.iter().copied().collect::<BTreeSet<_>>();
-    if actual != expected {
-        return Err(SignalCatalogError::new(format!(
-            "signal {signal} bindings must be: {}",
-            definition.bindings.join(", ")
-        )));
-    }
-    Ok(())
-}
 
-fn validate_catalog() -> Result<(), SignalCatalogError> {
-    let domain_ids = unique_ids(
-        "Signal Domain",
-        SIGNAL_DOMAIN_DEFINITIONS
-            .iter()
-            .map(|definition| definition.id),
-    )?;
-    unique_ids(
-        "Signal",
-        SIGNAL_DEFINITIONS.iter().map(|definition| definition.id),
-    )?;
-    unique_ids(
-        "repository fact kind",
-        REPOSITORY_FACT_DEFINITIONS
-            .iter()
-            .map(|definition| definition.id),
-    )?;
-
-    let mut domain_members = BTreeMap::<&str, BTreeSet<&str>>::new();
-    for domain in &SIGNAL_DOMAIN_DEFINITIONS {
-        domain_members.insert(domain.id, domain.signals.iter().copied().collect());
+    pub fn signal_definition(&self, id: &str) -> Option<&SignalDefinition> {
+        self.signals.get(id)
     }
-    for signal in &SIGNAL_DEFINITIONS {
-        if !domain_ids.contains(signal.domain) {
-            return Err(SignalCatalogError::new(format!(
-                "signal {} references unknown domain {}",
-                signal.id, signal.domain
-            )));
-        }
-        if !domain_members
-            .get(signal.domain)
-            .is_some_and(|signals| signals.contains(signal.id))
+
+    pub fn repository_fact_definition(&self, id: &str) -> Option<&RepositoryFactDefinition> {
+        self.fact_kinds.get(id)
+    }
+
+    pub fn validate_signal_candidate(
+        &self,
+        signal: &str,
+        detector_id: &str,
+        detector_version: &str,
+        bindings: &BTreeMap<String, String>,
+    ) -> Result<(), SignalCatalogError> {
+        let definition = self
+            .signal_definition(signal)
+            .ok_or_else(|| SignalCatalogError::new(format!("unknown signal: {signal}")))?;
+        if definition.detector_id != detector_id || definition.detector_version != detector_version
         {
             return Err(SignalCatalogError::new(format!(
-                "domain {} does not declare signal {}",
-                signal.domain, signal.id
+                "signal {signal} must be produced by {} {}",
+                definition.detector_id, definition.detector_version
+            )));
+        }
+        let actual = bindings.keys().map(String::as_str).collect::<BTreeSet<_>>();
+        let expected = definition
+            .bindings
+            .iter()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        if actual != expected {
+            return Err(SignalCatalogError::new(format!(
+                "signal {signal} bindings must be: {}",
+                definition.bindings.join(", ")
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn catalog(&self) -> SignalDomainCatalog {
+        SignalDomainCatalog {
+            schema_version: "1".to_owned(),
+            catalog_version: self.catalog_version.clone(),
+            detector: self.detector.clone(),
+            domains: self.domains.values().cloned().collect(),
+            signals: self.signals.values().cloned().collect(),
+            fact_kinds: self.fact_kinds.values().cloned().collect(),
+            digest: self.digest.clone(),
+        }
+    }
+
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+
+    pub(crate) fn from_definitions(
+        catalog_version: impl Into<String>,
+        detector: DetectorIdentity,
+        domains: Vec<SignalDomainDefinition>,
+        signals: Vec<SignalDefinition>,
+        fact_kinds: Vec<RepositoryFactDefinition>,
+    ) -> Result<Self, SignalCatalogError> {
+        let catalog_version = catalog_version.into();
+        if catalog_version.is_empty() {
+            return Err(SignalCatalogError::new(
+                "Signal Catalog version must not be empty",
+            ));
+        }
+        if detector.id.is_empty() || detector.version.is_empty() {
+            return Err(SignalCatalogError::new(
+                "Signal Catalog detector identity must not be empty",
+            ));
+        }
+        let domains = index_domains(domains)?;
+        let signals = index_signals(signals)?;
+        let fact_kinds = index_fact_kinds(fact_kinds)?;
+        validate_catalog(&detector, &domains, &signals, &fact_kinds)?;
+        let body = catalog_body(&catalog_version, &detector, &domains, &signals, &fact_kinds);
+        let digest =
+            canonical_digest(&body).map_err(|error| SignalCatalogError::new(error.to_string()))?;
+        Ok(Self {
+            catalog_version,
+            detector,
+            domains,
+            signals,
+            fact_kinds,
+            digest,
+        })
+    }
+}
+
+fn strings(values: &[&str]) -> Vec<String> {
+    values.iter().map(|value| (*value).to_owned()).collect()
+}
+
+#[cfg(test)]
+pub(crate) fn test_signal_registry() -> SignalCatalogRegistry {
+    SignalCatalogRegistry::from_definitions(
+        "test",
+        DetectorIdentity {
+            id: TYPED_FACT_DETECTOR_ID.to_owned(),
+            version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+        },
+        vec![SignalDomainDefinition {
+            id: "test-effects".to_owned(),
+            title: "Test effects".to_owned(),
+            description: "Registry injection test domain".to_owned(),
+            signals: strings(&["test-resource-write"]),
+        }],
+        vec![SignalDefinition {
+            id: "test-resource-write".to_owned(),
+            domain: "test-effects".to_owned(),
+            detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+            detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+            bindings: strings(&["operation", "target"]),
+        }],
+        vec![RepositoryFactDefinition {
+            id: "test_write".to_owned(),
+            bindings: vec![
+                FactBindingDefinition {
+                    binding: "operation".to_owned(),
+                    fact_field: "operation".to_owned(),
+                },
+                FactBindingDefinition {
+                    binding: "target".to_owned(),
+                    fact_field: "target".to_owned(),
+                },
+            ],
+            emits: strings(&["test-resource-write"]),
+        }],
+    )
+    .unwrap()
+}
+
+fn index_domains(
+    definitions: Vec<SignalDomainDefinition>,
+) -> Result<BTreeMap<String, SignalDomainDefinition>, SignalCatalogError> {
+    let mut indexed = BTreeMap::new();
+    for definition in definitions {
+        let id = definition.id.clone();
+        require_id("Signal Domain", &id)?;
+        if indexed.insert(id.clone(), definition).is_some() {
+            return Err(SignalCatalogError::new(format!(
+                "duplicate Signal Domain ID: {id}"
             )));
         }
     }
-    for domain in &SIGNAL_DOMAIN_DEFINITIONS {
-        for signal in domain.signals {
-            let Some(definition) = signal_definition(signal) else {
-                return Err(SignalCatalogError::new(format!(
+    Ok(indexed)
+}
+
+fn index_signals(
+    definitions: Vec<SignalDefinition>,
+) -> Result<BTreeMap<String, SignalDefinition>, SignalCatalogError> {
+    let mut indexed = BTreeMap::new();
+    for definition in definitions {
+        let id = definition.id.clone();
+        require_id("Signal", &id)?;
+        if indexed.insert(id.clone(), definition).is_some() {
+            return Err(SignalCatalogError::new(format!(
+                "duplicate Signal ID: {id}"
+            )));
+        }
+    }
+    Ok(indexed)
+}
+
+fn index_fact_kinds(
+    definitions: Vec<RepositoryFactDefinition>,
+) -> Result<BTreeMap<String, RepositoryFactDefinition>, SignalCatalogError> {
+    let mut indexed = BTreeMap::new();
+    for definition in definitions {
+        let id = definition.id.clone();
+        require_id("repository fact kind", &id)?;
+        if indexed.insert(id.clone(), definition).is_some() {
+            return Err(SignalCatalogError::new(format!(
+                "duplicate repository fact kind ID: {id}"
+            )));
+        }
+    }
+    Ok(indexed)
+}
+
+fn require_id(kind: &str, id: &str) -> Result<(), SignalCatalogError> {
+    if id.is_empty() {
+        Err(SignalCatalogError::new(format!(
+            "{kind} ID must not be empty"
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn validate_catalog(
+    detector: &DetectorIdentity,
+    domains: &BTreeMap<String, SignalDomainDefinition>,
+    signals: &BTreeMap<String, SignalDefinition>,
+    fact_kinds: &BTreeMap<String, RepositoryFactDefinition>,
+) -> Result<(), SignalCatalogError> {
+    if domains.is_empty() || signals.is_empty() || fact_kinds.is_empty() {
+        return Err(SignalCatalogError::new(
+            "Signal Catalog must define domains, signals, and repository fact kinds",
+        ));
+    }
+    for domain in domains.values() {
+        let members = unique_nonempty_values(
+            &format!("domain {} signals", domain.id),
+            domain.signals.iter().map(String::as_str),
+        )?;
+        for signal in members {
+            let definition = signals.get(signal).ok_or_else(|| {
+                SignalCatalogError::new(format!(
                     "domain {} references unknown signal {}",
                     domain.id, signal
-                )));
-            };
+                ))
+            })?;
             if definition.domain != domain.id {
                 return Err(SignalCatalogError::new(format!(
                     "signal {} belongs to domain {}, not {}",
@@ -279,50 +406,117 @@ fn validate_catalog() -> Result<(), SignalCatalogError> {
             }
         }
     }
-    for fact in &REPOSITORY_FACT_DEFINITIONS {
-        let bindings = fact
-            .bindings
-            .iter()
-            .map(|binding| binding.binding)
-            .collect::<BTreeSet<_>>();
-        if bindings.len() != fact.bindings.len() {
+    for signal in signals.values() {
+        let domain = domains.get(&signal.domain).ok_or_else(|| {
+            SignalCatalogError::new(format!(
+                "signal {} references unknown domain {}",
+                signal.id, signal.domain
+            ))
+        })?;
+        if !domain.signals.contains(&signal.id) {
             return Err(SignalCatalogError::new(format!(
-                "repository fact kind {} has duplicate bindings",
-                fact.id
+                "domain {} does not declare signal {}",
+                signal.domain, signal.id
             )));
         }
-        for signal in fact.emits {
-            let definition = signal_definition(signal).ok_or_else(|| {
+        if signal.detector_id != detector.id || signal.detector_version != detector.version {
+            return Err(SignalCatalogError::new(format!(
+                "signal {} detector identity does not match the catalog",
+                signal.id
+            )));
+        }
+        unique_nonempty_values(
+            &format!("signal {} bindings", signal.id),
+            signal.bindings.iter().map(String::as_str),
+        )?;
+    }
+    let mut emitted_signals = BTreeSet::new();
+    for fact in fact_kinds.values() {
+        let bindings = unique_nonempty_values(
+            &format!("repository fact kind {} bindings", fact.id),
+            fact.bindings.iter().map(|binding| binding.binding.as_str()),
+        )?;
+        unique_nonempty_values(
+            &format!("repository fact kind {} fields", fact.id),
+            fact.bindings
+                .iter()
+                .map(|binding| binding.fact_field.as_str()),
+        )?;
+        let emitted = unique_nonempty_values(
+            &format!("repository fact kind {} signals", fact.id),
+            fact.emits.iter().map(String::as_str),
+        )?;
+        for signal in emitted {
+            let definition = signals.get(signal).ok_or_else(|| {
                 SignalCatalogError::new(format!(
                     "repository fact kind {} emits unknown signal {}",
                     fact.id, signal
                 ))
             })?;
-            let expected = definition.bindings.iter().copied().collect::<BTreeSet<_>>();
+            let expected = definition
+                .bindings
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
             if bindings != expected {
                 return Err(SignalCatalogError::new(format!(
                     "repository fact kind {} bindings do not match signal {}",
                     fact.id, signal
                 )));
             }
+            emitted_signals.insert(signal);
+        }
+    }
+    for signal in signals.keys() {
+        if !emitted_signals.contains(signal.as_str()) {
+            return Err(SignalCatalogError::new(format!(
+                "signal {signal} is not emitted by a repository fact kind"
+            )));
         }
     }
     Ok(())
 }
 
-fn unique_ids<'a>(
-    kind: &str,
-    ids: impl Iterator<Item = &'a str>,
+fn unique_nonempty_values<'a>(
+    label: &str,
+    values: impl Iterator<Item = &'a str>,
 ) -> Result<BTreeSet<&'a str>, SignalCatalogError> {
     let mut found = BTreeSet::new();
-    for id in ids {
-        if !found.insert(id) {
+    for value in values {
+        if value.is_empty() {
             return Err(SignalCatalogError::new(format!(
-                "duplicate {kind} ID: {id}"
+                "{label} must not contain an empty value"
+            )));
+        }
+        if !found.insert(value) {
+            return Err(SignalCatalogError::new(format!(
+                "{label} contains duplicate value: {value}"
             )));
         }
     }
+    if found.is_empty() {
+        return Err(SignalCatalogError::new(format!(
+            "{label} must not be empty"
+        )));
+    }
     Ok(found)
+}
+
+fn catalog_body(
+    catalog_version: &str,
+    detector: &DetectorIdentity,
+    domains: &BTreeMap<String, SignalDomainDefinition>,
+    signals: &BTreeMap<String, SignalDefinition>,
+    fact_kinds: &BTreeMap<String, RepositoryFactDefinition>,
+) -> Value {
+    json!({
+        "schema_version": "1",
+        "catalog_version": catalog_version,
+        "detector": detector,
+        "domains": domains.values().collect::<Vec<_>>(),
+        "signals": signals.values().collect::<Vec<_>>(),
+        "fact_kinds": fact_kinds.values().collect::<Vec<_>>(),
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -331,8 +525,10 @@ pub struct SignalCatalogError {
 }
 
 impl SignalCatalogError {
-    fn new(message: String) -> Self {
-        Self { message }
+    fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+        }
     }
 }
 
@@ -349,26 +545,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn catalog_defines_domains_detector_and_exact_bindings() {
-        let catalog = SignalDomainCatalog::build().unwrap();
+    fn built_in_registry_defines_domains_detector_and_exact_bindings() {
+        let registry = SignalCatalogRegistry::built_in().unwrap();
+        let catalog = registry.catalog();
         assert_eq!(catalog.domains.len(), 2);
         assert_eq!(catalog.signals.len(), 3);
         assert_eq!(catalog.fact_kinds.len(), 2);
-        assert!(catalog.digest.starts_with("sha256:"));
+        assert_eq!(catalog.digest, registry.digest());
 
-        let definition = signal_definition("persistent-data-write").unwrap();
+        let definition = registry.signal_definition("persistent-data-write").unwrap();
         assert_eq!(definition.domain, "data-persistence");
         assert_eq!(definition.detector_id, TYPED_FACT_DETECTOR_ID);
         assert_eq!(definition.detector_version, TYPED_FACT_DETECTOR_VERSION);
-        assert_eq!(definition.bindings, ["data", "operation"]);
+        assert_eq!(definition.bindings, strings(&["data", "operation"]));
 
-        let error = validate_signal_candidate(
-            definition.id,
-            TYPED_FACT_DETECTOR_ID,
-            TYPED_FACT_DETECTOR_VERSION,
-            &BTreeMap::from([("operation".to_owned(), "operation.test".to_owned())]),
-        )
-        .unwrap_err();
+        let error = registry
+            .validate_signal_candidate(
+                &definition.id,
+                TYPED_FACT_DETECTOR_ID,
+                TYPED_FACT_DETECTOR_VERSION,
+                &BTreeMap::from([("operation".to_owned(), "operation.test".to_owned())]),
+            )
+            .unwrap_err();
         assert_eq!(
             error.to_string(),
             "signal persistent-data-write bindings must be: data, operation"
@@ -377,23 +575,41 @@ mod tests {
 
     #[test]
     fn fact_definitions_are_the_single_mapping_to_signals() {
-        let definition = repository_fact_definition("message_publish").unwrap();
+        let registry = SignalCatalogRegistry::built_in().unwrap();
+        let definition = registry
+            .repository_fact_definition("message_publish")
+            .unwrap();
         assert_eq!(
             definition.emits,
-            ["distributed-effect", "message-or-event-publish"]
+            strings(&["distributed-effect", "message-or-event-publish"])
         );
         assert_eq!(
             definition.bindings,
             [
                 FactBindingDefinition {
-                    binding: "integration",
-                    fact_field: "integration",
+                    binding: "integration".to_owned(),
+                    fact_field: "integration".to_owned(),
                 },
                 FactBindingDefinition {
-                    binding: "operation",
-                    fact_field: "operation",
+                    binding: "operation".to_owned(),
+                    fact_field: "operation".to_owned(),
                 },
             ]
         );
+    }
+
+    #[test]
+    fn registry_rejects_conflicting_ids_before_merge() {
+        let mut catalog = SignalCatalogRegistry::built_in().unwrap().catalog();
+        catalog.signals.push(catalog.signals[0].clone());
+        let error = SignalCatalogRegistry::from_definitions(
+            catalog.catalog_version,
+            catalog.detector,
+            catalog.domains,
+            catalog.signals,
+            catalog.fact_kinds,
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "duplicate Signal ID: distributed-effect");
     }
 }

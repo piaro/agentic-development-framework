@@ -6,7 +6,7 @@
 
 use crate::canonical_digest;
 use crate::schema::SchemaRegistry;
-use crate::signal_catalog::{SignalDefinition, signal_definition};
+use crate::signal_catalog::{SignalCatalogRegistry, SignalDefinition};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -98,6 +98,17 @@ impl RuleIndex {
 pub fn compile_rule_index(
     source: &Value,
     schema_registry: &SchemaRegistry,
+) -> Result<RuleIndex, RuleCompileError> {
+    let signal_registry = SignalCatalogRegistry::built_in()
+        .map_err(|error| RuleCompileError::new(error.to_string()))?;
+    compile_rule_index_with_registry(source, schema_registry, &signal_registry)
+}
+
+/// Compile Rules against one already-validated Signal Catalog Registry.
+pub fn compile_rule_index_with_registry(
+    source: &Value,
+    schema_registry: &SchemaRegistry,
+    signal_registry: &SignalCatalogRegistry,
 ) -> Result<RuleIndex, RuleCompileError> {
     let source = source
         .as_object()
@@ -243,7 +254,7 @@ pub fn compile_rule_index(
         let signal_definition = signal
             .as_deref()
             .map(|signal| {
-                signal_definition(signal).ok_or_else(|| {
+                signal_registry.signal_definition(signal).ok_or_else(|| {
                     RuleCompileError::new(format!("{rule_id} refers to unknown signal: {signal}"))
                 })
             })
@@ -289,7 +300,7 @@ fn validate_subjects(
                 "{rule_id} cannot use binding subject without signal: {subject}"
             )));
         };
-        if !signal.bindings.contains(&binding) {
+        if !signal.bindings.iter().any(|candidate| candidate == binding) {
             return Err(RuleCompileError::new(format!(
                 "{rule_id} refers to unknown {signal_id} binding: {binding}",
                 signal_id = signal.id
@@ -439,11 +450,36 @@ impl std::error::Error for RuleCompileError {}
 mod tests {
     use super::*;
     use crate::schema::SchemaRegistry;
+    use crate::signal_catalog::test_signal_registry;
     use std::path::PathBuf;
 
     fn registry() -> SchemaRegistry {
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1");
         SchemaRegistry::load(root).unwrap()
+    }
+
+    #[test]
+    fn compiles_rules_with_the_injected_signal_registry() {
+        let source = json!({
+            "requirements": [{
+                "id": "custom-analysis",
+                "phase": "before-build",
+                "role": "Analyst",
+                "result_schema": "result.analysis"
+            }],
+            "rules": [{
+                "id": "custom-signal",
+                "signal": "test-resource-write",
+                "requirement": "custom-analysis",
+                "subjects": ["binding.target", "binding.operation"]
+            }]
+        });
+        let index = compile_rule_index_with_registry(&source, &registry(), &test_signal_registry())
+            .unwrap();
+        assert_eq!(
+            index.rules[0].signal.as_deref(),
+            Some("test-resource-write")
+        );
     }
 
     #[test]

@@ -21,6 +21,12 @@ agentic catalog signal-domains --format json
 
 JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、catalog本体のcanonical digestを含みます。固定期待値は`golden/v1/signal-domain-catalog.json`です。
 
+## Registry境界
+
+組込み定義は起動時に`SignalCatalogRegistry`へ読み込み、ID重複、domain参照、Detector identity、binding、factからSignalへの参照を一度検証します。Detector、Rule Compiler、Application、`catalog signal-domains`は同じRegistry APIを使用します。ApplicationはRule compileに使用したRegistryを保持し、typed fact検出にも同じinstanceを渡すため、異なるCatalogを誤って参照しません。
+
+現在Registryへ投入できるのは組込み定義だけです。所有型と注入経路は用意していますが、外部YAML、Framework Release Catalog、Project Catalogの読込みはまだ許可していません。次の段階でSchema検証、namespace、決定的merge、署名・lock固定を追加してから有効化します。
+
 ## 追加方針
 
 新しいdomainやSignalを追加する場合は、次を同時にreviewします。
