@@ -54,7 +54,7 @@ Project Snapshot
 - Change・Contract・Decision・Result・Evidenceの言語非依存JSON Schema検証
 - 6種類のResult payload Schemaと、Result種別ごとの許可Role検証
 - outcomeの結論・根拠参照と、発行Contextに対する参照整合性の検証
-- 全ChangeのEvidence履歴と現在の入力digestから生成する条項単位のContract Health表示
+- 全ChangeのEvidence履歴と現在の入力digestから生成する条項単位のContract Health表示と、明示policyによる定期CIゲート
 - Schema bundleのversionとdigestを固定するFramework lock
 - JSONだけで構成したcanonicalization・Schema・Rule Compiler・Detector・Thin Kernel・Context Compiler・Project Snapshot・Framework lock・Result submit・Application golden fixture
 - golden fixtureによる完全なKernelDecisionとContext digestの互換性検査
@@ -113,11 +113,54 @@ Explainでは、確認前を`applicability-pending`、支持された後を`not-
 
 Contractへ状態を書き戻さず、未検証を合格扱いしません。
 
-Applicationは、現在選択されたRequirementのsubjectと一致する`stale`／`failed`条項だけに、組込みの`contract-clause-revalidated` Requirementを追加します。これは`before-merge`の`evidence-backed`なBuilder作業です。Contextには対象条項とhealth findingを含め、無関係な条項と`unverified`条項はこの経路ではChangeを停止しません。現在入力に対する成功Evidenceを提出すると再検証は解決します。Repository全体を定期CIで停止する基準は、別の運用ポリシーとして扱います。
+Applicationは、現在選択されたRequirementのsubjectと一致する`stale`／`failed`条項だけに、組込みの`contract-clause-revalidated` Requirementを追加します。これは`before-merge`の`evidence-backed`なBuilder作業です。Contextには対象条項とhealth findingを含め、無関係な条項と`unverified`条項はこの経路ではChangeを停止しません。現在入力に対する成功Evidenceを提出すると再検証は解決します。
 
 ```sh
 agentic contract-health --project . --format text
 agentic contract-health --project . --format json --require-clean
+```
+
+通常の`contract-health`は診断用なので、状態にかかわらず終了code 0です。Repository全体の定期CIでは、停止対象をproject所有のpolicyへ明示し、`--policy`でゲートを有効にします。
+
+```yaml
+# .agentic/contract-health-policy.yaml
+schema_version: "1"
+fail_on:
+  - failed
+  - stale
+```
+
+```sh
+agentic contract-health \
+  --project . \
+  --policy .agentic/contract-health-policy.yaml \
+  --format json \
+  --require-clean
+```
+
+`fail_on`に指定できるのは`failed`、`stale`、`unverified`です。該当条項があれば、固定形式のGate Reportをstdoutへ出したうえで終了code 1、なければ0を返します。`verified`は停止対象ではなく、空のpolicyや未知状態も受理しません。`--require-clean`ではpolicyもGit追跡済みでなければなりません。入力Schemaは`schemas/ci/v1/contract-health-policy.schema.json`、出力Schemaは`schemas/outputs/v1/contract-health-gate-report.schema.json`です。
+
+検証済みの`agentic` binaryをrunnerへ導入済みなら、GitHub Actionsでは通常のChange CIと分離して次のように定期実行できます。
+
+```yaml
+name: Contract Health
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 2 * * 1"
+permissions:
+  contents: read
+jobs:
+  contract-health:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: >-
+          agentic contract-health
+          --project .
+          --policy .agentic/contract-health-policy.yaml
+          --format json
+          --require-clean
 ```
 
 ## 実行
@@ -444,7 +487,8 @@ sources:
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
-| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report |
+| `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
+| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
@@ -474,7 +518,7 @@ sources:
 - `canonical-json-v1`は整数だけを扱います。浮動小数点の言語間正規化は未定義のため拒否します。
 - Rust crateはcanonical JSONからExplain Reportまでgolden互換であり、実Projectのconfig、Git artifact、Filesystem Storeを読む`next`／`explain` CLIを含みます。
 - cacheはwrite-throughのみです。検証済みcache readによる高速化は未実装です。
-- cleanなlocal Git cloneでのCI再現まで実装済みです。remote CI status、shallow clone、submodule、複数Repositoryは未実装です。
+- cleanなlocal Git cloneでのCI再現と、明示policyによるRepository全体の定期Contract Healthゲートまで実装済みです。remote CI status、shallow clone、submodule、複数Repositoryは未実装です。
 - build phaseと解析root、Binding RecordはProject manifestへ明示します。risk factとcoverageはRust AdapterがGitとsourceから生成します。
 - MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。remote MCP、複数Projectを扱う単一process、未提出Actionのprocess再起動を跨ぐresumeは未実装です。
 - 現行`bin/agentic`、Schema、Skill、導入処理の挙動は変更しません。

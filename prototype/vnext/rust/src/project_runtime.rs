@@ -5,7 +5,7 @@ use crate::binding_validation::BindingValidationReport;
 use crate::delivery::{TRUST_STORE_PATH, resolve_verified_release};
 use crate::filesystem_project::{DocumentFormat, FileProjectStore};
 use crate::git_repository::GitRepositoryAdapter;
-use crate::project_config::{ProjectConfig, load_project_config};
+use crate::project_config::{ProjectConfig, load_project_config, repository_path};
 use crate::remote_delivery::RELEASE_SOURCES_PATH;
 use crate::schema::SchemaRegistry;
 use serde_json::Value;
@@ -168,6 +168,21 @@ impl LoadedProject {
                 .map_err(|error| runtime_error(error.to_string()))?;
         adapter
             .assert_tracked_paths(&paths)
+            .map_err(|error| runtime_error(error.to_string()))
+    }
+
+    /// Resolve a user-selected project policy without allowing repository escape.
+    pub fn repository_path(&self, relative: &str) -> Result<PathBuf, ProjectRuntimeError> {
+        repository_path(&self.root, relative).map_err(|error| runtime_error(error.to_string()))
+    }
+
+    /// CI-only policies supplied outside the project config must also be tracked.
+    pub fn assert_tracked_paths(&self, paths: &[PathBuf]) -> Result<(), ProjectRuntimeError> {
+        let adapter =
+            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
+                .map_err(|error| runtime_error(error.to_string()))?;
+        adapter
+            .assert_tracked_paths(paths)
             .map_err(|error| runtime_error(error.to_string()))
     }
 }

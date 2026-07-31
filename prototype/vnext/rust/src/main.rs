@@ -2,6 +2,7 @@ use agentic_vnext_rust::binary_install::{
     BinaryInstallReceipt, binary_install_status, install_binary_candidate, rollback_binary_install,
 };
 use agentic_vnext_rust::cli_output::{next_response_value, render_next_text};
+use agentic_vnext_rust::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
 use agentic_vnext_rust::delivery::{
     install_release, read_framework_lock, rollback_framework_lock, switch_framework_lock,
 };
@@ -179,9 +180,13 @@ fn main() -> ExitCode {
             }
         };
         return match run_contract_health(&options) {
-            Ok(output) => {
+            Ok((output, passed)) => {
                 print!("{output}");
-                ExitCode::SUCCESS
+                if passed {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
             }
             Err(error) => {
                 eprintln!("{error}");
@@ -840,6 +845,7 @@ struct ProjectCommand {
 struct RepositoryCommand {
     project_root: PathBuf,
     release: Option<PathBuf>,
+    policy: Option<String>,
     format: OutputFormat,
     require_clean: bool,
 }
@@ -1221,6 +1227,7 @@ fn parse_repository_command(
 ) -> Result<RepositoryCommand, String> {
     let mut project_root = PathBuf::from(".");
     let mut release = None;
+    let mut policy = None;
     let mut format = OutputFormat::Text;
     let mut require_clean = false;
     let mut index = 0;
@@ -1235,6 +1242,9 @@ fn parse_repository_command(
                     &mut index,
                     "--release",
                 )?));
+            }
+            "--policy" => {
+                policy = Some(flag_value(arguments, &mut index, "--policy")?.to_owned());
             }
             "--format" => {
                 format = match flag_value(arguments, &mut index, "--format")? {
@@ -1251,6 +1261,7 @@ fn parse_repository_command(
     Ok(RepositoryCommand {
         project_root,
         release,
+        policy,
         format,
         require_clean,
     })
@@ -1300,7 +1311,7 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
     }
 }
 
-fn run_contract_health(options: &RepositoryCommand) -> Result<String, String> {
+fn run_contract_health(options: &RepositoryCommand) -> Result<(String, bool), String> {
     ensure_project_initialized(&options.project_root)?;
     let project = LoadedProject::load(
         &options.project_root,
@@ -1313,15 +1324,43 @@ fn run_contract_health(options: &RepositoryCommand) -> Result<String, String> {
             .assert_tracked_project_inputs()
             .map_err(|error| error.to_string())?;
     }
+    let policy = options
+        .policy
+        .as_deref()
+        .map(|relative| {
+            let path = project
+                .repository_path(relative)
+                .map_err(|error| error.to_string())?;
+            if options.require_clean {
+                project
+                    .assert_tracked_paths(std::slice::from_ref(&path))
+                    .map_err(|error| error.to_string())?;
+            }
+            ContractHealthPolicy::load(&path).map_err(|error| error.to_string())
+        })
+        .transpose()?;
     let application = project.application().map_err(|error| error.to_string())?;
     let report = application
         .contract_health()
         .map_err(|error| error.to_string())?;
-    match options.format {
-        OutputFormat::Text => Ok(report.render_text()),
-        OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
-            .map(|value| value + "\n")
-            .map_err(|error| error.to_string()),
+    if let (Some(policy_path), Some(policy)) = (options.policy.as_deref(), policy.as_ref()) {
+        let gate = ContractHealthGateReport::build(policy_path, policy, report);
+        let passed = gate.passed();
+        let output = match options.format {
+            OutputFormat::Text => gate.render_text(),
+            OutputFormat::Json => serde_json::to_string_pretty(&gate.as_value())
+                .map(|value| value + "\n")
+                .map_err(|error| error.to_string())?,
+        };
+        Ok((output, passed))
+    } else {
+        let output = match options.format {
+            OutputFormat::Text => report.render_text(),
+            OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
+                .map(|value| value + "\n")
+                .map_err(|error| error.to_string())?,
+        };
+        Ok((output, true))
     }
 }
 
@@ -1359,7 +1398,7 @@ usage:\n\
   agentic project validate-bindings [--project <root>] [--format <text|json>] [--require-clean]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
-  agentic contract-health [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   agentic mcp [--project <root>] [--release <root>]\n\
   agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
   agentic binary <install|update|status|rollback> ...\n\
@@ -1416,7 +1455,7 @@ fn repository_usage(command: &str) {
     eprintln!(
         "usage: agentic {command} \
          [--project <root>] [--release <root>] \
-         [--format <text|json>] [--require-clean]"
+         [--policy <path>] [--format <text|json>] [--require-clean]"
     );
 }
 

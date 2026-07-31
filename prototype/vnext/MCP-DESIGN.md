@@ -188,6 +188,8 @@ Tool名は広いMCP client互換性を優先し、ASCII英数字とunderscoreだ
 | `agentic_apply_contract` | write | Decisionを反映したContractを楽観的lock付きで更新する |
 | `agentic_abandon_action` | local state | 未提出Actionをsession内で明示的に破棄する |
 
+`agentic_contract_health`は診断用Reportを返し、CIの成否を決めません。Repository全体を停止する運用policyはproject所有fileとしてGit管理し、CLIの`contract-health --policy`だけがprocess終了codeへ反映します。
+
 MCP Tool annotationはHost向けhintとして設定しますが、認可には使用しません。
 
 - read Tool: `readOnlyHint: true`
@@ -430,7 +432,8 @@ Agentが入力を修正できるSchema・domain errorと、server再起動が必
 
 MCP実装後も、既存CLIを削除しません。
 
-- `next`、`explain`、`contract-health`: 人、CI、診断用
+- `next`、`explain`、policyなしの`contract-health`: 人、診断用
+- `contract-health --policy`: Repository全体の定期CIゲート
 - `release`、`binary`、`verify-*`: 配布・互換性検査用
 - `mcp`: Agentの通常経路
 

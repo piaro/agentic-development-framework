@@ -1,0 +1,121 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/outputs/v1/contract-health-gate-report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "policy",
+    "blocking_clause_refs",
+    "contract_health"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "status": {"enum": ["passed", "failed"]},
+    "policy": {
+      "type": "object",
+      "required": ["path", "fail_on"],
+      "properties": {
+        "path": {"type": "string", "minLength": 1},
+        "fail_on": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"enum": ["failed", "stale", "unverified"]},
+          "uniqueItems": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "blocking_clause_refs": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "contract_health": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "repository_revision",
+        "summary",
+        "clauses"
+      ],
+      "properties": {
+        "schema_version": {"const": "1"},
+        "repository_revision": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "summary": {
+          "type": "object",
+          "required": ["total", "verified", "stale", "unverified", "failed"],
+          "properties": {
+            "total": {"type": "integer", "minimum": 0},
+            "verified": {"type": "integer", "minimum": 0},
+            "stale": {"type": "integer", "minimum": 0},
+            "unverified": {"type": "integer", "minimum": 0},
+            "failed": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": false
+        },
+        "clauses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "contract_id",
+              "clause_id",
+              "clause_ref",
+              "text",
+              "applies_to",
+              "authority_ref",
+              "status",
+              "evidence_refs",
+              "verification_result_ids",
+              "stale_refs"
+            ],
+            "properties": {
+              "contract_id": {"type": "string", "minLength": 1},
+              "clause_id": {"type": "string", "minLength": 1},
+              "clause_ref": {"type": "string", "minLength": 1},
+              "text": {"type": "string", "minLength": 1},
+              "applies_to": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "authority_ref": {
+                "anyOf": [
+                  {"type": "string", "minLength": 1},
+                  {"type": "null"}
+                ]
+              },
+              "status": {
+                "enum": ["verified", "stale", "unverified", "failed"]
+              },
+              "evidence_refs": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "verification_result_ids": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              },
+              "stale_refs": {
+                "type": "array",
+                "items": {"type": "string", "minLength": 1},
+                "uniqueItems": true
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

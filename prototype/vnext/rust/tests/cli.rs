@@ -1048,6 +1048,104 @@ fn project_next_explain_and_contract_health_share_the_real_project_loader() {
 }
 
 #[test]
+fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
+    let project = TestProject::new();
+    let policy_path = project.root.join(".agentic/contract-health-policy.yaml");
+    let blocking_policy = json!({
+        "schema_version": "1",
+        "fail_on": ["failed", "unverified"]
+    });
+    validate_ci_schema(&blocking_policy, "contract-health-policy.schema.json");
+    write_yaml(&policy_path, &blocking_policy);
+
+    let failed = project.run(&[
+        "contract-health",
+        "--policy",
+        ".agentic/contract-health-policy.yaml",
+        "--format",
+        "json",
+    ]);
+    assert!(!failed.status.success());
+    assert!(failed.stderr.is_empty());
+    let failed: Value = serde_json::from_slice(&failed.stdout).unwrap();
+    validate_output_schema(&failed, "contract-health-gate-report.schema.json");
+    assert_eq!(failed["status"], "failed");
+    assert_eq!(
+        failed["blocking_clause_refs"].as_array().unwrap().len(),
+        failed["contract_health"]["summary"]["unverified"]
+            .as_u64()
+            .unwrap() as usize
+    );
+
+    write_yaml(
+        &policy_path,
+        &json!({
+            "schema_version": "1",
+            "fail_on": ["stale"]
+        }),
+    );
+    let passed = project.run(&[
+        "contract-health",
+        "--policy",
+        ".agentic/contract-health-policy.yaml",
+        "--format",
+        "json",
+    ]);
+    assert_success(&passed);
+    let passed: Value = serde_json::from_slice(&passed.stdout).unwrap();
+    validate_output_schema(&passed, "contract-health-gate-report.schema.json");
+    assert_eq!(passed["status"], "passed");
+    assert_eq!(passed["blocking_clause_refs"], json!([]));
+}
+
+#[test]
+fn contract_health_gate_rejects_invalid_or_untracked_policy() {
+    let project = TestProject::new();
+    let policy_path = project.root.join(".agentic/contract-health-policy.yaml");
+    write_yaml(
+        &policy_path,
+        &json!({
+            "schema_version": "1",
+            "fail_on": ["verified"]
+        }),
+    );
+    let invalid = project.run(&[
+        "contract-health",
+        "--policy",
+        ".agentic/contract-health-policy.yaml",
+    ]);
+    assert!(!invalid.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid.stderr)
+            .contains("unsupported Contract Health failure state: verified")
+    );
+
+    write_yaml(
+        &policy_path,
+        &json!({
+            "schema_version": "1",
+            "fail_on": ["failed"]
+        }),
+    );
+    fs::write(
+        project.root.join(".git/info/exclude"),
+        ".agentic/contract-health-policy.yaml\n",
+    )
+    .unwrap();
+    let untracked = project.run(&[
+        "contract-health",
+        "--policy",
+        ".agentic/contract-health-policy.yaml",
+        "--require-clean",
+    ]);
+    assert!(!untracked.status.success());
+    assert!(
+        String::from_utf8_lossy(&untracked.stderr)
+            .contains("required project input is not tracked by Git")
+    );
+}
+
+#[test]
 fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     let project = TestProject::new();
     let mut child = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
@@ -2666,6 +2764,14 @@ fn encode_hex(bytes: &[u8]) -> String {
 fn validate_output_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../schemas/outputs/v1")
+        .join(filename);
+    let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    validate_json_document(value, &schema).unwrap();
+}
+
+fn validate_ci_schema(value: &Value, filename: &str) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../schemas/ci/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();

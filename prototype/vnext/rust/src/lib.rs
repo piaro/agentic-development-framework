@@ -10,6 +10,7 @@ mod c_detection;
 pub mod cli_output;
 pub mod context;
 pub mod contract_health;
+pub mod contract_health_gate;
 mod contract_scope;
 mod csharp_detection;
 pub mod delivery;
