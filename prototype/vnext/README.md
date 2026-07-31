@@ -24,7 +24,7 @@ Project Snapshot
 - RustのPython・Java・Kotlin・Go・Rust・Ruby・PHP・C#・Swift・Scala・C・GDScript・JavaScript・JSX・TypeScript・TSX構文解析によるDB書込み・message publishの観測
 - Git管理された解析rootの宣言漏れ、parse失敗、binding未解決、未対応観測のfail-closed化
 - 未知のrepository fact kindの拒否
-- 組込みSignal Catalogによる未知Signal・不正binding参照のRule compile拒否
+- versionedな標準Signal Domain Catalogと、未知Signal・不正binding参照のRule compile拒否
 - Contract gapのHuman Authorityへの差し戻し
 - Human回答をDecisionとContractへ反映するまで停止すること
 - 実装前Challenge、Evidence、実装後Challenge
@@ -91,6 +91,17 @@ Rust版のRequirement定義は、保証の強さを`assurance`で区別します
 EvidenceはAction発行後に`Application::add_evidence`で追記し、Resultの`basis_refs`と`output_refs`から参照します。同じEvidence IDは上書きできません。
 
 この段階で保証するのは「再現情報を持つ成功Evidence Recordが、現在revisionと条項に対応して記録されていること」です。EvidenceをCIが実際に生成したことまでは保証しません。そこまで保証する場合は、CI／runnerの署名と導入先Trust Storeによる検証を追加する必要があります。
+
+### Standard Signal Domains
+
+組込みCatalog v1は、既存Signalを`data-persistence`と`distributed-integration`の2 domainに整理します。domainは分類用metadataであり、Ruleは従来どおり個別のSignal IDを指定します。domainを指定した一括適用や、domain名からの意味推測は行いません。
+
+```sh
+agentic catalog signal-domains --format text
+agentic catalog signal-domains --format json
+```
+
+`db_write`／`message_publish`からSignalへの変換も同じCatalogで表駆動にし、Detector本体の言語・framework別分岐から分離しました。JSON出力は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、canonical digestを含みます。対応表、追加条件、意図的に未収録の候補は[`SIGNAL-DOMAINS.md`](SIGNAL-DOMAINS.md)に記載しています。
 
 ### Rust signal applicability review
 
@@ -499,6 +510,7 @@ sources:
 | `rust/src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
 | `rust/src/detector_benchmark.rs` | review済みcorpusに対するDetector・framework候補のprecision／recallと閾値判定を生成 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
+| `rust/src/signal_catalog.rs` | 標準Signal Domain、Signal、binding、typed repository factからの変換を固定 |
 | `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
 | `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
@@ -507,6 +519,7 @@ sources:
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
 | `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
+| `schemas/catalog/v1/` | 標準Signal Domain Catalogの機械可読な固定形式 |
 | `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
@@ -531,6 +544,7 @@ sources:
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - `project observe`のDraft v3は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
 - Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
+- Signal Domain Catalog v1は、現在typed factまで根拠を追跡できるdata persistenceとdistributed integrationだけを収録します。認可変更、機密data access、一般的な外部API呼出しは、fact・binding・検出根拠の契約が未定義なため未収録です。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。

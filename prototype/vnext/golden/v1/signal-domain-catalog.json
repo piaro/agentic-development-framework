@@ -1,0 +1,95 @@
+{
+  "catalog_version": "1",
+  "detector": {
+    "id": "typed-repository-fact",
+    "version": "3"
+  },
+  "digest": "sha256:2d89c3be6ed1e2ae253a7de37ac281acc6c7505ffba4e643f4e52f2ec0ce22ab",
+  "domains": [
+    {
+      "description": "Durable writes to application-owned data",
+      "id": "data-persistence",
+      "signals": [
+        "persistent-data-write"
+      ],
+      "title": "Data persistence"
+    },
+    {
+      "description": "Effects crossing a process or service boundary",
+      "id": "distributed-integration",
+      "signals": [
+        "distributed-effect",
+        "message-or-event-publish"
+      ],
+      "title": "Distributed integration"
+    }
+  ],
+  "fact_kinds": [
+    {
+      "bindings": [
+        {
+          "binding": "data",
+          "fact_field": "data"
+        },
+        {
+          "binding": "operation",
+          "fact_field": "operation"
+        }
+      ],
+      "emits": [
+        "persistent-data-write"
+      ],
+      "id": "db_write"
+    },
+    {
+      "bindings": [
+        {
+          "binding": "integration",
+          "fact_field": "integration"
+        },
+        {
+          "binding": "operation",
+          "fact_field": "operation"
+        }
+      ],
+      "emits": [
+        "distributed-effect",
+        "message-or-event-publish"
+      ],
+      "id": "message_publish"
+    }
+  ],
+  "schema_version": "1",
+  "signals": [
+    {
+      "bindings": [
+        "integration",
+        "operation"
+      ],
+      "detector_id": "typed-repository-fact",
+      "detector_version": "3",
+      "domain": "distributed-integration",
+      "id": "distributed-effect"
+    },
+    {
+      "bindings": [
+        "integration",
+        "operation"
+      ],
+      "detector_id": "typed-repository-fact",
+      "detector_version": "3",
+      "domain": "distributed-integration",
+      "id": "message-or-event-publish"
+    },
+    {
+      "bindings": [
+        "data",
+        "operation"
+      ],
+      "detector_id": "typed-repository-fact",
+      "detector_version": "3",
+      "domain": "data-persistence",
+      "id": "persistent-data-write"
+    }
+  ]
+}

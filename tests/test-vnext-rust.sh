@@ -29,6 +29,12 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
+  -- catalog signal-domains \
+  --format json
+cargo run \
+  --manifest-path "$RUST_ROOT/Cargo.toml" \
+  --locked \
+  --quiet \
   -- verify-canonicalization "$KIT_ROOT/prototype/vnext/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \

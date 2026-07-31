@@ -17,6 +17,7 @@ use agentic_vnext_rust::release_publisher::{
     PublishOptions, publish_release, signing_seed_from_environment,
 };
 use agentic_vnext_rust::remote_delivery::{fetch_release, install_release_archive};
+use agentic_vnext_rust::signal_catalog::SignalDomainCatalog;
 use agentic_vnext_rust::{
     verify_application_suite, verify_canonicalization_suite, verify_context_suite,
     verify_detection_suite, verify_explain_suite, verify_filesystem_project_suite,
@@ -212,6 +213,26 @@ fn main() -> ExitCode {
                 } else {
                     ExitCode::FAILURE
                 }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "catalog" {
+        let options = match parse_catalog_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                catalog_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_catalog(&options) {
+            Ok(output) => {
+                print!("{output}");
+                ExitCode::SUCCESS
             }
             Err(error) => {
                 eprintln!("{error}");
@@ -880,6 +901,10 @@ struct BenchmarkCommand {
     format: OutputFormat,
 }
 
+struct CatalogCommand {
+    format: OutputFormat,
+}
+
 struct McpCommand {
     project_root: PathBuf,
     release: Option<PathBuf>,
@@ -1324,6 +1349,28 @@ fn parse_benchmark_command(arguments: &[String]) -> Result<BenchmarkCommand, Str
     })
 }
 
+fn parse_catalog_command(arguments: &[String]) -> Result<CatalogCommand, String> {
+    if arguments.first().map(String::as_str) != Some("signal-domains") {
+        return Err("catalog requires the signal-domains operation".to_owned());
+    }
+    let mut format = OutputFormat::Text;
+    let mut index = 1;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--format" => {
+                format = match flag_value(arguments, &mut index, "--format")? {
+                    "text" => OutputFormat::Text,
+                    "json" => OutputFormat::Json,
+                    other => return Err(format!("unsupported output format: {other}")),
+                };
+            }
+            other => return Err(format!("unknown catalog argument: {other}")),
+        }
+        index += 1;
+    }
+    Ok(CatalogCommand { format })
+}
+
 fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String, String> {
     ensure_project_initialized(&options.project_root)?;
     let project = LoadedProject::load(
@@ -1433,6 +1480,16 @@ fn run_benchmark(options: &BenchmarkCommand) -> Result<(String, bool), String> {
     Ok((output, passed))
 }
 
+fn run_catalog(options: &CatalogCommand) -> Result<String, String> {
+    let catalog = SignalDomainCatalog::build().map_err(|error| error.to_string())?;
+    match options.format {
+        OutputFormat::Text => Ok(catalog.render_text()),
+        OutputFormat::Json => serde_json::to_string_pretty(&catalog.as_value())
+            .map(|value| value + "\n")
+            .map_err(|error| error.to_string()),
+    }
+}
+
 fn ensure_project_initialized(project_root: &std::path::Path) -> Result<(), String> {
     let config = project_root.join(".agentic/config.yaml");
     if config.is_file() {
@@ -1469,6 +1526,7 @@ usage:\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   agentic benchmark <corpus-root> [--format <text|json>]\n\
+  agentic catalog signal-domains [--format <text|json>]\n\
   agentic mcp [--project <root>] [--release <root>]\n\
   agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
   agentic binary <install|update|status|rollback> ...\n\
@@ -1531,6 +1589,10 @@ fn repository_usage(command: &str) {
 
 fn benchmark_usage() {
     eprintln!("usage: agentic benchmark <corpus-root> [--format <text|json>]");
+}
+
+fn catalog_usage() {
+    eprintln!("usage: agentic catalog signal-domains [--format <text|json>]");
 }
 
 fn project_management_usage() {

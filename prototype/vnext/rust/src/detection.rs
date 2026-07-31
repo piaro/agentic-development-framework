@@ -6,7 +6,8 @@
 
 use crate::canonical_digest;
 use crate::signal_catalog::{
-    TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION, validate_signal_candidate,
+    TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION, repository_fact_definition,
+    validate_signal_candidate,
 };
 use serde::Serialize;
 use serde_json::{Map, Value, json};
@@ -160,40 +161,26 @@ fn signals_for(
             "repository fact {fact_index} field kind must be a string"
         ))
     })?;
-    match kind {
-        "db_write" => Ok(vec![(
-            "persistent-data-write".to_owned(),
-            BTreeMap::from([
-                (
-                    "operation".to_owned(),
-                    required_string(fact, "operation", fact_index)?.to_owned(),
-                ),
-                (
-                    "data".to_owned(),
-                    required_string(fact, "data", fact_index)?.to_owned(),
-                ),
-            ]),
-        )]),
-        "message_publish" => {
-            let bindings = BTreeMap::from([
-                (
-                    "operation".to_owned(),
-                    required_string(fact, "operation", fact_index)?.to_owned(),
-                ),
-                (
-                    "integration".to_owned(),
-                    required_string(fact, "integration", fact_index)?.to_owned(),
-                ),
-            ]);
-            Ok(vec![
-                ("distributed-effect".to_owned(), bindings.clone()),
-                ("message-or-event-publish".to_owned(), bindings),
-            ])
-        }
-        _ => Err(DetectionError::new(format!(
+    let definition = repository_fact_definition(kind).ok_or_else(|| {
+        DetectionError::new(format!(
             "repository fact {fact_index} has unsupported kind: {kind}"
-        ))),
-    }
+        ))
+    })?;
+    let bindings = definition
+        .bindings
+        .iter()
+        .map(|binding| {
+            Ok((
+                binding.binding.to_owned(),
+                required_string(fact, binding.fact_field, fact_index)?.to_owned(),
+            ))
+        })
+        .collect::<Result<BTreeMap<_, _>, DetectionError>>()?;
+    Ok(definition
+        .emits
+        .iter()
+        .map(|signal| ((*signal).to_owned(), bindings.clone()))
+        .collect())
 }
 
 fn detection_coverage(value: &Value) -> Result<DetectionCoverage, DetectionError> {

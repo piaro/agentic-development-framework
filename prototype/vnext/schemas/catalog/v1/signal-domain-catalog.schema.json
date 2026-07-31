@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/catalog/v1/signal-domain-catalog",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "catalog_version",
+    "detector",
+    "domains",
+    "signals",
+    "fact_kinds",
+    "digest"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "catalog_version": {"const": "1"},
+    "detector": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"const": "typed-repository-fact"},
+        "version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "domains": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "title", "description", "signals"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+          "title": {"type": "string", "minLength": 1},
+          "description": {"type": "string", "minLength": 1},
+          "signals": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "signals": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "domain",
+          "detector_id",
+          "detector_version",
+          "bindings"
+        ],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+          "domain": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"},
+          "detector_id": {"const": "typed-repository-fact"},
+          "detector_version": {"type": "string", "minLength": 1},
+          "bindings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "fact_kinds": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "bindings", "emits"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+          "bindings": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["binding", "fact_field"],
+              "properties": {
+                "binding": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"},
+                "fact_field": {"type": "string", "pattern": "^[a-z][a-z0-9_]*$"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "emits": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+  },
+  "additionalProperties": false
+}

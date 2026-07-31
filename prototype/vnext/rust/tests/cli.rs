@@ -45,6 +45,56 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
 }
 
 #[test]
+fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
+    let json_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["catalog", "signal-domains", "--format", "json"])
+        .output()
+        .unwrap();
+    assert_success(&json_output);
+    assert!(json_output.stderr.is_empty());
+    let catalog: Value = serde_json::from_slice(&json_output.stdout).unwrap();
+    validate_catalog_schema(&catalog, "signal-domain-catalog.schema.json");
+    assert_eq!(catalog["catalog_version"], "1");
+    assert_eq!(catalog["domains"][0]["id"], "data-persistence");
+    assert_eq!(
+        catalog["domains"][1]["signals"],
+        json!(["distributed-effect", "message-or-event-publish"])
+    );
+    assert_eq!(catalog["fact_kinds"][0]["id"], "db_write");
+    assert_eq!(
+        catalog["fact_kinds"][1]["emits"],
+        json!(["distributed-effect", "message-or-event-publish"])
+    );
+    let mut body = catalog.as_object().unwrap().clone();
+    let digest = body.remove("digest").unwrap();
+    assert_eq!(digest, canonical_digest(&Value::Object(body)).unwrap());
+    let golden_path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../golden/v1/signal-domain-catalog.json");
+    let golden: Value = serde_json::from_slice(&fs::read(golden_path).unwrap()).unwrap();
+    assert_eq!(catalog, golden);
+
+    let text_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["catalog", "signal-domains"])
+        .output()
+        .unwrap();
+    assert_success(&text_output);
+    let text = String::from_utf8_lossy(&text_output.stdout);
+    assert!(text.contains("Signal Domain Catalog 1"));
+    assert!(text.contains("data-persistence: Data persistence"));
+    assert!(text.contains("message_publish -> distributed-effect, message-or-event-publish"));
+
+    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["catalog", "unknown"])
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    assert!(
+        String::from_utf8_lossy(&invalid.stderr)
+            .contains("catalog requires the signal-domains operation")
+    );
+}
+
+#[test]
 fn project_and_change_init_connect_an_empty_repository_to_next() {
     let release = TestProject::new();
     let candidate = release.root.join("bootstrap-candidate");
@@ -2772,6 +2822,14 @@ fn validate_output_schema(value: &Value, filename: &str) {
 fn validate_ci_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../schemas/ci/v1")
+        .join(filename);
+    let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    validate_json_document(value, &schema).unwrap();
+}
+
+fn validate_catalog_schema(value: &Value, filename: &str) {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../schemas/catalog/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();

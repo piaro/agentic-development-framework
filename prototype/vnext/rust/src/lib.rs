@@ -43,7 +43,7 @@ mod rust_detection;
 mod scala_detection;
 pub mod schema;
 mod script_detection;
-mod signal_catalog;
+pub mod signal_catalog;
 mod source_detection;
 pub mod submission;
 mod swift_detection;
