@@ -36,7 +36,7 @@ const GOOGLE_CLOUD_STORAGE: &str = "google-cloud-storage";
 const AZURE_BLOB_STORAGE: &str = "azure-blob-storage";
 
 // Method vocabularies follow the projects' current official persistence and
-// publishing references. Keep uncertain dual-use APIs as `suggested_kind: None`.
+// publishing references. Keep uncertain dual-use APIs with no suggested kinds.
 //
 // Django: https://docs.djangoproject.com/en/6.0/ref/models/querysets/
 // SQLAlchemy: https://docs.sqlalchemy.org/en/20/orm/session_basics.html
@@ -102,7 +102,7 @@ pub struct FrameworkCandidate {
     pub method: String,
     pub line: usize,
     pub binding_key: String,
-    pub suggested_kind: Option<SuggestedFactKind>,
+    pub suggested_fact_kinds: Vec<SuggestedFactKind>,
     pub method_binding_required: bool,
     pub evidence: Vec<String>,
     pub rationale: &'static str,
@@ -314,7 +314,14 @@ impl FrameworkCatalog {
                     method: observation.method.clone(),
                     line: observation.line,
                     binding_key: format!("{}.{}", observation.resource, observation.method),
-                    suggested_kind: rule.suggested_kind,
+                    suggested_fact_kinds: match rule.suggested_fact_kind {
+                        Some(SuggestedFactKind::ObjectWrite) => vec![
+                            SuggestedFactKind::ExternalCall,
+                            SuggestedFactKind::ObjectWrite,
+                        ],
+                        Some(kind) => vec![kind],
+                        None => Vec::new(),
+                    },
                     method_binding_required: observation.kind
                         == SourceObservationKind::OtherMethodCall,
                     evidence: evidence.into_iter().collect(),
@@ -330,7 +337,7 @@ impl FrameworkCatalog {
 #[derive(Clone, Copy)]
 struct FrameworkRule {
     framework: &'static str,
-    suggested_kind: Option<SuggestedFactKind>,
+    suggested_fact_kind: Option<SuggestedFactKind>,
     rationale: &'static str,
 }
 
@@ -352,7 +359,7 @@ fn framework_rules(language: &str, method: &str) -> Vec<FrameworkRule> {
             } else if method == "execute" {
                 rules.push(FrameworkRule {
                     framework: SQLALCHEMY,
-                    suggested_kind: None,
+                    suggested_fact_kind: None,
                     rationale:
                         "SQLAlchemy execute accepts both read and write statements; inspect this call before choosing a kind.",
                 });
@@ -406,11 +413,11 @@ fn framework_rules(language: &str, method: &str) -> Vec<FrameworkRule> {
             rules.push(external_call_rule(framework, rationale));
         }
     }
-    for (framework, methods, suggested_kind, rationale) in object_storage_rules(language) {
+    for (framework, methods, suggested_fact_kind, rationale) in object_storage_rules(language) {
         if methods.contains(&method) {
             rules.push(FrameworkRule {
                 framework,
-                suggested_kind,
+                suggested_fact_kind,
                 rationale,
             });
         }
@@ -849,7 +856,7 @@ fn object_storage_rules(language: &str) -> Vec<ObjectStorageRule> {
 fn db_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
-        suggested_kind: Some(SuggestedFactKind::DbWrite),
+        suggested_fact_kind: Some(SuggestedFactKind::DbWrite),
         rationale,
     }
 }
@@ -857,7 +864,7 @@ fn db_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
 fn message_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
-        suggested_kind: Some(SuggestedFactKind::MessagePublish),
+        suggested_fact_kind: Some(SuggestedFactKind::MessagePublish),
         rationale,
     }
 }
@@ -865,7 +872,7 @@ fn message_rule(framework: &'static str, rationale: &'static str) -> FrameworkRu
 fn external_call_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
-        suggested_kind: Some(SuggestedFactKind::ExternalCall),
+        suggested_fact_kind: Some(SuggestedFactKind::ExternalCall),
         rationale,
     }
 }
@@ -1302,8 +1309,8 @@ mod tests {
             assert_eq!(candidates.len(), 1, "{framework}");
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
-                candidates[0].suggested_kind,
-                Some(SuggestedFactKind::DbWrite)
+                candidates[0].suggested_fact_kinds,
+                vec![SuggestedFactKind::DbWrite]
             );
             assert!(candidates[0].method_binding_required);
         }
@@ -1363,8 +1370,8 @@ mod tests {
             assert_eq!(candidates.len(), 1, "{framework}");
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
-                candidates[0].suggested_kind,
-                Some(SuggestedFactKind::MessagePublish)
+                candidates[0].suggested_fact_kinds,
+                vec![SuggestedFactKind::MessagePublish]
             );
         }
     }
@@ -1422,8 +1429,8 @@ mod tests {
             assert_eq!(candidates.len(), 1, "{framework}");
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
-                candidates[0].suggested_kind,
-                Some(SuggestedFactKind::ExternalCall)
+                candidates[0].suggested_fact_kinds,
+                vec![SuggestedFactKind::ExternalCall]
             );
             assert!(candidates[0].method_binding_required);
         }
@@ -1465,8 +1472,11 @@ mod tests {
             assert_eq!(candidates.len(), 1, "{framework}");
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
-                candidates[0].suggested_kind,
-                Some(SuggestedFactKind::ObjectWrite)
+                candidates[0].suggested_fact_kinds,
+                vec![
+                    SuggestedFactKind::ExternalCall,
+                    SuggestedFactKind::ObjectWrite,
+                ]
             );
         }
     }
@@ -1482,7 +1492,7 @@ mod tests {
         );
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].framework, AMAZON_S3);
-        assert_eq!(candidates[0].suggested_kind, None);
+        assert!(candidates[0].suggested_fact_kinds.is_empty());
     }
 
     #[test]
@@ -1548,8 +1558,8 @@ mod tests {
         );
         assert_eq!(candidates[0].framework, AXIOS);
         assert_eq!(
-            candidates[0].suggested_kind,
-            Some(SuggestedFactKind::ExternalCall)
+            candidates[0].suggested_fact_kinds,
+            vec![SuggestedFactKind::ExternalCall]
         );
         let candidates = catalog.candidates(
             "src/archive.ts",
@@ -1559,8 +1569,11 @@ mod tests {
         );
         assert_eq!(candidates[0].framework, AZURE_BLOB_STORAGE);
         assert_eq!(
-            candidates[0].suggested_kind,
-            Some(SuggestedFactKind::ObjectWrite)
+            candidates[0].suggested_fact_kinds,
+            vec![
+                SuggestedFactKind::ExternalCall,
+                SuggestedFactKind::ObjectWrite,
+            ]
         );
     }
 
@@ -1575,7 +1588,7 @@ mod tests {
         );
         assert_eq!(candidates.len(), 1);
         assert_eq!(candidates[0].framework, SQLALCHEMY);
-        assert_eq!(candidates[0].suggested_kind, None);
+        assert!(candidates[0].suggested_fact_kinds.is_empty());
     }
 
     #[test]

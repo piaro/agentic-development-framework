@@ -98,7 +98,7 @@
                       "resource",
                       "method",
                       "line",
-                      "suggested_kind",
+                      "suggested_fact_kinds",
                       "method_binding_required"
                     ],
                     "properties": {
@@ -107,11 +107,10 @@
                       "resource": {"type": "string", "minLength": 1},
                       "method": {"type": "string", "minLength": 1},
                       "line": {"type": "integer", "minimum": 1},
-                      "suggested_kind": {
-                        "anyOf": [
-                          {"enum": ["db_write", "external_call", "message_publish", "object_write"]},
-                          {"type": "null"}
-                        ]
+                      "suggested_fact_kinds": {
+                        "type": "array",
+                        "items": {"enum": ["db_write", "external_call", "message_publish", "object_write"]},
+                        "uniqueItems": true
                       },
                       "method_binding_required": {"type": "boolean"}
                     },

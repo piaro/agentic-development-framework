@@ -95,7 +95,7 @@ pub struct FrameworkCandidateRecord {
     pub resource: String,
     pub method: String,
     pub line: usize,
-    pub suggested_kind: Option<String>,
+    pub suggested_fact_kinds: Vec<String>,
     pub method_binding_required: bool,
 }
 
@@ -107,9 +107,11 @@ impl From<FrameworkCandidate> for FrameworkCandidateRecord {
             resource: candidate.resource,
             method: candidate.method,
             line: candidate.line,
-            suggested_kind: candidate
-                .suggested_kind
-                .map(|kind| kind.as_str().to_owned()),
+            suggested_fact_kinds: candidate
+                .suggested_fact_kinds
+                .into_iter()
+                .map(|kind| kind.as_str().to_owned())
+                .collect(),
             method_binding_required: candidate.method_binding_required,
         }
     }
@@ -572,7 +574,7 @@ fn validate_records(
                 ),
             )?;
         }
-        if let Some(kind) = record.suggested_kind.as_deref() {
+        for kind in &record.suggested_fact_kinds {
             validate_kind(kind, true)?;
         }
         if record.line == 0 {

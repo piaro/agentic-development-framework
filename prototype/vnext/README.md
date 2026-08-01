@@ -214,9 +214,9 @@ agentic project observe \
   --format yaml
 ```
 
-この出力はRepository Observation Draft v3であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。
+この出力はRepository Observation Draft v4であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
 
-Draft v3の`binding_artifacts`は、`.agentic/repository-observation.yaml`の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`kind`、`logical_ref`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
+Draft v4の`binding_artifacts`は、Observation Schema v5の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`fact_kinds`、`logical_refs`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
 転記・review後は、通常評価の前にBindingだけを検査できます。`invalid`は不足・曖昧・不正なBindingまたは未承認authority、`blocked`は未対応言語や構文エラーなど、完全なBinding検査を妨げるcoverage gapです。どちらも終了codeは非0です。`--require-clean`はCIで使用します。
 
@@ -229,14 +229,14 @@ agentic project validate-bindings \
 JSON出力は`schemas/outputs/v1/binding-validation-report.schema.json`に従い、issueごとに`category: binding|coverage`、安定した`kind`、artifact ref、理由を返します。このcommandは論理ID、owner、kind、authorityを補完せず、既存の観測・Binding・Decisionだけを検証します。
 
 ```yaml
-schema_version: "3"
+schema_version: "4"
 kind: repository-observation-draft
 artifacts:
   - path: shop/service.py
     framework_candidates:
       - framework: django-orm
         binding_key: order.save
-        suggested_kind: db_write
+        suggested_fact_kinds: [db_write]
         method_binding_required: true
         review_status: required
 binding_artifacts:
@@ -251,17 +251,17 @@ binding_artifacts:
           authority_ref: null
       resources:
         order:
-          logical_ref: null
+          logical_refs: null
           owner: null
           authority_ref: null
       methods:
         order.save:
-          kind: null
+          fact_kinds: null
           owner: null
           authority_ref: null
 ```
 
-SQLAlchemyの`execute`はSELECTとDMLの両方を受け取るため、`suggested_kind: null`で出力し、call単位の確認を要求します。候補生成は通常のrepository評価、coverage、fact生成には影響しません。
+SQLAlchemyの`execute`はSELECTとDMLの両方を受け取るため、`suggested_fact_kinds: []`で出力し、call単位の確認を要求します。候補生成は通常のrepository評価、coverage、fact生成には影響しません。
 
 ```yaml
 bindings:
@@ -269,7 +269,7 @@ bindings:
   resources: {}
   methods:
     session.execute:
-      kind: db_write
+      fact_kinds: [db_write]
       owner: team.ordering
       authority_ref: decision.repository-bindings
 ```
@@ -532,7 +532,7 @@ sources:
 ## 現時点の制約
 
 - InMemory Adapterはテスト用です。Filesystem StoreではChange、Contract、Decision、Result、Evidenceを保存しますが、発行済みAction自体は保存せず、正本から再生成します。
-- 実Projectの通常経路では、Observation Schema v4に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。
+- 実Projectの通常経路では、Observation Schema v5に手書きの`facts`・`coverage`を置きません。Rust版が`analysis.roots`配下のGit上のsourceを言語登録表に従って列挙し、対応Detectorで解析して生成します。旧Schema v4の単数`logical_ref`・`kind`も読み込み互換として受理します。
 - 現在の言語DetectorはPython、Java、Kotlin、Go、Rust、Ruby、PHP、C#、Swift、Scala、C、GDScript、JavaScript、JSX、TypeScript、TSXに対応します。C++はinventoryへ出しますが、構文Detectorは未実装なので宣言後も`unsupported-language`で停止します。
 - `.js`・`.mjs`・`.cjs`もJSXを受理します。source拡張子はASCIIの大文字小文字を区別せず、Git inventoryでも同じ規則を使います。
 - receiverは構文tokenを連結した1行の物理IDへ正規化します。たとえば複数行の`client .table("orders")`は`client.table("orders")`になります。同じ行に同一呼出しが複数あっても観測を重複除去しません。
@@ -541,8 +541,8 @@ sources:
 - GDScriptは`.gd`を対象とし、`class_name`とinner classをsymbolへ反映します。function、propertyの`set`・`get`、変数へ代入したlambdaに安定したsymbolを付け、`$Node`・`%UniqueNode`・`super`・chain receiverを物理resourceとして扱います。`signal_name.emit(...)`はsignal名をresourceとして観測します。receiverを省略した`emit_signal(...)`を含むbare callはresource identityを持たないため観測しません。
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
-- Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
-- `project observe`のDraft v3は、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIはkindを提示せず、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
+- Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。Schema v5では1つのresourceにbinding種別ごとの`logical_refs`、1つのmethodに複数の`fact_kinds`を記録でき、全組合せの妥当性を確認してから複数factを一括生成します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
+- `project observe`のDraft v4は、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
 - Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v2は、`db_write`・`message_publish`に加え、review済みMethod Bindingから生成する`external_call`・`object_write`を収録します。`external_call`は`distributed-effect`と`external-system-call`、`object_write`は`persistent-data-write`と`object-storage-write`を出力します。method名だけでは自動分類せず、前者は`integration.*`、後者は`data.*`のresource Bindingを要求します。認可変更と機密data accessは、fact・binding・検出根拠の契約が未定義なため未収録です。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。

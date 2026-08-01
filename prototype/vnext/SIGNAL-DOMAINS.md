@@ -19,20 +19,32 @@ Signal Domain Catalogは、Detectorが出力できるSignal、必要なbinding�
 `external_call`と`object_write`はmethod名から自動分類しません。導入先Projectで、実際の呼出しを確認したうえでMethod Bindingへ明示します。
 
 ```yaml
+resources:
+  payment_client:
+    logical_refs:
+      integration: integration.payment-provider
+    owner: team.ordering
+    authority_ref: decision.repository-bindings
+  archive_bucket:
+    logical_refs:
+      integration: integration.amazon-s3
+      data: data.order-archive
+    owner: team.ordering
+    authority_ref: decision.repository-bindings
 methods:
   payment_client.request:
-    kind: external_call
+    fact_kinds: [external_call]
     owner: team.ordering
     authority_ref: decision.repository-bindings
   archive_bucket.put_object:
-    kind: object_write
+    fact_kinds: [external_call, object_write]
     owner: team.ordering
     authority_ref: decision.repository-bindings
 ```
 
-対応するresource Bindingは、`external_call`では`integration.*`、`object_write`では`data.*`の論理refを要求します。未知のkind、必要なMethod Bindingがない呼出し、不正な論理refはfail-closedで停止します。
+対応するresource Bindingは、`external_call`では`integration.*`、`object_write`では`data.*`の論理refを要求します。1つの呼出しに複数kindがある場合、resourceの`logical_refs`へ両方を記録し、すべてを検証してからfactを一括生成します。未知のkind、必要なMethod Bindingがない呼出し、不正または不足した論理refはfail-closedで停止します。
 
-`project observe`は、主要HTTP clientとAmazon S3・Google Cloud Storage・Azure Blob Storageについて、manifest・import・型・receiverの根拠がある呼出しを非authoritativeな候補として提示します。`suggested_kind`があってもBindingへ自動転記せず、reviewerが外部送信またはobject書込みであることを確認します。JavaScript版S3の`client.send`はCommandによって読書きが変わるためkindを提示しません。receiverのないbare `fetch()`も安定したresource Bindingを作れないため対象外です。
+`project observe`は、主要HTTP clientとAmazon S3・Google Cloud Storage・Azure Blob Storageについて、manifest・import・型・receiverの根拠がある呼出しを非authoritativeな候補として提示します。`suggested_fact_kinds`があってもBindingへ自動転記せず、reviewerが意味を確認します。明確なObject Storage uploadは`external_call`と`object_write`の両方を提示します。JavaScript版S3の`client.send`はCommandによって読書きが変わるため空listにし、receiverのないbare `fetch()`も安定したresource Bindingを作れないため対象外です。
 
 ## 確認方法
 

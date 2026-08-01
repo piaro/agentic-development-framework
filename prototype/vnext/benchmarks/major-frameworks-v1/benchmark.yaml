@@ -35,14 +35,16 @@ projects:
             resource: order
             method: save
             line: 2
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: amazon-sqs
             symbol: place_order
             resource: sqs
             method: send_message
             line: 3
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: false
 
   - id: python-sqlalchemy-celery
@@ -79,21 +81,23 @@ projects:
             resource: session
             method: add
             line: 2
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: celery
             symbol: place_order
             resource: tasks.process_order
             method: delay
             line: 4
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: true
           - framework: sqlalchemy
             symbol: place_order
             resource: session
             method: execute
             line: 3
-            suggested_kind: null
+            suggested_fact_kinds: []
             method_binding_required: true
 
   - id: typescript-prisma-kafka
@@ -125,14 +129,16 @@ projects:
             resource: prisma.order
             method: create
             line: 2
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: apache-kafka
             symbol: placeOrder
             resource: kafka
             method: send
             line: 3
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: true
 
   - id: java-spring-rabbit
@@ -164,14 +170,16 @@ projects:
             resource: repository
             method: save
             line: 3
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: rabbitmq
             symbol: OrderService.placeOrder
             resource: channel
             method: basicPublish
             line: 4
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: true
 
   - id: csharp-ef-servicebus
@@ -203,14 +211,16 @@ projects:
             resource: db
             method: SaveChangesAsync
             line: 3
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: azure-service-bus
             symbol: OrderService.PlaceOrder
             resource: sender
             method: SendMessageAsync
             line: 4
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: true
 
   - id: ruby-rails-redis
@@ -242,14 +252,16 @@ projects:
             resource: order
             method: save!
             line: 3
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: redis-streams
             symbol: OrderService#place_order
             resource: redis
             method: xadd
             line: 4
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: true
 
   - id: php-laravel-pubsub
@@ -281,14 +293,16 @@ projects:
             resource: $order
             method: save
             line: 3
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: google-cloud-pubsub
             symbol: placeOrder
             resource: $topic
             method: publish
             line: 4
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: false
 
   - id: go-gorm-nats
@@ -320,14 +334,16 @@ projects:
             resource: db
             method: Create
             line: 4
-            suggested_kind: db_write
+            suggested_fact_kinds:
+              - db_write
             method_binding_required: true
           - framework: nats
             symbol: PlaceOrder
             resource: nc
             method: Publish
             line: 5
-            suggested_kind: message_publish
+            suggested_fact_kinds:
+              - message_publish
             method_binding_required: false
 
   - id: external-api-clients
@@ -353,7 +369,8 @@ projects:
             resource: requests
             method: post
             line: 4
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/httpx_service.py
         language: python
@@ -369,7 +386,8 @@ projects:
             resource: httpx
             method: get
             line: 4
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/fetch_service.ts
         language: typescript
@@ -385,7 +403,8 @@ projects:
             resource: window
             method: fetch
             line: 2
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/axios_service.ts
         language: typescript
@@ -401,7 +420,8 @@ projects:
             resource: axios
             method: post
             line: 3
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/JavaHttpService.java
         language: java
@@ -417,7 +437,8 @@ projects:
             resource: httpClient
             method: sendAsync
             line: 4
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/SpringHttpService.kt
         language: kotlin
@@ -443,7 +464,8 @@ projects:
             resource: webClient.post().uri("/orders")
             method: retrieve
             line: 3
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/go_http_service.go
         language: go
@@ -459,7 +481,8 @@ projects:
             resource: client
             method: Do
             line: 4
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
       - path: src/DotnetHttpService.cs
         language: csharp
@@ -475,7 +498,8 @@ projects:
             resource: httpClient
             method: SendAsync
             line: 4
-            suggested_kind: external_call
+            suggested_fact_kinds:
+              - external_call
             method_binding_required: true
 
   - id: object-storage-sdks
@@ -506,7 +530,9 @@ projects:
             resource: s3
             method: put_object
             line: 4
-            suggested_kind: object_write
+            suggested_fact_kinds:
+              - external_call
+              - object_write
             method_binding_required: true
       - path: src/gcs_service.ts
         language: typescript
@@ -522,7 +548,9 @@ projects:
             resource: file
             method: save
             line: 3
-            suggested_kind: object_write
+            suggested_fact_kinds:
+              - external_call
+              - object_write
             method_binding_required: true
       - path: src/AzureBlobService.cs
         language: csharp
@@ -538,7 +566,9 @@ projects:
             resource: blobClient
             method: UploadAsync
             line: 4
-            suggested_kind: object_write
+            suggested_fact_kinds:
+              - external_call
+              - object_write
             method_binding_required: true
       - path: src/s3_service.ts
         language: typescript
@@ -554,5 +584,5 @@ projects:
             resource: s3
             method: send
             line: 3
-            suggested_kind: null
+            suggested_fact_kinds: []
             method_binding_required: true

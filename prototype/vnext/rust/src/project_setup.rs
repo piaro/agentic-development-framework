@@ -119,7 +119,7 @@ pub fn initialize_project(
         "repository_observation: .agentic/repository-observation.yaml\n"
     );
     let observation = serde_yaml::to_string(&json!({
-        "schema_version": "4",
+        "schema_version": "5",
         "phase": "pre-build",
         "analysis": {"roots": analysis_roots},
         "artifacts": [],
@@ -295,12 +295,12 @@ pub fn observation_draft(
     artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     binding_artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     Ok(json!({
-        "schema_version": "3",
+        "schema_version": "4",
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
         "artifacts": artifacts,
         "binding_artifacts": binding_artifacts,
-        "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with a reviewed logical_ref or kind, owner, and accepted Decision authority_ref before copying the artifacts into .agentic/repository-observation.yaml. A suggested kind is non-authoritative, and candidates with kind null require call-specific classification. This draft is not authoritative and never updates project files.",
+        "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with reviewed logical_refs or fact_kinds, owner, and accepted Decision authority_ref before copying the artifacts into a repository observation schema v5 file. Suggested fact kinds are non-authoritative, and candidates with an empty list require call-specific classification. This draft is not authoritative and never updates project files.",
     }))
 }
 
@@ -337,7 +337,7 @@ fn binding_artifact_template(
             (
                 observation.symbol.clone(),
                 json!({
-                    "logical_ref": null,
+                    "logical_refs": null,
                     "owner": null,
                     "authority_ref": null,
                 }),
@@ -368,7 +368,7 @@ fn binding_artifact_template(
             (
                 binding_key,
                 json!({
-                    "kind": null,
+                    "fact_kinds": null,
                     "owner": null,
                     "authority_ref": null,
                 }),
@@ -395,7 +395,7 @@ fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
         "method": candidate.method,
         "line": candidate.line,
         "binding_key": candidate.binding_key,
-        "suggested_kind": candidate.suggested_kind.map(|kind| kind.as_str()),
+        "suggested_fact_kinds": candidate.suggested_fact_kinds.into_iter().map(|kind| kind.as_str()).collect::<Vec<_>>(),
         "method_binding_required": candidate.method_binding_required,
         "review_status": "required",
         "evidence": candidate.evidence,

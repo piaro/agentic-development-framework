@@ -19,7 +19,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub const OBSERVATION_SCHEMA_VERSION: &str = "4";
+pub const OBSERVATION_SCHEMA_VERSION: &str = "5";
+const LEGACY_OBSERVATION_SCHEMA_VERSION: &str = "4";
 
 pub struct GitRepositoryAdapter {
     root: PathBuf,
@@ -37,12 +38,19 @@ struct BindingRecord {
 
 struct ArtifactBinding {
     symbols: BTreeMap<String, BindingRecord>,
-    resources: BTreeMap<String, BindingRecord>,
+    resources: BTreeMap<String, ResourceBindingRecord>,
     methods: BTreeMap<String, MethodBindingRecord>,
 }
 
+#[derive(Clone)]
+struct ResourceBindingRecord {
+    logical_refs: BTreeMap<String, String>,
+    owner: String,
+    authority_ref: String,
+}
+
 struct MethodBindingRecord {
-    kind: String,
+    fact_kinds: Vec<String>,
     owner: String,
     authority_ref: String,
 }
@@ -289,7 +297,12 @@ impl GitRepositoryAdapter {
                 bindings
                     .symbols
                     .values()
-                    .chain(bindings.resources.values())
+                    .map(|binding| binding.authority_ref.clone()),
+            );
+            authority_refs.extend(
+                bindings
+                    .resources
+                    .values()
                     .map(|binding| binding.authority_ref.clone()),
             );
             authority_refs.extend(
@@ -341,9 +354,10 @@ impl GitRepositoryAdapter {
         let manifest = manifest
             .as_object()
             .ok_or_else(|| git_error("repository observation must be a mapping"))?;
-        if manifest.get("schema_version").and_then(Value::as_str)
-            != Some(OBSERVATION_SCHEMA_VERSION)
-        {
+        if !matches!(
+            manifest.get("schema_version").and_then(Value::as_str),
+            Some(OBSERVATION_SCHEMA_VERSION | LEGACY_OBSERVATION_SCHEMA_VERSION)
+        ) {
             return Err(git_error("unsupported repository observation schema"));
         }
         assert_exact_fields(
@@ -465,7 +479,7 @@ fn artifact_bindings(
                 .ok_or_else(|| git_error("artifact symbol bindings are missing"))?,
             "artifact symbol binding",
         )?,
-        resources: binding_map(
+        resources: resource_binding_map(
             bindings
                 .get("resources")
                 .ok_or_else(|| git_error("artifact resource bindings are missing"))?,
@@ -498,24 +512,42 @@ fn method_binding_map(
             let record = value
                 .as_object()
                 .ok_or_else(|| git_error("artifact method binding must be a mapping"))?;
-            assert_exact_fields(
-                record,
-                &["kind", "owner", "authority_ref"],
-                "artifact method binding",
-            )?;
-            let kind = required_nonempty_string(record, "kind", "artifact method binding")?;
-            let definition = signal_registry
-                .repository_fact_definition(kind)
-                .ok_or_else(|| {
-                    git_error(format!(
-                        "artifact method binding kind is not supported: {kind}"
-                    ))
-                })?;
-            source_fact_bindings(definition)?;
+            let fact_kinds = if record.contains_key("fact_kinds") {
+                assert_exact_fields(
+                    record,
+                    &["fact_kinds", "owner", "authority_ref"],
+                    "artifact method binding",
+                )?;
+                nonempty_unique_string_array(
+                    record.get("fact_kinds").ok_or_else(|| {
+                        git_error("artifact method binding fact_kinds is missing")
+                    })?,
+                    "artifact method binding fact_kinds",
+                )?
+            } else {
+                assert_exact_fields(
+                    record,
+                    &["kind", "owner", "authority_ref"],
+                    "artifact method binding",
+                )?;
+                vec![
+                    required_nonempty_string(record, "kind", "artifact method binding")?.to_owned(),
+                ]
+            };
+            for kind in &fact_kinds {
+                let definition = signal_registry
+                    .repository_fact_definition(kind)
+                    .ok_or_else(|| {
+                        git_error(format!(
+                            "artifact method binding kind is not supported: {kind}"
+                        ))
+                    })?;
+                source_fact_bindings(definition)?;
+            }
             Ok((
                 physical_call.clone(),
                 MethodBindingRecord {
-                    kind: kind.to_owned(),
+                    fact_kinds,
                     owner: required_nonempty_string(record, "owner", "artifact method binding")?
                         .to_owned(),
                     authority_ref: required_nonempty_string(
@@ -526,6 +558,82 @@ fn method_binding_map(
                     .to_owned(),
                 },
             ))
+        })
+        .collect()
+}
+
+fn resource_binding_map(
+    value: &Value,
+    label: &str,
+) -> Result<BTreeMap<String, ResourceBindingRecord>, GitRepositoryError> {
+    let records = value
+        .as_object()
+        .ok_or_else(|| git_error(format!("{label}s must be a mapping")))?;
+    records
+        .iter()
+        .map(|(physical_name, value)| {
+            if physical_name.is_empty() {
+                return Err(git_error(format!("{label} name must not be empty")));
+            }
+            let record = value
+                .as_object()
+                .ok_or_else(|| git_error(format!("{label} must be a mapping")))?;
+            let logical_refs = if record.contains_key("logical_refs") {
+                assert_exact_fields(record, &["logical_refs", "owner", "authority_ref"], label)?;
+                logical_ref_map(
+                    record
+                        .get("logical_refs")
+                        .ok_or_else(|| git_error(format!("{label} logical_refs is missing")))?,
+                    label,
+                )?
+            } else {
+                assert_exact_fields(record, &["logical_ref", "owner", "authority_ref"], label)?;
+                let logical_ref = required_nonempty_string(record, "logical_ref", label)?;
+                let (binding, _) = logical_ref.split_once('.').ok_or_else(|| {
+                    git_error(format!("{label} logical_ref must contain a binding prefix"))
+                })?;
+                BTreeMap::from([(binding.to_owned(), logical_ref.to_owned())])
+            };
+            Ok((
+                physical_name.clone(),
+                ResourceBindingRecord {
+                    logical_refs,
+                    owner: required_nonempty_string(record, "owner", label)?.to_owned(),
+                    authority_ref: required_nonempty_string(record, "authority_ref", label)?
+                        .to_owned(),
+                },
+            ))
+        })
+        .collect()
+}
+
+fn logical_ref_map(
+    value: &Value,
+    label: &str,
+) -> Result<BTreeMap<String, String>, GitRepositoryError> {
+    let values = value
+        .as_object()
+        .ok_or_else(|| git_error(format!("{label} logical_refs must be a mapping")))?;
+    if values.is_empty() {
+        return Err(git_error(format!("{label} logical_refs must not be empty")));
+    }
+    values
+        .iter()
+        .map(|(binding, value)| {
+            let logical_ref = value
+                .as_str()
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| {
+                    git_error(format!(
+                        "{label} logical_refs values must be non-empty strings"
+                    ))
+                })?;
+            if binding.is_empty() || !logical_ref.starts_with(&format!("{binding}.")) {
+                return Err(git_error(format!(
+                    "{label} logical_refs {binding:?} must map to a {binding}.* logical ref"
+                )));
+            }
+            Ok((binding.clone(), logical_ref.to_owned()))
         })
         .collect()
 }
@@ -564,8 +672,13 @@ fn binding_logical_refs(bindings: &ArtifactBinding) -> Vec<String> {
     bindings
         .symbols
         .values()
-        .chain(bindings.resources.values())
         .map(|record| record.logical_ref.clone())
+        .chain(
+            bindings
+                .resources
+                .values()
+                .flat_map(|record| record.logical_refs.values().cloned()),
+        )
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
@@ -627,7 +740,7 @@ fn bind_observation(
     };
     let method_key = format!("{}.{}", observation.resource, observation.method);
     let method_binding = bindings.methods.get(&method_key);
-    let fact_kind = if observation.kind == SourceObservationKind::OtherMethodCall {
+    let fact_kinds = if observation.kind == SourceObservationKind::OtherMethodCall {
         let Some(method_binding) = method_binding else {
             gaps.push(coverage_gap(
                 "unsupported-observation",
@@ -639,31 +752,13 @@ fn bind_observation(
             ));
             return;
         };
-        method_binding.kind.as_str()
+        method_binding.fact_kinds.clone()
     } else {
-        match observation.kind {
-            SourceObservationKind::DbWrite => "db_write",
-            SourceObservationKind::MessagePublish => "message_publish",
+        vec![match observation.kind {
+            SourceObservationKind::DbWrite => "db_write".to_owned(),
+            SourceObservationKind::MessagePublish => "message_publish".to_owned(),
             SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
-        }
-    };
-    let Some(fact_definition) = signal_registry.repository_fact_definition(fact_kind) else {
-        gaps.push(coverage_gap(
-            "unsupported-observation",
-            Some(artifact_ref),
-            format!("repository fact kind {fact_kind} is not defined by the Signal Catalog"),
-        ));
-        return;
-    };
-    let Ok((operation_binding, resource_binding)) = source_fact_bindings(fact_definition) else {
-        gaps.push(coverage_gap(
-            "unsupported-observation",
-            Some(artifact_ref),
-            format!(
-                "repository fact kind {fact_kind} cannot be generated from a source method call"
-            ),
-        ));
-        return;
+        }]
     };
     if !symbol.logical_ref.starts_with("operation.") {
         gaps.push(coverage_gap(
@@ -676,17 +771,45 @@ fn bind_observation(
         ));
         return;
     }
-    let required_prefix = format!("{}.", resource_binding.binding);
-    if !resource.logical_ref.starts_with(&required_prefix) {
-        gaps.push(coverage_gap(
-            "invalid-binding",
-            Some(artifact_ref),
-            format!(
-                "resource {} must map to a {}* logical ref",
-                observation.resource, required_prefix
-            ),
+    let mut resolved = Vec::new();
+    for fact_kind in &fact_kinds {
+        let Some(fact_definition) = signal_registry.repository_fact_definition(fact_kind) else {
+            gaps.push(coverage_gap(
+                "unsupported-observation",
+                Some(artifact_ref),
+                format!("repository fact kind {fact_kind} is not defined by the Signal Catalog"),
+            ));
+            return;
+        };
+        let Ok((operation_binding, resource_binding)) = source_fact_bindings(fact_definition)
+        else {
+            gaps.push(coverage_gap(
+                "unsupported-observation",
+                Some(artifact_ref),
+                format!(
+                    "repository fact kind {fact_kind} cannot be generated from a source method call"
+                ),
+            ));
+            return;
+        };
+        let Some(resource_logical_ref) = resource.logical_refs.get(&resource_binding.binding)
+        else {
+            gaps.push(coverage_gap(
+                "invalid-binding",
+                Some(artifact_ref),
+                format!(
+                    "resource {} has no {} logical ref required by {fact_kind}",
+                    observation.resource, resource_binding.binding
+                ),
+            ));
+            return;
+        };
+        resolved.push((
+            fact_kind,
+            operation_binding,
+            resource_binding,
+            resource_logical_ref,
         ));
-        return;
     }
     let mut evidence_refs = BTreeSet::from([
         artifact_ref,
@@ -703,30 +826,29 @@ fn bind_observation(
         binding_authority_refs.insert(method_binding.authority_ref.as_str());
         binding_owners.insert(method_binding.owner.as_str());
     }
-    let fact = Map::from_iter([
-        ("kind".to_owned(), Value::String(fact_kind.to_owned())),
-        (
-            operation_binding.fact_field.clone(),
-            Value::String(symbol.logical_ref.clone()),
-        ),
-        (
-            resource_binding.fact_field.clone(),
-            Value::String(resource.logical_ref.clone()),
-        ),
-        (
-            "evidence_refs".to_owned(),
-            json!(evidence_refs.into_iter().collect::<Vec<_>>()),
-        ),
-        (
-            "binding_authority_refs".to_owned(),
-            json!(binding_authority_refs.into_iter().collect::<Vec<_>>()),
-        ),
-        (
-            "binding_owners".to_owned(),
-            json!(binding_owners.into_iter().collect::<Vec<_>>()),
-        ),
-    ]);
-    facts.push(Value::Object(fact));
+    let evidence_refs = evidence_refs.into_iter().collect::<Vec<_>>();
+    let binding_authority_refs = binding_authority_refs.into_iter().collect::<Vec<_>>();
+    let binding_owners = binding_owners.into_iter().collect::<Vec<_>>();
+    for (fact_kind, operation_binding, resource_binding, resource_logical_ref) in resolved {
+        let fact = Map::from_iter([
+            ("kind".to_owned(), Value::String(fact_kind.to_owned())),
+            (
+                operation_binding.fact_field.clone(),
+                Value::String(symbol.logical_ref.clone()),
+            ),
+            (
+                resource_binding.fact_field.clone(),
+                Value::String(resource_logical_ref.clone()),
+            ),
+            ("evidence_refs".to_owned(), json!(evidence_refs)),
+            (
+                "binding_authority_refs".to_owned(),
+                json!(binding_authority_refs),
+            ),
+            ("binding_owners".to_owned(), json!(binding_owners)),
+        ]);
+        facts.push(Value::Object(fact));
+    }
 }
 
 fn source_fact_bindings(
@@ -857,6 +979,22 @@ fn string_array(value: &Value, label: &str) -> Result<Vec<String>, GitRepository
                 .ok_or_else(|| git_error(format!("{label} items must be strings")))
         })
         .collect()
+}
+
+fn nonempty_unique_string_array(
+    value: &Value,
+    label: &str,
+) -> Result<Vec<String>, GitRepositoryError> {
+    let values = string_array(value, label)?;
+    if values.is_empty() || values.iter().any(String::is_empty) {
+        return Err(git_error(format!(
+            "{label} must contain at least one non-empty string"
+        )));
+    }
+    if values.iter().collect::<BTreeSet<_>>().len() != values.len() {
+        return Err(git_error(format!("{label} must not contain duplicates")));
+    }
+    Ok(values)
 }
 
 fn git_error(message: impl Into<String>) -> GitRepositoryError {

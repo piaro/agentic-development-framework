@@ -165,6 +165,10 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     assert!(root.join(".agentic/config.yaml").is_file());
     assert!(root.join(".agentic/framework.lock").is_file());
     assert!(root.join(".agentic/repository-observation.yaml").is_file());
+    assert_eq!(
+        read_yaml(&root.join(".agentic/repository-observation.yaml"))["schema_version"],
+        "5"
+    );
     assert!(root.join(".agentic/trusted-release-keys.yaml").is_file());
     assert!(
         root.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml")
@@ -305,7 +309,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "3");
+    assert_eq!(draft["schema_version"], "4");
     assert_eq!(draft["kind"], "repository-observation-draft");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let python = artifacts
@@ -429,7 +433,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert!(python_binding["bindings"]["symbols"]["save"]["logical_ref"].is_null());
     assert!(python_binding["bindings"]["symbols"]["save"]["owner"].is_null());
     assert!(python_binding["bindings"]["symbols"]["save"]["authority_ref"].is_null());
-    assert!(python_binding["bindings"]["resources"]["orders"]["logical_ref"].is_null());
+    assert!(python_binding["bindings"]["resources"]["orders"]["logical_refs"].is_null());
     assert_eq!(
         python_binding["bindings"]["methods"]
             .as_object()
@@ -544,7 +548,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "3");
+    assert_eq!(draft["schema_version"], "4");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let expected = [
         ("src/django_service.py", "django-orm", "save"),
@@ -571,7 +575,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
             .iter()
             .find(|candidate| candidate["framework"] == framework && candidate["method"] == method)
             .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
-        assert_eq!(candidate["suggested_kind"], "db_write");
+        assert_eq!(candidate["suggested_fact_kinds"], json!(["db_write"]));
         assert_eq!(candidate["review_status"], "required");
         assert_eq!(candidate["method_binding_required"], true);
         assert!(
@@ -587,7 +591,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
             .unwrap();
         assert!(
             binding_artifact["bindings"]["methods"][candidate["binding_key"].as_str().unwrap()]
-                ["kind"]
+                ["fact_kinds"]
                 .is_null()
         );
         assert!(
@@ -607,14 +611,14 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .iter()
         .find(|candidate| candidate["method"] == "execute")
         .unwrap();
-    assert!(execute["suggested_kind"].is_null());
+    assert_eq!(execute["suggested_fact_kinds"], json!([]));
     let sqlalchemy_binding = draft["binding_artifacts"]
         .as_array()
         .unwrap()
         .iter()
         .find(|artifact| artifact["path"] == "src/sqlalchemy_service.py")
         .unwrap();
-    assert!(sqlalchemy_binding["bindings"]["methods"]["session.execute"]["kind"].is_null());
+    assert!(sqlalchemy_binding["bindings"]["methods"]["session.execute"]["fact_kinds"].is_null());
     assert!(
         draft["next"]
             .as_str()
@@ -740,7 +744,10 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
             .iter()
             .find(|candidate| candidate["framework"] == framework && candidate["method"] == method)
             .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
-        assert_eq!(candidate["suggested_kind"], "message_publish");
+        assert_eq!(
+            candidate["suggested_fact_kinds"],
+            json!(["message_publish"])
+        );
         assert_eq!(candidate["review_status"], "required");
         assert!(
             candidate["binding_key"]
@@ -754,7 +761,7 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
         .iter()
         .find(|artifact| artifact["path"] == "src/KafkaService.java")
         .unwrap();
-    assert!(kafka_binding["bindings"]["methods"]["producer.send"]["kind"].is_null());
+    assert!(kafka_binding["bindings"]["methods"]["producer.send"]["fact_kinds"].is_null());
     assert!(kafka_binding["bindings"]["methods"]["producer.send"]["authority_ref"].is_null());
     let sqs_binding = draft["binding_artifacts"]
         .as_array()
@@ -870,7 +877,7 @@ fn project_observe_suggests_eight_major_http_clients_without_approving_them() {
             "SendAsync",
         ),
     ];
-    assert_review_candidates(&draft, &expected, "external_call");
+    assert_review_candidates(&draft, &expected, &["external_call"]);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -932,11 +939,11 @@ fn project_observe_suggests_three_object_storage_families_without_approving_them
             "UploadAsync",
         ),
     ];
-    assert_review_candidates(&draft, &expected, "object_write");
+    assert_review_candidates(&draft, &expected, &["external_call", "object_write"]);
     let _ = fs::remove_dir_all(root);
 }
 
-fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind: &str) {
+fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kinds: &[&str]) {
     let artifacts = draft["artifacts"].as_array().unwrap();
     for (path, framework, method) in expected {
         let artifact = artifacts
@@ -951,7 +958,7 @@ fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind
                 candidate["framework"] == *framework && candidate["method"] == *method
             })
             .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
-        assert_eq!(candidate["suggested_kind"], kind);
+        assert_eq!(candidate["suggested_fact_kinds"], json!(kinds));
         assert_eq!(candidate["review_status"], "required");
         assert_eq!(candidate["method_binding_required"], true);
         let binding = draft["binding_artifacts"]
@@ -961,7 +968,7 @@ fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind
             .find(|artifact| artifact["path"] == *path)
             .unwrap();
         assert!(
-            binding["bindings"]["methods"][candidate["binding_key"].as_str().unwrap()]["kind"]
+            binding["bindings"]["methods"][candidate["binding_key"].as_str().unwrap()]["fact_kinds"]
                 .is_null()
         );
     }
@@ -988,7 +995,7 @@ fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
     write_yaml(
         &project.root.join(".agentic/repository-observation.yaml"),
         &json!({
-            "schema_version": "4",
+            "schema_version": "5",
             "phase": "pre-build",
             "analysis": {"roots": draft["analysis_roots"].clone()},
             "artifacts": draft["binding_artifacts"].clone(),
@@ -2094,6 +2101,85 @@ fn reviewed_object_write_binding_emits_generic_and_specific_signals() {
         signals_for_binding(&output, "data", "data.order-archive"),
         ["object-storage-write", "persistent-data-write"]
     );
+}
+
+#[test]
+fn reviewed_multi_fact_binding_emits_external_and_object_write_signals() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n\
+         \x20   archive_bucket.put_object(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["schema_version"] = json!("5");
+    observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
+        "logical_refs": {
+            "data": "data.order-archive",
+            "integration": "integration.amazon-s3",
+        },
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["archive_bucket.put_object"] = json!({
+        "fact_kinds": ["external_call", "object_write"],
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(
+        signals_for_binding(&output, "integration", "integration.amazon-s3"),
+        ["distributed-effect", "external-system-call"]
+    );
+    assert_eq!(
+        signals_for_binding(&output, "data", "data.order-archive"),
+        ["object-storage-write", "persistent-data-write"]
+    );
+}
+
+#[test]
+fn multi_fact_binding_fails_closed_when_one_logical_ref_is_missing() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n\
+         \x20   archive_bucket.put_object(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["schema_version"] = json!("5");
+    observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
+        "logical_refs": {"data": "data.order-archive"},
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["archive_bucket.put_object"] = json!({
+        "fact_kinds": ["external_call", "object_write"],
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "blocked-detection");
+    assert!(
+        output["diagnostics"][0]
+            .as_str()
+            .unwrap()
+            .contains("has no integration logical ref required by external_call")
+    );
+    assert!(output["context"].is_null());
 }
 
 #[test]
