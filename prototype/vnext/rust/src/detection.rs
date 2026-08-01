@@ -424,6 +424,46 @@ mod tests {
     }
 
     #[test]
+    fn standard_reviewed_fact_kinds_emit_generic_and_specific_signals() {
+        let report = detect_typed_facts(
+            "change.integrations",
+            &[
+                json!({
+                    "kind": "external_call",
+                    "operation": "operation.place-order",
+                    "integration": "integration.payment-provider",
+                }),
+                json!({
+                    "kind": "object_write",
+                    "operation": "operation.place-order",
+                    "data": "data.order-archive",
+                }),
+            ],
+            &json!({
+                "status": "complete",
+                "scope": "declared-artifacts",
+                "analyzed_refs": [],
+                "gaps": [],
+            }),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert_eq!(
+            report
+                .candidates
+                .iter()
+                .map(|candidate| candidate.signal.as_str())
+                .collect::<Vec<_>>(),
+            [
+                "distributed-effect",
+                "external-system-call",
+                "object-storage-write",
+                "persistent-data-write",
+            ]
+        );
+    }
+
+    #[test]
     fn rejects_unknown_fact_kinds() {
         let error = detect_typed_facts(
             "change.docs",

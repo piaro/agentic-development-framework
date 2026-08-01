@@ -2,15 +2,35 @@
 
 Signal Domain Catalogは、Detectorが出力できるSignal、必要なbinding、入力となるtyped repository factを固定する組込み契約です。domainはSignalの分類であり、source codeの意味を推測したり、Ruleを暗黙に選択したりしません。
 
-## Catalog v1
+## Catalog v2
 
 | Domain | Signal | 必須binding | Repository fact |
 |---|---|---|---|
 | `data-persistence` | `persistent-data-write` | `data`, `operation` | `db_write` |
+| `data-persistence` | `persistent-data-write` | `data`, `operation` | `object_write` |
+| `data-persistence` | `object-storage-write` | `data`, `operation` | `object_write` |
 | `distributed-integration` | `distributed-effect` | `integration`, `operation` | `message_publish` |
+| `distributed-integration` | `distributed-effect` | `integration`, `operation` | `external_call` |
+| `distributed-integration` | `external-system-call` | `integration`, `operation` | `external_call` |
 | `distributed-integration` | `message-or-event-publish` | `integration`, `operation` | `message_publish` |
 
-`message_publish`は、一般的な分散副作用と、より具体的なmessage/event publishの両方を出力します。Ruleは従来どおり個別のSignal IDを指定します。domain全体を指定するwildcardはありません。
+`message_publish`と`external_call`は一般的な`distributed-effect`も出力し、`object_write`は一般的な`persistent-data-write`も出力します。このため既存の汎用Ruleを維持しながら、用途を限定したRuleを追加できます。Ruleは従来どおり個別のSignal IDを指定し、domain全体を指定するwildcardはありません。
+
+`external_call`と`object_write`はmethod名から自動分類しません。導入先Projectで、実際の呼出しを確認したうえでMethod Bindingへ明示します。
+
+```yaml
+methods:
+  payment_client.request:
+    kind: external_call
+    owner: team.ordering
+    authority_ref: decision.repository-bindings
+  archive_bucket.put_object:
+    kind: object_write
+    owner: team.ordering
+    authority_ref: decision.repository-bindings
+```
+
+対応するresource Bindingは、`external_call`では`integration.*`、`object_write`では`data.*`の論理refを要求します。未知のkind、必要なMethod Bindingがない呼出し、不正な論理refはfail-closedで停止します。
 
 ## 確認方法
 
@@ -23,7 +43,7 @@ JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、c
 
 ## Registry境界
 
-組込み定義は起動時に`SignalCatalogRegistry`へ読み込み、ID重複、domain参照、Detector identity、binding、factからSignalへの参照を一度検証します。Detector、Rule Compiler、Application、`catalog signal-domains`は同じRegistry APIを使用します。ApplicationはRule compileに使用したRegistryを保持し、typed fact検出にも同じinstanceを渡すため、異なるCatalogを誤って参照しません。
+組込み定義は起動時に`SignalCatalogRegistry`へ読み込み、ID重複、domain参照、Detector identity、binding、factからSignalへの参照を一度検証します。Git Repository Adapter、Detector、Rule Compiler、Application、`catalog signal-domains`は同じRegistry APIを使用します。実Projectでは、Method Bindingの検証、typed fact生成、Rule compile、Signal検出へ同じRegistryを渡すため、異なるCatalogを誤って参照しません。
 
 現在Registryへ投入できるのは組込み定義だけです。所有型と注入経路は用意していますが、外部YAML、Framework Release Catalog、Project Catalogの読込みはまだ許可していません。次の段階でSchema検証、namespace、決定的merge、署名・lock固定を追加してから有効化します。
 
@@ -37,4 +57,4 @@ JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、c
 - source observationとBinding Recordが、そのfactを根拠付きで生成できること
 - Rule、Schema、golden、Detector benchmark、利用案内の更新
 
-framework固有APIのmethod名だけで意味を決めません。安全に分類できない呼出しはBinding Recordによるreviewを要求し、解析不能・未対応の入力はcoverage gapとして停止します。将来の候補である認可変更、機密data access、外部API呼出し等も、根拠となるtyped factとbinding契約が定義されるまでは標準domainへ追加しません。
+framework固有APIのmethod名だけで意味を決めません。安全に分類できない呼出しはBinding Recordによるreviewを要求し、解析不能・未対応の入力はcoverage gapとして停止します。将来の候補である認可変更や機密data access等も、根拠となるtyped factとbinding契約が定義されるまでは標準domainへ追加しません。

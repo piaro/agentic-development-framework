@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "1";
+pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "2";
 pub const TYPED_FACT_DETECTOR_ID: &str = "typed-repository-fact";
 pub const TYPED_FACT_DETECTOR_VERSION: &str = "3";
 
@@ -117,13 +117,17 @@ impl SignalCatalogRegistry {
                     id: "data-persistence".to_owned(),
                     title: "Data persistence".to_owned(),
                     description: "Durable writes to application-owned data".to_owned(),
-                    signals: strings(&["persistent-data-write"]),
+                    signals: strings(&["object-storage-write", "persistent-data-write"]),
                 },
                 SignalDomainDefinition {
                     id: "distributed-integration".to_owned(),
                     title: "Distributed integration".to_owned(),
                     description: "Effects crossing a process or service boundary".to_owned(),
-                    signals: strings(&["distributed-effect", "message-or-event-publish"]),
+                    signals: strings(&[
+                        "distributed-effect",
+                        "external-system-call",
+                        "message-or-event-publish",
+                    ]),
                 },
             ],
             vec![
@@ -135,11 +139,25 @@ impl SignalCatalogRegistry {
                     bindings: strings(&["integration", "operation"]),
                 },
                 SignalDefinition {
+                    id: "external-system-call".to_owned(),
+                    domain: "distributed-integration".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["integration", "operation"]),
+                },
+                SignalDefinition {
                     id: "message-or-event-publish".to_owned(),
                     domain: "distributed-integration".to_owned(),
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["integration", "operation"]),
+                },
+                SignalDefinition {
+                    id: "object-storage-write".to_owned(),
+                    domain: "data-persistence".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["data", "operation"]),
                 },
                 SignalDefinition {
                     id: "persistent-data-write".to_owned(),
@@ -165,6 +183,20 @@ impl SignalCatalogRegistry {
                     emits: strings(&["persistent-data-write"]),
                 },
                 RepositoryFactDefinition {
+                    id: "external_call".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "integration".to_owned(),
+                            fact_field: "integration".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["distributed-effect", "external-system-call"]),
+                },
+                RepositoryFactDefinition {
                     id: "message_publish".to_owned(),
                     bindings: vec![
                         FactBindingDefinition {
@@ -177,6 +209,20 @@ impl SignalCatalogRegistry {
                         },
                     ],
                     emits: strings(&["distributed-effect", "message-or-event-publish"]),
+                },
+                RepositoryFactDefinition {
+                    id: "object_write".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "data".to_owned(),
+                            fact_field: "data".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["object-storage-write", "persistent-data-write"]),
                 },
             ],
         )
@@ -549,8 +595,8 @@ mod tests {
         let registry = SignalCatalogRegistry::built_in().unwrap();
         let catalog = registry.catalog();
         assert_eq!(catalog.domains.len(), 2);
-        assert_eq!(catalog.signals.len(), 3);
-        assert_eq!(catalog.fact_kinds.len(), 2);
+        assert_eq!(catalog.signals.len(), 5);
+        assert_eq!(catalog.fact_kinds.len(), 4);
         assert_eq!(catalog.digest, registry.digest());
 
         let definition = registry.signal_definition("persistent-data-write").unwrap();
@@ -595,6 +641,20 @@ mod tests {
                     fact_field: "operation".to_owned(),
                 },
             ]
+        );
+        assert_eq!(
+            registry
+                .repository_fact_definition("external_call")
+                .unwrap()
+                .emits,
+            strings(&["distributed-effect", "external-system-call"])
+        );
+        assert_eq!(
+            registry
+                .repository_fact_definition("object_write")
+                .unwrap()
+                .emits,
+            strings(&["object-storage-write", "persistent-data-write"])
         );
     }
 

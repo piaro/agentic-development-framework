@@ -8,6 +8,7 @@ use crate::git_repository::GitRepositoryAdapter;
 use crate::project_config::{ProjectConfig, load_project_config, repository_path};
 use crate::remote_delivery::RELEASE_SOURCES_PATH;
 use crate::schema::SchemaRegistry;
+use crate::signal_catalog::SignalCatalogRegistry;
 use serde_json::Value;
 use std::fmt;
 use std::fs;
@@ -20,6 +21,7 @@ pub struct LoadedProject {
     rule_source: Value,
     framework_lock: Value,
     schema_registry: SchemaRegistry,
+    signal_registry: SignalCatalogRegistry,
     release_id: String,
     release_root: PathBuf,
 }
@@ -39,10 +41,16 @@ impl LoadedProject {
         let framework_lock = read_yaml(root.join(".agentic/framework.lock"))?;
         let release = resolve_verified_release(&root, &framework_lock, release_root)
             .map_err(|error| runtime_error(error.to_string()))?;
-        let repository =
-            GitRepositoryAdapter::new(&root, &config.repository_observation, require_clean)
-                .and_then(|adapter| adapter.observe())
-                .map_err(|error| runtime_error(error.to_string()))?;
+        let signal_registry =
+            SignalCatalogRegistry::built_in().map_err(|error| runtime_error(error.to_string()))?;
+        let repository = GitRepositoryAdapter::with_signal_registry(
+            &root,
+            &config.repository_observation,
+            require_clean,
+            signal_registry.clone(),
+        )
+        .and_then(|adapter| adapter.observe())
+        .map_err(|error| runtime_error(error.to_string()))?;
         Ok(Self {
             root,
             config,
@@ -50,6 +58,7 @@ impl LoadedProject {
             rule_source: release.rule_source,
             framework_lock,
             schema_registry: release.schema_registry,
+            signal_registry,
             release_id: release.release_id,
             release_root: release.root,
         })
@@ -78,10 +87,14 @@ impl LoadedProject {
         let decisions = store
             .decisions()
             .map_err(|error| runtime_error(error.to_string()))?;
-        let binding_authority_refs =
-            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
-                .and_then(|adapter| adapter.binding_authority_refs())
-                .map_err(|error| runtime_error(error.to_string()))?;
+        let binding_authority_refs = GitRepositoryAdapter::with_signal_registry(
+            &self.root,
+            &self.config.repository_observation,
+            false,
+            self.signal_registry.clone(),
+        )
+        .and_then(|adapter| adapter.binding_authority_refs())
+        .map_err(|error| runtime_error(error.to_string()))?;
         Ok(BindingValidationReport::build(
             &self.repository,
             &decisions,
@@ -99,11 +112,12 @@ impl LoadedProject {
             &self.schema_registry,
         )
         .map_err(|error| ApplicationError::new(error.to_string()))?;
-        Application::with_store(
+        Application::with_store_and_signal_registry(
             store,
             &self.rule_source,
             &self.framework_lock,
             &self.schema_registry,
+            self.signal_registry.clone(),
         )
     }
 
@@ -131,9 +145,13 @@ impl LoadedProject {
         if release_sources.exists() {
             paths.push(release_sources);
         }
-        let adapter =
-            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
-                .map_err(|error| runtime_error(error.to_string()))?;
+        let adapter = GitRepositoryAdapter::with_signal_registry(
+            &self.root,
+            &self.config.repository_observation,
+            false,
+            self.signal_registry.clone(),
+        )
+        .map_err(|error| runtime_error(error.to_string()))?;
         adapter
             .assert_tracked_paths(&paths)
             .map_err(|error| runtime_error(error.to_string()))
@@ -163,9 +181,13 @@ impl LoadedProject {
         if release_sources.exists() {
             paths.push(release_sources);
         }
-        let adapter =
-            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
-                .map_err(|error| runtime_error(error.to_string()))?;
+        let adapter = GitRepositoryAdapter::with_signal_registry(
+            &self.root,
+            &self.config.repository_observation,
+            false,
+            self.signal_registry.clone(),
+        )
+        .map_err(|error| runtime_error(error.to_string()))?;
         adapter
             .assert_tracked_paths(&paths)
             .map_err(|error| runtime_error(error.to_string()))
@@ -178,9 +200,13 @@ impl LoadedProject {
 
     /// CI-only policies supplied outside the project config must also be tracked.
     pub fn assert_tracked_paths(&self, paths: &[PathBuf]) -> Result<(), ProjectRuntimeError> {
-        let adapter =
-            GitRepositoryAdapter::new(&self.root, &self.config.repository_observation, false)
-                .map_err(|error| runtime_error(error.to_string()))?;
+        let adapter = GitRepositoryAdapter::with_signal_registry(
+            &self.root,
+            &self.config.repository_observation,
+            false,
+            self.signal_registry.clone(),
+        )
+        .map_err(|error| runtime_error(error.to_string()))?;
         adapter
             .assert_tracked_paths(paths)
             .map_err(|error| runtime_error(error.to_string()))

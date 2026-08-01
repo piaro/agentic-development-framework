@@ -54,16 +54,32 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     assert!(json_output.stderr.is_empty());
     let catalog: Value = serde_json::from_slice(&json_output.stdout).unwrap();
     validate_catalog_schema(&catalog, "signal-domain-catalog.schema.json");
-    assert_eq!(catalog["catalog_version"], "1");
+    assert_eq!(catalog["catalog_version"], "2");
     assert_eq!(catalog["domains"][0]["id"], "data-persistence");
     assert_eq!(
+        catalog["domains"][0]["signals"],
+        json!(["object-storage-write", "persistent-data-write"])
+    );
+    assert_eq!(
         catalog["domains"][1]["signals"],
-        json!(["distributed-effect", "message-or-event-publish"])
+        json!([
+            "distributed-effect",
+            "external-system-call",
+            "message-or-event-publish"
+        ])
     );
     assert_eq!(catalog["fact_kinds"][0]["id"], "db_write");
     assert_eq!(
         catalog["fact_kinds"][1]["emits"],
+        json!(["distributed-effect", "external-system-call"])
+    );
+    assert_eq!(
+        catalog["fact_kinds"][2]["emits"],
         json!(["distributed-effect", "message-or-event-publish"])
+    );
+    assert_eq!(
+        catalog["fact_kinds"][3]["emits"],
+        json!(["object-storage-write", "persistent-data-write"])
     );
     let mut body = catalog.as_object().unwrap().clone();
     let digest = body.remove("digest").unwrap();
@@ -79,8 +95,10 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
         .unwrap();
     assert_success(&text_output);
     let text = String::from_utf8_lossy(&text_output.stdout);
-    assert!(text.contains("Signal Domain Catalog 1"));
+    assert!(text.contains("Signal Domain Catalog 2"));
     assert!(text.contains("data-persistence: Data persistence"));
+    assert!(text.contains("external_call -> distributed-effect, external-system-call"));
+    assert!(text.contains("object_write -> object-storage-write, persistent-data-write"));
     assert!(text.contains("message_publish -> distributed-effect, message-or-event-publish"));
 
     let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
@@ -1813,6 +1831,104 @@ fn reviewed_messaging_method_binding_classifies_a_non_builtin_method() {
     let output: Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(output["state"], "needs-analysis");
     assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+}
+
+#[test]
+fn reviewed_external_call_binding_emits_generic_and_specific_signals() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n\
+         \x20   payment_client.request(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["resources"]["payment_client"] = json!({
+        "logical_ref": "integration.payment-provider",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["payment_client.request"] = json!({
+        "kind": "external_call",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(
+        signals_for_binding(&output, "integration", "integration.payment-provider"),
+        ["distributed-effect", "external-system-call"]
+    );
+}
+
+#[test]
+fn reviewed_object_write_binding_emits_generic_and_specific_signals() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n\
+         \x20   archive_bucket.put_object(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
+        "logical_ref": "data.order-archive",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["archive_bucket.put_object"] = json!({
+        "kind": "object_write",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(
+        signals_for_binding(&output, "data", "data.order-archive"),
+        ["object-storage-write", "persistent-data-write"]
+    );
+}
+
+#[test]
+fn unknown_method_binding_kind_is_rejected_before_detection() {
+    let project = TestProject::new();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["artifacts"][0]["bindings"]["methods"]["orders.save"] = json!({
+        "kind": "unknown_write",
+        "owner": "team.ordering",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("artifact method binding kind is not supported: unknown_write")
+    );
+}
+
+fn signals_for_binding(output: &Value, binding: &str, logical_ref: &str) -> Vec<String> {
+    output["context"]["payload"]["signal_candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|candidate| candidate["bindings"][binding].as_str() == Some(logical_ref))
+        .map(|candidate| candidate["signal"].as_str().unwrap().to_owned())
+        .collect()
 }
 
 #[test]

@@ -6,6 +6,7 @@
 
 use crate::canonical_digest;
 use crate::project_config::repository_path;
+use crate::signal_catalog::{RepositoryFactDefinition, SignalCatalogRegistry};
 use crate::source_detection::{
     SourceObservation, SourceObservationKind, detector_for_language, detector_for_path,
     source_pathspecs,
@@ -24,6 +25,7 @@ pub struct GitRepositoryAdapter {
     root: PathBuf,
     manifest_path: PathBuf,
     require_clean: bool,
+    signal_registry: SignalCatalogRegistry,
 }
 
 #[derive(Clone)]
@@ -40,7 +42,7 @@ struct ArtifactBinding {
 }
 
 struct MethodBindingRecord {
-    kind: SourceObservationKind,
+    kind: String,
     owner: String,
     authority_ref: String,
 }
@@ -51,6 +53,17 @@ impl GitRepositoryAdapter {
         manifest_path: &str,
         require_clean: bool,
     ) -> Result<Self, GitRepositoryError> {
+        let signal_registry =
+            SignalCatalogRegistry::built_in().map_err(|error| git_error(error.to_string()))?;
+        Self::with_signal_registry(root, manifest_path, require_clean, signal_registry)
+    }
+
+    pub fn with_signal_registry(
+        root: &Path,
+        manifest_path: &str,
+        require_clean: bool,
+        signal_registry: SignalCatalogRegistry,
+    ) -> Result<Self, GitRepositoryError> {
         let root = root
             .canonicalize()
             .map_err(|error| git_error(format!("cannot resolve project root: {error}")))?;
@@ -60,6 +73,7 @@ impl GitRepositoryAdapter {
             root,
             manifest_path,
             require_clean,
+            signal_registry,
         })
     }
 
@@ -120,6 +134,7 @@ impl GitRepositoryAdapter {
                 declaration
                     .get("bindings")
                     .ok_or_else(|| git_error("artifact declaration bindings is missing"))?,
+                &self.signal_registry,
             )?;
 
             let artifact_path = repository_path(&self.root, configured_path)
@@ -203,6 +218,7 @@ impl GitRepositoryAdapter {
                                 reference,
                                 &bindings,
                                 &symbol_aliases,
+                                &self.signal_registry,
                                 &mut facts,
                                 &mut gaps,
                             );
@@ -267,6 +283,7 @@ impl GitRepositoryAdapter {
                 declaration
                     .get("bindings")
                     .ok_or_else(|| git_error("artifact declaration bindings is missing"))?,
+                &self.signal_registry,
             )?;
             authority_refs.extend(
                 bindings
@@ -429,7 +446,10 @@ fn is_under_analysis_root(path: &str, roots: &[String]) -> bool {
         .any(|root| root == "." || path == root || path.starts_with(&format!("{root}/")))
 }
 
-fn artifact_bindings(value: &Value) -> Result<ArtifactBinding, GitRepositoryError> {
+fn artifact_bindings(
+    value: &Value,
+    signal_registry: &SignalCatalogRegistry,
+) -> Result<ArtifactBinding, GitRepositoryError> {
     let bindings = value
         .as_object()
         .ok_or_else(|| git_error("artifact bindings must be a mapping"))?;
@@ -455,12 +475,14 @@ fn artifact_bindings(value: &Value) -> Result<ArtifactBinding, GitRepositoryErro
             bindings
                 .get("methods")
                 .ok_or_else(|| git_error("artifact method bindings are missing"))?,
+            signal_registry,
         )?,
     })
 }
 
 fn method_binding_map(
     value: &Value,
+    signal_registry: &SignalCatalogRegistry,
 ) -> Result<BTreeMap<String, MethodBindingRecord>, GitRepositoryError> {
     let records = value
         .as_object()
@@ -481,19 +503,19 @@ fn method_binding_map(
                 &["kind", "owner", "authority_ref"],
                 "artifact method binding",
             )?;
-            let kind = match required_nonempty_string(record, "kind", "artifact method binding")? {
-                "db_write" => SourceObservationKind::DbWrite,
-                "message_publish" => SourceObservationKind::MessagePublish,
-                other => {
-                    return Err(git_error(format!(
-                        "artifact method binding kind is not supported: {other}"
-                    )));
-                }
-            };
+            let kind = required_nonempty_string(record, "kind", "artifact method binding")?;
+            let definition = signal_registry
+                .repository_fact_definition(kind)
+                .ok_or_else(|| {
+                    git_error(format!(
+                        "artifact method binding kind is not supported: {kind}"
+                    ))
+                })?;
+            source_fact_bindings(definition)?;
             Ok((
                 physical_call.clone(),
                 MethodBindingRecord {
-                    kind,
+                    kind: kind.to_owned(),
                     owner: required_nonempty_string(record, "owner", "artifact method binding")?
                         .to_owned(),
                     authority_ref: required_nonempty_string(
@@ -554,6 +576,7 @@ fn bind_observation(
     artifact_ref: &str,
     bindings: &ArtifactBinding,
     symbol_aliases: &BTreeMap<String, BTreeSet<String>>,
+    signal_registry: &SignalCatalogRegistry,
     facts: &mut Vec<Value>,
     gaps: &mut Vec<Value>,
 ) {
@@ -604,7 +627,7 @@ fn bind_observation(
     };
     let method_key = format!("{}.{}", observation.resource, observation.method);
     let method_binding = bindings.methods.get(&method_key);
-    let observation_kind = if observation.kind == SourceObservationKind::OtherMethodCall {
+    let fact_kind = if observation.kind == SourceObservationKind::OtherMethodCall {
         let Some(method_binding) = method_binding else {
             gaps.push(coverage_gap(
                 "unsupported-observation",
@@ -616,9 +639,31 @@ fn bind_observation(
             ));
             return;
         };
-        method_binding.kind
+        method_binding.kind.as_str()
     } else {
-        observation.kind
+        match observation.kind {
+            SourceObservationKind::DbWrite => "db_write",
+            SourceObservationKind::MessagePublish => "message_publish",
+            SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
+        }
+    };
+    let Some(fact_definition) = signal_registry.repository_fact_definition(fact_kind) else {
+        gaps.push(coverage_gap(
+            "unsupported-observation",
+            Some(artifact_ref),
+            format!("repository fact kind {fact_kind} is not defined by the Signal Catalog"),
+        ));
+        return;
+    };
+    let Ok((operation_binding, resource_binding)) = source_fact_bindings(fact_definition) else {
+        gaps.push(coverage_gap(
+            "unsupported-observation",
+            Some(artifact_ref),
+            format!(
+                "repository fact kind {fact_kind} cannot be generated from a source method call"
+            ),
+        ));
+        return;
     };
     if !symbol.logical_ref.starts_with("operation.") {
         gaps.push(coverage_gap(
@@ -631,12 +676,8 @@ fn bind_observation(
         ));
         return;
     }
-    let (resource_field, required_prefix) = match observation_kind {
-        SourceObservationKind::DbWrite => ("data", "data."),
-        SourceObservationKind::MessagePublish => ("integration", "integration."),
-        SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
-    };
-    if !resource.logical_ref.starts_with(required_prefix) {
+    let required_prefix = format!("{}.", resource_binding.binding);
+    if !resource.logical_ref.starts_with(&required_prefix) {
         gaps.push(coverage_gap(
             "invalid-binding",
             Some(artifact_ref),
@@ -662,18 +703,57 @@ fn bind_observation(
         binding_authority_refs.insert(method_binding.authority_ref.as_str());
         binding_owners.insert(method_binding.owner.as_str());
     }
-    facts.push(json!({
-        "kind": match observation_kind {
-            SourceObservationKind::DbWrite => "db_write",
-            SourceObservationKind::MessagePublish => "message_publish",
-            SourceObservationKind::OtherMethodCall => unreachable!("handled above"),
-        },
-        "operation": symbol.logical_ref,
-        (resource_field): resource.logical_ref,
-        "evidence_refs": evidence_refs.into_iter().collect::<Vec<_>>(),
-        "binding_authority_refs": binding_authority_refs.into_iter().collect::<Vec<_>>(),
-        "binding_owners": binding_owners.into_iter().collect::<Vec<_>>(),
-    }));
+    let fact = Map::from_iter([
+        ("kind".to_owned(), Value::String(fact_kind.to_owned())),
+        (
+            operation_binding.fact_field.clone(),
+            Value::String(symbol.logical_ref.clone()),
+        ),
+        (
+            resource_binding.fact_field.clone(),
+            Value::String(resource.logical_ref.clone()),
+        ),
+        (
+            "evidence_refs".to_owned(),
+            json!(evidence_refs.into_iter().collect::<Vec<_>>()),
+        ),
+        (
+            "binding_authority_refs".to_owned(),
+            json!(binding_authority_refs.into_iter().collect::<Vec<_>>()),
+        ),
+        (
+            "binding_owners".to_owned(),
+            json!(binding_owners.into_iter().collect::<Vec<_>>()),
+        ),
+    ]);
+    facts.push(Value::Object(fact));
+}
+
+fn source_fact_bindings(
+    definition: &RepositoryFactDefinition,
+) -> Result<
+    (
+        &crate::signal_catalog::FactBindingDefinition,
+        &crate::signal_catalog::FactBindingDefinition,
+    ),
+    GitRepositoryError,
+> {
+    let operation = definition
+        .bindings
+        .iter()
+        .find(|binding| binding.binding == "operation");
+    let resources = definition
+        .bindings
+        .iter()
+        .filter(|binding| binding.binding != "operation")
+        .collect::<Vec<_>>();
+    match (operation, resources.as_slice()) {
+        (Some(operation), [resource]) => Ok((operation, *resource)),
+        _ => Err(git_error(format!(
+            "repository fact kind {} must define operation and exactly one resource binding",
+            definition.id
+        ))),
+    }
 }
 
 fn symbol_aliases(observations: &[SourceObservation]) -> BTreeMap<String, BTreeSet<String>> {
