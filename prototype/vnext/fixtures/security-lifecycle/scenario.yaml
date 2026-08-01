@@ -1,0 +1,33 @@
+schema_version: "1"
+change_id: change.update-customer-access
+expected_signals:
+  - authorization-control-change
+  - sensitive-data-access
+before_build:
+  - state: needs-analysis
+    requirement: risk-signals-reviewed
+    instances: 1
+  - state: needs-analysis
+    requirement: operation-boundaries-confirmed
+    instances: 1
+  - state: needs-analysis
+    requirement: security-contracts-ready
+    instances: 2
+  - state: needs-pre-build-challenge
+    requirement: security-design-challenged
+    instances: 1
+build:
+  state: ready-to-build
+  result_schema: result.build
+after_build:
+  - state: needs-evidence
+    requirement: security-evidence-recorded
+    instances: 1
+  - state: needs-evidence
+    requirement: contract-clause-revalidated
+    instances: 2
+  - state: needs-post-build-challenge
+    requirement: security-implementation-challenged
+    instances: 1
+terminal_state: ready-to-merge
+shallow_evidence_error: evidence-backed outcome requires an Evidence Record for

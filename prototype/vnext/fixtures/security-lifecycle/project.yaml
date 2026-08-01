@@ -1,0 +1,39 @@
+changes:
+  - schema_version: "1"
+    id: change.update-customer-access
+    title: 顧客管理権限と個人情報アクセスを変更する
+    intent: 顧客管理操作の認可境界と個人情報アクセスを同時に更新する
+
+contracts:
+  - schema_version: "1"
+    id: contract.customer-security
+    change_id: change.update-customer-access
+    applies_to:
+      - operation.update-customer-access
+      - authorization.customer-administration
+      - data.customer-pii
+    clauses:
+      - id: least-privilege
+        text: 顧客管理操作は承認済みの最小権限に限定する
+        applies_to:
+          - operation.update-customer-access
+          - authorization.customer-administration
+        authority_ref: decision.customer-security-boundary
+      - id: pii-access-restricted
+        text: 顧客個人情報へのアクセスは業務上必要な項目に限定する
+        applies_to:
+          - operation.update-customer-access
+          - data.customer-pii
+        authority_ref: decision.customer-security-boundary
+
+decisions:
+  - schema_version: "1"
+    id: decision.customer-security-boundary
+    change_id: change.update-customer-access
+    status: accepted
+    title: 顧客管理の認可境界と個人情報区分をBindingする
+    resolves: []
+
+results: []
+evidence: []
+repository: {}

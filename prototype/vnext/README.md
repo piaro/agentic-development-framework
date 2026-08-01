@@ -527,6 +527,7 @@ sources:
 | `rust/` | build済みバイナリ移行を検証するRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
 | `agentic_vnext/application.py` | `next`と`submit`のModule呼出順を管理 |
 | `fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
+| `fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
 | `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
 
 ## 現時点の制約

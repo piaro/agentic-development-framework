@@ -1,0 +1,29 @@
+schema_version: "5"
+phase: pre-build
+analysis:
+  roots:
+    - src
+artifacts:
+  - ref: code.customer-access-policy
+    path: src/customer_access.py
+    language: python
+    bindings:
+      symbols:
+        update_customer_access:
+          logical_ref: operation.update-customer-access
+          owner: team.identity
+          authority_ref: decision.customer-security-boundary
+      resources:
+        policy:
+          logical_refs:
+            authorization: authorization.customer-administration
+            data: data.customer-pii
+          owner: team.identity
+          authority_ref: decision.customer-security-boundary
+      methods:
+        policy.apply:
+          fact_kinds:
+            - authorization_change
+            - sensitive_data_access
+          owner: team.identity
+          authority_ref: decision.customer-security-boundary
