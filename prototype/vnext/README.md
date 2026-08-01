@@ -213,10 +213,11 @@ agentic change init change.example \
 agentic project observe \
   --project /path/to/project \
   --analysis-root src \
-  --format yaml
+  --format yaml \
+  --output .agentic/repository-observation.draft.yaml
 ```
 
-この出力はRepository Observation Draft v4であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
+この出力はRepository Observation Draft v4であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
 
 Draft v4の`binding_artifacts`は、Observation Schema v5の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`fact_kinds`、`logical_refs`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 

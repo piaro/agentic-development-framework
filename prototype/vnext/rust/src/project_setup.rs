@@ -304,6 +304,37 @@ pub fn observation_draft(
     }))
 }
 
+/// Write an explicitly requested Observation Draft without replacing any file.
+pub fn write_observation_draft(
+    project_root: &Path,
+    relative: &str,
+    contents: &[u8],
+) -> Result<PathBuf, ProjectSetupError> {
+    let root = project_root
+        .canonicalize()
+        .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
+    assert_git_root(&root)?;
+    let relative = Path::new(relative);
+    if relative.as_os_str().is_empty() {
+        return Err(setup_error(
+            "Observation Draft output path must not be empty",
+        ));
+    }
+    if relative
+        .components()
+        .next()
+        .is_some_and(|component| component.as_os_str() == ".git")
+    {
+        return Err(setup_error(
+            "Observation Draft output path must not be inside .git",
+        ));
+    }
+    reject_symlink_components(&root, relative)?;
+    let path = root.join(relative);
+    write_new(&path, contents)?;
+    Ok(path)
+}
+
 fn binding_artifact_template(
     path: &str,
     language: &str,
@@ -337,7 +368,7 @@ fn binding_artifact_template(
             (
                 observation.symbol.clone(),
                 json!({
-                    "logical_refs": null,
+                    "logical_ref": null,
                     "owner": null,
                     "authority_ref": null,
                 }),
@@ -350,7 +381,7 @@ fn binding_artifact_template(
             (
                 observation.resource.clone(),
                 json!({
-                    "logical_ref": null,
+                    "logical_refs": null,
                     "owner": null,
                     "authority_ref": null,
                 }),

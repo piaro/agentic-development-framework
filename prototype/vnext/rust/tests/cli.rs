@@ -450,10 +450,22 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .find(|artifact| artifact["path"] == "src/orders.py")
         .unwrap();
     assert_eq!(python_binding["ref"], "code.src.orders");
+    assert!(
+        python_binding["bindings"]["symbols"]["save"]
+            .as_object()
+            .unwrap()
+            .contains_key("logical_ref")
+    );
     assert!(python_binding["bindings"]["symbols"]["save"]["logical_ref"].is_null());
     assert!(python_binding["bindings"]["symbols"]["save"]["owner"].is_null());
     assert!(python_binding["bindings"]["symbols"]["save"]["authority_ref"].is_null());
     assert!(python_binding["bindings"]["resources"]["orders"]["logical_refs"].is_null());
+    assert!(
+        python_binding["bindings"]["resources"]["orders"]
+            .as_object()
+            .unwrap()
+            .contains_key("logical_refs")
+    );
     assert_eq!(
         python_binding["bindings"]["methods"]
             .as_object()
@@ -472,6 +484,134 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
             .is_empty()
     );
     let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
+    let root = temporary_test_root("project-observe-output");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join(".agentic/drafts")).unwrap();
+    fs::write(
+        root.join("src/orders.py"),
+        "def save(order):\n    orders.insert(order)\n",
+    )
+    .unwrap();
+    run_git(&root, &["init", "--quiet"]);
+    let relative = ".agentic/drafts/repository-observation.yaml";
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "yaml",
+            "--output",
+            relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Observation draft written to:"));
+    assert!(stdout.contains("Next: review binding_artifacts"));
+    assert!(stdout.contains("Binding candidates were not applied automatically"));
+    let draft_path = root.join(relative);
+    let original = fs::read(&draft_path).unwrap();
+    let draft = read_yaml(&draft_path);
+    assert_eq!(draft["kind"], "repository-observation-draft");
+    assert!(draft["binding_artifacts"][0]["bindings"]["symbols"]["save"]["logical_ref"].is_null());
+
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--output",
+            relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stderr).contains("refusing to overwrite"));
+    assert_eq!(fs::read(&draft_path).unwrap(), original);
+
+    let escaped = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--output",
+            "../outside.yaml",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!escaped.status.success());
+    assert!(String::from_utf8_lossy(&escaped.stderr).contains("must stay in the repository"));
+
+    let git_internal = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--output",
+            ".git/observation-draft.yaml",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!git_internal.status.success());
+    assert!(String::from_utf8_lossy(&git_internal.stderr).contains("must not be inside .git"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[cfg(unix)]
+#[test]
+fn project_observe_refuses_a_symlinked_draft_output() {
+    use std::os::unix::fs::symlink;
+
+    let root = temporary_test_root("project-observe-output-symlink");
+    let outside = temporary_test_root("project-observe-output-symlink-target");
+    fs::create_dir_all(root.join("src")).unwrap();
+    fs::create_dir_all(root.join(".agentic")).unwrap();
+    fs::write(
+        root.join("src/orders.py"),
+        "def save(order):\n    orders.insert(order)\n",
+    )
+    .unwrap();
+    fs::write(&outside, "keep\n").unwrap();
+    symlink(&outside, root.join(".agentic/draft.yaml")).unwrap();
+    run_git(&root, &["init", "--quiet"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--output",
+            ".agentic/draft.yaml",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("refusing symlinked project path"));
+    assert_eq!(fs::read_to_string(&outside).unwrap(), "keep\n");
+    let _ = fs::remove_dir_all(root);
+    let _ = fs::remove_file(outside);
 }
 
 #[test]

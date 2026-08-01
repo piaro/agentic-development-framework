@@ -71,7 +71,7 @@ pub fn render_next_text(change_id: &str, response: &ApplicationResponse) -> Stri
     {
         lines.push(String::new());
         lines.push(
-            "Next: run agentic project observe to generate a non-authoritative Binding draft."
+            "Next: run agentic project observe --output .agentic/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
                 .to_owned(),
         );
         lines.push(

@@ -197,7 +197,7 @@ impl BindingValidationReport {
                 lines.push("Next: Binding Records are ready for normal project evaluation.".to_owned())
             }
             "invalid" => lines.extend([
-                "Next: run agentic project observe to generate a non-authoritative Binding draft."
+                "Next: run agentic project observe --output .agentic/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
                     .to_owned(),
                 "Then: review the listed physical names, logical refs, owners, fact kinds, and accepted Decision authorities."
                     .to_owned(),
