@@ -178,6 +178,10 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
         .output()
         .unwrap();
     assert_success(&initialized);
+    let initialized_stdout = String::from_utf8_lossy(&initialized.stdout);
+    assert!(initialized_stdout.contains("Next: if source code already exists"));
+    assert!(initialized_stdout.contains("agentic project observe"));
+    assert!(initialized_stdout.contains("agentic project validate-bindings"));
     assert!(root.join(".agentic/config.yaml").is_file());
     assert!(root.join(".agentic/framework.lock").is_file());
     assert!(root.join(".agentic/repository-observation.yaml").is_file());
@@ -1076,6 +1080,11 @@ fn project_validate_bindings_reports_missing_and_ambiguous_bindings() {
         issue["kind"] == "unmapped-observation"
             && issue["artifact_ref"] == "code.place-order-handler"
     }));
+    let missing_text = project.run(&["project", "validate-bindings"]);
+    assert!(!missing_text.status.success());
+    let missing_stdout = String::from_utf8_lossy(&missing_text.stdout);
+    assert!(missing_stdout.contains("Next: run agentic project observe"));
+    assert!(missing_stdout.contains("Binding candidates are never applied automatically"));
 
     fs::write(
         project.root.join("src/duplicate_service.java"),
@@ -1675,6 +1684,13 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
             .unwrap()
             .contains("unbound-source-artifact")
     );
+
+    let text = project.run(&["next", "change.place-order"]);
+    assert_success(&text);
+    let stdout = String::from_utf8_lossy(&text.stdout);
+    assert!(stdout.contains("Next: run agentic project observe"));
+    assert!(stdout.contains("Then: run agentic project validate-bindings"));
+    assert!(stdout.contains("Binding candidates are never applied automatically"));
 }
 
 #[test]

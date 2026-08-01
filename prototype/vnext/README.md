@@ -207,6 +207,8 @@ agentic change init change.example \
 
 生成fileは自動でstage・commitしません。内容をreviewしてGitへ追加してください。sourceがある場合は、次のread-only commandで対応言語上の物理関数・resourceを列挙できます。C++などDetector未実装の主要言語も`detector_status: unsupported`としてinventoryへ残ります。
 
+`project init`の完了時、Binding不足による`next`の停止時、および`project validate-bindings`の`invalid`時には、英語のhuman-readable出力で`project observe`からreview・再検証へ進む`Next:`を表示します。JSON出力は機械処理用Schemaを維持し、この案内を混入させません。候補が自動適用されないことも明記します。
+
 ```sh
 agentic project observe \
   --project /path/to/project \

@@ -14,6 +14,14 @@ const BINDING_GAP_KINDS: [&str; 5] = [
     "unsupported-observation",
 ];
 
+pub(crate) fn is_binding_gap_kind(kind: &str) -> bool {
+    BINDING_GAP_KINDS.contains(&kind)
+}
+
+pub(crate) fn mentions_binding_gap_kind(message: &str) -> bool {
+    BINDING_GAP_KINDS.iter().any(|kind| message.contains(kind))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BindingValidationIssue {
     pub category: String,
@@ -66,7 +74,7 @@ impl BindingValidationReport {
             .map(|gap| {
                 let kind = gap["kind"].as_str().unwrap_or("invalid-coverage-gap");
                 BindingValidationIssue {
-                    category: if BINDING_GAP_KINDS.contains(&kind) {
+                    category: if is_binding_gap_kind(kind) {
                         "binding"
                     } else {
                         "coverage"
@@ -184,16 +192,23 @@ impl BindingValidationReport {
                 issue.category, issue.kind, reference, issue.reason
             ));
         }
-        lines.push(match self.status.as_str() {
-            "valid" => "Next: Binding Records are ready for normal project evaluation.".to_owned(),
-            "invalid" => {
-                "Next: review the listed physical names, logical refs, owners, and accepted Decision authorities.".to_owned()
+        match self.status.as_str() {
+            "valid" => {
+                lines.push("Next: Binding Records are ready for normal project evaluation.".to_owned())
             }
-            _ => {
+            "invalid" => lines.extend([
+                "Next: run agentic project observe to generate a non-authoritative Binding draft."
+                    .to_owned(),
+                "Then: review the listed physical names, logical refs, owners, fact kinds, and accepted Decision authorities."
+                    .to_owned(),
+                "Then: run agentic project validate-bindings again.".to_owned(),
+                "Binding candidates are never applied automatically.".to_owned(),
+            ]),
+            _ => lines.push(
                 "Next: resolve coverage issues before treating Binding validation as complete."
-                    .to_owned()
-            }
-        });
+                    .to_owned(),
+            ),
+        }
         lines.join("\n") + "\n"
     }
 
@@ -244,5 +259,9 @@ mod tests {
         assert_eq!(report.status, "invalid");
         assert_eq!(report.summary.binding_issues, 2);
         assert_eq!(report.summary.coverage_issues, 1);
+        let text = report.render_text();
+        assert!(text.contains("Next: run agentic project observe"));
+        assert!(text.contains("Then: run agentic project validate-bindings again"));
+        assert!(text.contains("never applied automatically"));
     }
 }
