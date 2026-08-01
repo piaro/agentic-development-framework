@@ -329,7 +329,8 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "4");
+    validate_output_schema(&draft, "repository-observation-draft.schema.json");
+    assert_eq!(draft["schema_version"], "5");
     assert_eq!(draft["kind"], "repository-observation-draft");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let python = artifacts
@@ -615,6 +616,146 @@ fn project_observe_refuses_a_symlinked_draft_output() {
 }
 
 #[test]
+fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "from django.db import models\n\
+         def place_order(order):\n\
+         \x20   orders.save(order)\n",
+    )
+    .unwrap();
+    let draft_relative = ".agentic/repository-observation.draft.yaml";
+    let observed = project.run(&[
+        "project",
+        "observe",
+        "--analysis-root",
+        "src",
+        "--output",
+        draft_relative,
+    ]);
+    assert_success(&observed);
+    let active_path = project.root.join(".agentic/repository-observation.yaml");
+    let active_before = fs::read(&active_path).unwrap();
+
+    let incomplete = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert!(!incomplete.status.success());
+    assert!(String::from_utf8_lossy(&incomplete.stdout).contains("incomplete-binding"));
+
+    let draft_path = project.root.join(draft_relative);
+    let mut draft = read_yaml(&draft_path);
+    for artifact in draft["binding_artifacts"].as_array_mut().unwrap() {
+        artifact["bindings"] = match artifact["path"].as_str().unwrap() {
+            "src/place_order.py" => json!({
+                "symbols": {
+                    "place_order": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings"
+                    }
+                },
+                "resources": {
+                    "orders": {
+                        "logical_refs": {"data": "data.orders"},
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings"
+                    }
+                },
+                "methods": {
+                    "orders.save": {
+                        "fact_kinds": ["unknown_write"],
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings"
+                    }
+                }
+            }),
+            "src/publish_order.py" => json!({
+                "symbols": {
+                    "publish_order": {
+                        "logical_ref": "operation.place-order",
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings"
+                    }
+                },
+                "resources": {
+                    "order_events": {
+                        "logical_refs": {"integration": "integration.order-events"},
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings"
+                    }
+                },
+                "methods": {}
+            }),
+            path => panic!("unexpected Draft artifact: {path}"),
+        };
+    }
+    write_yaml(&draft_path, &draft);
+
+    let retained_method = draft["binding_artifacts"][0]["bindings"]["methods"]
+        .as_object_mut()
+        .unwrap()
+        .remove("orders.save")
+        .unwrap();
+    write_yaml(&draft_path, &draft);
+    let unclassified = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert!(!unclassified.status.success());
+    assert!(String::from_utf8_lossy(&unclassified.stdout).contains("unsupported-observation"));
+    draft["binding_artifacts"][0]["bindings"]["methods"]
+        .as_object_mut()
+        .unwrap()
+        .insert("orders.save".to_owned(), retained_method);
+    write_yaml(&draft_path, &draft);
+
+    let unknown_kind = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert!(!unknown_kind.status.success());
+    assert!(String::from_utf8_lossy(&unknown_kind.stdout).contains("unknown-fact-kind"));
+
+    draft["binding_artifacts"][0]["bindings"]["methods"]["orders.save"]["fact_kinds"] =
+        json!(["db_write"]);
+    draft["binding_artifacts"][0]["bindings"]["methods"]["orders.save"]["authority_ref"] =
+        json!("decision.not-accepted");
+    write_yaml(&draft_path, &draft);
+    let unaccepted = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert!(!unaccepted.status.success());
+    assert!(String::from_utf8_lossy(&unaccepted.stdout).contains("unaccepted-binding-authority"));
+
+    draft["binding_artifacts"][0]["bindings"]["methods"]["orders.save"]["authority_ref"] =
+        json!("decision.repository-bindings");
+    write_yaml(&draft_path, &draft);
+    let valid = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert_success(&valid);
+    let valid_stdout = String::from_utf8_lossy(&valid.stdout);
+    assert!(valid_stdout.contains("Binding Draft validation: valid"));
+    assert!(valid_stdout.contains("ready for an explicit promotion step"));
+    assert!(valid_stdout.contains("No authoritative project file was changed"));
+    assert_eq!(fs::read(&active_path).unwrap(), active_before);
+
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "from django.db import models\n\
+         def place_order(order):\n\
+         \x20   orders.save(order)\n\
+         # changed after review\n",
+    )
+    .unwrap();
+    let stale = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert!(!stale.status.success());
+    assert!(String::from_utf8_lossy(&stale.stdout).contains("stale-source"));
+    assert_eq!(fs::read(&active_path).unwrap(), active_before);
+
+    let json = project.run(&[
+        "project",
+        "validate-bindings",
+        "--draft",
+        draft_relative,
+        "--format",
+        "json",
+    ]);
+    assert!(!json.status.success());
+    assert!(String::from_utf8_lossy(&json.stderr).contains("supports only text output"));
+}
+
+#[test]
 fn project_observe_suggests_eight_major_orms_without_approving_them() {
     let root = temporary_test_root("project-observe-frameworks");
     fs::create_dir_all(root.join("src")).unwrap();
@@ -708,7 +849,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "4");
+    assert_eq!(draft["schema_version"], "5");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let expected = [
         ("src/django_service.py", "django-orm", "save"),

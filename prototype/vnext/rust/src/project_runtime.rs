@@ -102,6 +102,19 @@ impl LoadedProject {
         ))
     }
 
+    pub fn decisions(&self) -> Result<Vec<Value>, ProjectRuntimeError> {
+        FileProjectStore::open_with_options(
+            &self.root,
+            self.repository.clone(),
+            &self.config.contract_root,
+            &self.config.decision_root,
+            DocumentFormat::Auto,
+            &self.schema_registry,
+        )
+        .and_then(|store| store.decisions())
+        .map_err(|error| runtime_error(error.to_string()))
+    }
+
     pub fn application(&self) -> Result<Application<'_, FileProjectStore<'_>>, ApplicationError> {
         let store = FileProjectStore::open_with_options(
             &self.root,

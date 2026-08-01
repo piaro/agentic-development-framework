@@ -1,6 +1,9 @@
 use agentic_vnext_rust::binary_install::{
     BinaryInstallReceipt, binary_install_status, install_binary_candidate, rollback_binary_install,
 };
+use agentic_vnext_rust::binding_draft_validation::{
+    BindingDraftValidationReport, analysis_roots as draft_analysis_roots,
+};
 use agentic_vnext_rust::cli_output::{next_response_value, render_next_text};
 use agentic_vnext_rust::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
 use agentic_vnext_rust::delivery::{
@@ -11,7 +14,7 @@ use agentic_vnext_rust::mcp_server::run_stdio_server;
 use agentic_vnext_rust::project_runtime::LoadedProject;
 use agentic_vnext_rust::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
-    observation_draft, write_observation_draft,
+    observation_draft, read_observation_draft, write_observation_draft,
 };
 use agentic_vnext_rust::release_publisher::{
     PublishOptions, publish_release, signing_seed_from_environment,
@@ -923,6 +926,7 @@ enum ProjectManagementOperation {
     ValidateBindings {
         format: ProjectDraftFormat,
         require_clean: bool,
+        draft: Option<String>,
     },
 }
 
@@ -963,6 +967,7 @@ fn parse_project_management_command(
     let mut format_provided = false;
     let mut require_clean = false;
     let mut output = None;
+    let mut draft = None;
     let mut index = 1;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -995,6 +1000,9 @@ fn parse_project_management_command(
             "--output" => {
                 output = Some(flag_value(arguments, &mut index, "--output")?.to_owned());
             }
+            "--draft" => {
+                draft = Some(flag_value(arguments, &mut index, "--draft")?.to_owned());
+            }
             other => return Err(format!("unknown project argument: {other}")),
         }
         index += 1;
@@ -1010,6 +1018,9 @@ fn parse_project_management_command(
             if output.is_some() {
                 return Err("project init does not accept --output".to_owned());
             }
+            if draft.is_some() {
+                return Err("project init does not accept --draft".to_owned());
+            }
             ProjectManagementOperation::Init {
                 candidate_root,
                 analysis_roots,
@@ -1024,6 +1035,9 @@ fn parse_project_management_command(
             }
             if format == ProjectDraftFormat::Text {
                 return Err("project observe supports only yaml or json output".to_owned());
+            }
+            if draft.is_some() {
+                return Err("project observe does not accept --draft".to_owned());
             }
             ProjectManagementOperation::Observe {
                 analysis_roots,
@@ -1049,9 +1063,15 @@ fn parse_project_management_command(
                     "project validate-bindings supports only text or json output".to_owned(),
                 );
             }
+            if draft.is_some() && format != ProjectDraftFormat::Text {
+                return Err(
+                    "project validate-bindings --draft supports only text output".to_owned(),
+                );
+            }
             ProjectManagementOperation::ValidateBindings {
                 format,
                 require_clean,
+                draft,
             }
         }
         other => return Err(format!("unsupported project operation: {other}")),
@@ -1140,10 +1160,27 @@ fn run_project_management_command(
         ProjectManagementOperation::ValidateBindings {
             format,
             require_clean,
+            draft,
         } => {
             ensure_project_initialized(&options.project_root)?;
             let project = LoadedProject::load(&options.project_root, None, *require_clean)
                 .map_err(|error| error.to_string())?;
+            if let Some(relative) = draft {
+                let draft = read_observation_draft(&options.project_root, relative)
+                    .map_err(|error| error.to_string())?;
+                let roots = draft_analysis_roots(&draft)?;
+                let current = observation_draft(&options.project_root, &roots)
+                    .map_err(|error| error.to_string())?;
+                let decisions = project.decisions().map_err(|error| error.to_string())?;
+                let registry =
+                    SignalCatalogRegistry::built_in().map_err(|error| error.to_string())?;
+                let report =
+                    BindingDraftValidationReport::build(&draft, &current, &decisions, &registry);
+                return Ok(ProjectManagementResponse {
+                    output: report.render_text(),
+                    success: report.is_valid(),
+                });
+            }
             let report = project
                 .binding_validation_report()
                 .map_err(|error| error.to_string())?;
@@ -1548,7 +1585,7 @@ fn usage_text() -> &'static str {
 usage:\n\
   agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
   agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
-  agentic project validate-bindings [--project <root>] [--format <text|json>] [--require-clean]\n\
+  agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
@@ -1624,7 +1661,7 @@ fn catalog_usage() {
 
 fn project_management_usage() {
     eprintln!(
-        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n  agentic project validate-bindings [--project <root>] [--format <text|json>] [--require-clean]"
+        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n  agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]"
     );
 }
 

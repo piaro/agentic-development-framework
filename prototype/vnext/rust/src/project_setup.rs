@@ -7,6 +7,7 @@ use crate::source_detection::{
     SourceObservation, SourceObservationKind, detector_for_path, source_pathspecs,
 };
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, OpenOptions};
@@ -222,6 +223,7 @@ pub fn observation_draft(
     let framework_catalog = framework_catalog(&root)?;
     let mut artifacts = Vec::new();
     let mut binding_artifacts = Vec::new();
+    let mut source_digests = BTreeMap::new();
     for relative in output.lines().filter(|path| under_roots(path, &roots)) {
         let path = root.join(relative);
         let metadata = fs::symlink_metadata(&path)
@@ -234,11 +236,17 @@ pub fn observation_draft(
         if !metadata.is_file() {
             continue;
         }
+        let source_bytes =
+            fs::read(&path).map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+        source_digests.insert(
+            relative.to_owned(),
+            format!("sha256:{:x}", Sha256::digest(&source_bytes)),
+        );
         let detector = detector_for_path(relative)
             .ok_or_else(|| setup_error(format!("source language is unknown: {relative}")))?;
         let source = if detector.is_supported() {
             Some(
-                fs::read_to_string(&path)
+                String::from_utf8(source_bytes)
                     .map_err(|error| setup_error(format!("{}: {error}", path.display())))?,
             )
         } else {
@@ -295,9 +303,10 @@ pub fn observation_draft(
     artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     binding_artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     Ok(json!({
-        "schema_version": "4",
+        "schema_version": "5",
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
+        "source_digests": source_digests,
         "artifacts": artifacts,
         "binding_artifacts": binding_artifacts,
         "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with reviewed logical_refs or fact_kinds, owner, and accepted Decision authority_ref before copying the artifacts into a repository observation schema v5 file. Suggested fact kinds are non-authoritative, and candidates with an empty list require call-specific classification. This draft is not authoritative and never updates project files.",
@@ -333,6 +342,32 @@ pub fn write_observation_draft(
     let path = root.join(relative);
     write_new(&path, contents)?;
     Ok(path)
+}
+
+/// Read one Project-relative Observation Draft without following symlinks.
+pub fn read_observation_draft(
+    project_root: &Path,
+    relative: &str,
+) -> Result<Value, ProjectSetupError> {
+    let root = project_root
+        .canonicalize()
+        .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
+    assert_git_root(&root)?;
+    let relative = Path::new(relative);
+    reject_symlink_components(&root, relative)?;
+    let path = root.join(relative);
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(setup_error(format!(
+            "Observation Draft is not a regular file: {}",
+            path.display()
+        )));
+    }
+    let contents = fs::read_to_string(&path)
+        .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+    serde_yaml::from_str(&contents)
+        .map_err(|error| setup_error(format!("{}: {error}", path.display())))
 }
 
 fn binding_artifact_template(
