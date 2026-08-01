@@ -483,6 +483,41 @@ mod tests {
     }
 
     #[test]
+    fn compiles_security_boundary_rules_with_exact_bindings() {
+        let source = json!({
+            "requirements": [{
+                "id": "security-review",
+                "phase": "before-build",
+                "role": "Analyst",
+                "result_schema": "result.analysis"
+            }],
+            "rules": [
+                {
+                    "id": "authorization-review",
+                    "signal": "authorization-control-change",
+                    "requirement": "security-review",
+                    "subjects": ["binding.authorization", "binding.operation"]
+                },
+                {
+                    "id": "sensitive-data-review",
+                    "signal": "sensitive-data-access",
+                    "requirement": "security-review",
+                    "subjects": ["binding.data", "binding.operation"]
+                }
+            ]
+        });
+        let index = compile_rule_index(&source, &registry()).unwrap();
+        assert_eq!(
+            index
+                .rules
+                .iter()
+                .map(|rule| rule.signal.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            ["authorization-control-change", "sensitive-data-access"]
+        );
+    }
+
+    #[test]
     fn rejects_dependency_cycle() {
         let source = json!({
             "requirements": [

@@ -54,7 +54,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     assert!(json_output.stderr.is_empty());
     let catalog: Value = serde_json::from_slice(&json_output.stdout).unwrap();
     validate_catalog_schema(&catalog, "signal-domain-catalog.schema.json");
-    assert_eq!(catalog["catalog_version"], "2");
+    assert_eq!(catalog["catalog_version"], "3");
     assert_eq!(catalog["domains"][0]["id"], "data-persistence");
     assert_eq!(
         catalog["domains"][0]["signals"],
@@ -68,18 +68,32 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
             "message-or-event-publish"
         ])
     );
-    assert_eq!(catalog["fact_kinds"][0]["id"], "db_write");
+    assert_eq!(catalog["domains"][2]["id"], "security-boundary");
     assert_eq!(
-        catalog["fact_kinds"][1]["emits"],
+        catalog["domains"][2]["signals"],
+        json!(["authorization-control-change", "sensitive-data-access"])
+    );
+    assert_eq!(catalog["fact_kinds"][0]["id"], "authorization_change");
+    assert_eq!(
+        catalog["fact_kinds"][0]["emits"],
+        json!(["authorization-control-change"])
+    );
+    assert_eq!(catalog["fact_kinds"][1]["id"], "db_write");
+    assert_eq!(
+        catalog["fact_kinds"][2]["emits"],
         json!(["distributed-effect", "external-system-call"])
     );
     assert_eq!(
-        catalog["fact_kinds"][2]["emits"],
+        catalog["fact_kinds"][3]["emits"],
         json!(["distributed-effect", "message-or-event-publish"])
     );
     assert_eq!(
-        catalog["fact_kinds"][3]["emits"],
+        catalog["fact_kinds"][4]["emits"],
         json!(["object-storage-write", "persistent-data-write"])
+    );
+    assert_eq!(
+        catalog["fact_kinds"][5]["emits"],
+        json!(["sensitive-data-access"])
     );
     let mut body = catalog.as_object().unwrap().clone();
     let digest = body.remove("digest").unwrap();
@@ -95,11 +109,13 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
         .unwrap();
     assert_success(&text_output);
     let text = String::from_utf8_lossy(&text_output.stdout);
-    assert!(text.contains("Signal Domain Catalog 2"));
+    assert!(text.contains("Signal Domain Catalog 3"));
     assert!(text.contains("data-persistence: Data persistence"));
     assert!(text.contains("external_call -> distributed-effect, external-system-call"));
     assert!(text.contains("object_write -> object-storage-write, persistent-data-write"));
     assert!(text.contains("message_publish -> distributed-effect, message-or-event-publish"));
+    assert!(text.contains("authorization_change -> authorization-control-change"));
+    assert!(text.contains("sensitive_data_access -> sensitive-data-access"));
 
     let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args(["catalog", "unknown"])
@@ -2180,6 +2196,64 @@ fn multi_fact_binding_fails_closed_when_one_logical_ref_is_missing() {
             .contains("has no integration logical ref required by external_call")
     );
     assert!(output["context"].is_null());
+}
+
+#[test]
+fn reviewed_security_bindings_emit_authorization_and_sensitive_data_signals() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n\
+         \x20   permissions.grant(order)\n\
+         \x20   customers.find(order)\n",
+    )
+    .unwrap();
+    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut observation = read_yaml(&observation_path);
+    observation["schema_version"] = json!("5");
+    observation["artifacts"][0]["bindings"]["resources"]["permissions"] = json!({
+        "logical_refs": {
+            "authorization": "authorization.order-administration",
+        },
+        "owner": "team.security",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["resources"]["customers"] = json!({
+        "logical_refs": {
+            "data": "data.customer-pii",
+        },
+        "owner": "team.security",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["permissions.grant"] = json!({
+        "fact_kinds": ["authorization_change"],
+        "owner": "team.security",
+        "authority_ref": "decision.repository-bindings",
+    });
+    observation["artifacts"][0]["bindings"]["methods"]["customers.find"] = json!({
+        "fact_kinds": ["sensitive_data_access"],
+        "owner": "team.security",
+        "authority_ref": "decision.repository-bindings",
+    });
+    write_yaml(&observation_path, &observation);
+
+    let output = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&output);
+    let output: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(output["state"], "needs-analysis");
+    assert!(output["diagnostics"].as_array().is_some_and(Vec::is_empty));
+    assert_eq!(
+        signals_for_binding(
+            &output,
+            "authorization",
+            "authorization.order-administration"
+        ),
+        ["authorization-control-change"]
+    );
+    assert_eq!(
+        signals_for_binding(&output, "data", "data.customer-pii"),
+        ["sensitive-data-access"]
+    );
 }
 
 #[test]

@@ -2,7 +2,7 @@
 
 Signal Domain Catalogは、Detectorが出力できるSignal、必要なbinding、入力となるtyped repository factを固定する組込み契約です。domainはSignalの分類であり、source codeの意味を推測したり、Ruleを暗黙に選択したりしません。
 
-## Catalog v2
+## Catalog v3
 
 | Domain | Signal | 必須binding | Repository fact |
 |---|---|---|---|
@@ -13,6 +13,8 @@ Signal Domain Catalogは、Detectorが出力できるSignal、必要なbinding�
 | `distributed-integration` | `distributed-effect` | `integration`, `operation` | `external_call` |
 | `distributed-integration` | `external-system-call` | `integration`, `operation` | `external_call` |
 | `distributed-integration` | `message-or-event-publish` | `integration`, `operation` | `message_publish` |
+| `security-boundary` | `authorization-control-change` | `authorization`, `operation` | `authorization_change` |
+| `security-boundary` | `sensitive-data-access` | `data`, `operation` | `sensitive_data_access` |
 
 `message_publish`と`external_call`は一般的な`distributed-effect`も出力し、`object_write`は一般的な`persistent-data-write`も出力します。このため既存の汎用Ruleを維持しながら、用途を限定したRuleを追加できます。Ruleは従来どおり個別のSignal IDを指定し、domain全体を指定するwildcardはありません。
 
@@ -46,6 +48,31 @@ methods:
 
 `project observe`は、主要HTTP clientとAmazon S3・Google Cloud Storage・Azure Blob Storageについて、manifest・import・型・receiverの根拠がある呼出しを非authoritativeな候補として提示します。`suggested_fact_kinds`があってもBindingへ自動転記せず、reviewerが意味を確認します。明確なObject Storage uploadは`external_call`と`object_write`の両方を提示します。JavaScript版S3の`client.send`はCommandによって読書きが変わるため空listにし、receiverのないbare `fetch()`も安定したresource Bindingを作れないため対象外です。
 
+Security factは名前だけでは判定しません。たとえば`grant`が認可変更か、`find`の対象が機密dataかはProject固有だからです。導入先がaccepted Decisionに基づき、次のように明示した場合だけSignalを生成します。
+
+```yaml
+resources:
+  permissions:
+    logical_refs:
+      authorization: authorization.order-administration
+    owner: team.security
+    authority_ref: decision.repository-bindings
+  customers:
+    logical_refs:
+      data: data.customer-pii
+    owner: team.security
+    authority_ref: decision.repository-bindings
+methods:
+  permissions.grant:
+    fact_kinds: [authorization_change]
+    owner: team.security
+    authority_ref: decision.repository-bindings
+  customers.find:
+    fact_kinds: [sensitive_data_access]
+    owner: team.security
+    authority_ref: decision.repository-bindings
+```
+
 ## 確認方法
 
 ```sh
@@ -71,4 +98,4 @@ JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、c
 - source observationとBinding Recordが、そのfactを根拠付きで生成できること
 - Rule、Schema、golden、Detector benchmark、利用案内の更新
 
-framework固有APIのmethod名だけで意味を決めません。安全に分類できない呼出しはBinding Recordによるreviewを要求し、解析不能・未対応の入力はcoverage gapとして停止します。将来の候補である認可変更や機密data access等も、根拠となるtyped factとbinding契約が定義されるまでは標準domainへ追加しません。
+framework固有APIのmethod名だけで意味を決めません。安全に分類できない呼出しはBinding Recordによるreviewを要求し、解析不能・未対応の入力はcoverage gapとして停止します。

@@ -1,10 +1,10 @@
 {
-  "catalog_version": "2",
+  "catalog_version": "3",
   "detector": {
     "id": "typed-repository-fact",
     "version": "3"
   },
-  "digest": "sha256:ffdbd654495c7e2f45122e0df1817ff79f34a43c21e2d806c7c71caf6f460958",
+  "digest": "sha256:939403ac80fad0beda70ec56cbbd118f3d448c0f3f421b96079f5b8154cb9875",
   "domains": [
     {
       "description": "Durable writes to application-owned data",
@@ -24,9 +24,34 @@
         "message-or-event-publish"
       ],
       "title": "Distributed integration"
+    },
+    {
+      "description": "Authorization changes and access to classified data",
+      "id": "security-boundary",
+      "signals": [
+        "authorization-control-change",
+        "sensitive-data-access"
+      ],
+      "title": "Security boundary"
     }
   ],
   "fact_kinds": [
+    {
+      "bindings": [
+        {
+          "binding": "authorization",
+          "fact_field": "authorization"
+        },
+        {
+          "binding": "operation",
+          "fact_field": "operation"
+        }
+      ],
+      "emits": [
+        "authorization-control-change"
+      ],
+      "id": "authorization_change"
+    },
     {
       "bindings": [
         {
@@ -93,10 +118,36 @@
         "persistent-data-write"
       ],
       "id": "object_write"
+    },
+    {
+      "bindings": [
+        {
+          "binding": "data",
+          "fact_field": "data"
+        },
+        {
+          "binding": "operation",
+          "fact_field": "operation"
+        }
+      ],
+      "emits": [
+        "sensitive-data-access"
+      ],
+      "id": "sensitive_data_access"
     }
   ],
   "schema_version": "1",
   "signals": [
+    {
+      "bindings": [
+        "authorization",
+        "operation"
+      ],
+      "detector_id": "typed-repository-fact",
+      "detector_version": "3",
+      "domain": "security-boundary",
+      "id": "authorization-control-change"
+    },
     {
       "bindings": [
         "integration",
@@ -146,6 +197,16 @@
       "detector_version": "3",
       "domain": "data-persistence",
       "id": "persistent-data-write"
+    },
+    {
+      "bindings": [
+        "data",
+        "operation"
+      ],
+      "detector_id": "typed-repository-fact",
+      "detector_version": "3",
+      "domain": "security-boundary",
+      "id": "sensitive-data-access"
     }
   ]
 }

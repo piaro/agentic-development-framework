@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "2";
+pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "3";
 pub const TYPED_FACT_DETECTOR_ID: &str = "typed-repository-fact";
 pub const TYPED_FACT_DETECTOR_VERSION: &str = "3";
 
@@ -129,8 +129,21 @@ impl SignalCatalogRegistry {
                         "message-or-event-publish",
                     ]),
                 },
+                SignalDomainDefinition {
+                    id: "security-boundary".to_owned(),
+                    title: "Security boundary".to_owned(),
+                    description: "Authorization changes and access to classified data".to_owned(),
+                    signals: strings(&["authorization-control-change", "sensitive-data-access"]),
+                },
             ],
             vec![
+                SignalDefinition {
+                    id: "authorization-control-change".to_owned(),
+                    domain: "security-boundary".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["authorization", "operation"]),
+                },
                 SignalDefinition {
                     id: "distributed-effect".to_owned(),
                     domain: "distributed-integration".to_owned(),
@@ -166,8 +179,29 @@ impl SignalCatalogRegistry {
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["data", "operation"]),
                 },
+                SignalDefinition {
+                    id: "sensitive-data-access".to_owned(),
+                    domain: "security-boundary".to_owned(),
+                    detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
+                    detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
+                    bindings: strings(&["data", "operation"]),
+                },
             ],
             vec![
+                RepositoryFactDefinition {
+                    id: "authorization_change".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "authorization".to_owned(),
+                            fact_field: "authorization".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["authorization-control-change"]),
+                },
                 RepositoryFactDefinition {
                     id: "db_write".to_owned(),
                     bindings: vec![
@@ -223,6 +257,20 @@ impl SignalCatalogRegistry {
                         },
                     ],
                     emits: strings(&["object-storage-write", "persistent-data-write"]),
+                },
+                RepositoryFactDefinition {
+                    id: "sensitive_data_access".to_owned(),
+                    bindings: vec![
+                        FactBindingDefinition {
+                            binding: "data".to_owned(),
+                            fact_field: "data".to_owned(),
+                        },
+                        FactBindingDefinition {
+                            binding: "operation".to_owned(),
+                            fact_field: "operation".to_owned(),
+                        },
+                    ],
+                    emits: strings(&["sensitive-data-access"]),
                 },
             ],
         )
@@ -594,9 +642,9 @@ mod tests {
     fn built_in_registry_defines_domains_detector_and_exact_bindings() {
         let registry = SignalCatalogRegistry::built_in().unwrap();
         let catalog = registry.catalog();
-        assert_eq!(catalog.domains.len(), 2);
-        assert_eq!(catalog.signals.len(), 5);
-        assert_eq!(catalog.fact_kinds.len(), 4);
+        assert_eq!(catalog.domains.len(), 3);
+        assert_eq!(catalog.signals.len(), 7);
+        assert_eq!(catalog.fact_kinds.len(), 6);
         assert_eq!(catalog.digest, registry.digest());
 
         let definition = registry.signal_definition("persistent-data-write").unwrap();
@@ -656,12 +704,28 @@ mod tests {
                 .emits,
             strings(&["object-storage-write", "persistent-data-write"])
         );
+        assert_eq!(
+            registry
+                .repository_fact_definition("authorization_change")
+                .unwrap()
+                .emits,
+            strings(&["authorization-control-change"])
+        );
+        assert_eq!(
+            registry
+                .repository_fact_definition("sensitive_data_access")
+                .unwrap()
+                .emits,
+            strings(&["sensitive-data-access"])
+        );
     }
 
     #[test]
     fn registry_rejects_conflicting_ids_before_merge() {
         let mut catalog = SignalCatalogRegistry::built_in().unwrap().catalog();
-        catalog.signals.push(catalog.signals[0].clone());
+        let duplicate = catalog.signals[0].clone();
+        let duplicate_id = duplicate.id.clone();
+        catalog.signals.push(duplicate);
         let error = SignalCatalogRegistry::from_definitions(
             catalog.catalog_version,
             catalog.detector,
@@ -670,6 +734,9 @@ mod tests {
             catalog.fact_kinds,
         )
         .unwrap_err();
-        assert_eq!(error.to_string(), "duplicate Signal ID: distributed-effect");
+        assert_eq!(
+            error.to_string(),
+            format!("duplicate Signal ID: {duplicate_id}")
+        );
     }
 }

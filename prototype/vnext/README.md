@@ -94,7 +94,7 @@ EvidenceはAction発行後に`Application::add_evidence`で追記し、Resultの
 
 ### Standard Signal Domains
 
-組込みCatalog v2は、標準Signalを`data-persistence`と`distributed-integration`の2 domainに整理します。domainは分類用metadataであり、Ruleは従来どおり個別のSignal IDを指定します。domainを指定した一括適用や、domain名からの意味推測は行いません。
+組込みCatalog v3は、標準Signalを`data-persistence`、`distributed-integration`、`security-boundary`の3 domainに整理します。domainは分類用metadataであり、Ruleは従来どおり個別のSignal IDを指定します。domainを指定した一括適用や、domain名からの意味推測は行いません。
 
 ```sh
 agentic catalog signal-domains --format text
@@ -544,7 +544,7 @@ sources:
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。Schema v5では1つのresourceにbinding種別ごとの`logical_refs`、1つのmethodに複数の`fact_kinds`を記録でき、全組合せの妥当性を確認してから複数factを一括生成します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
 - `project observe`のDraft v4は、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
 - Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
-- Signal Domain Catalog v2は、`db_write`・`message_publish`に加え、review済みMethod Bindingから生成する`external_call`・`object_write`を収録します。`external_call`は`distributed-effect`と`external-system-call`、`object_write`は`persistent-data-write`と`object-storage-write`を出力します。method名だけでは自動分類せず、前者は`integration.*`、後者は`data.*`のresource Bindingを要求します。認可変更と機密data accessは、fact・binding・検出根拠の契約が未定義なため未収録です。
+- Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。

@@ -13,7 +13,7 @@
   ],
   "properties": {
     "schema_version": {"const": "1"},
-    "catalog_version": {"const": "2"},
+    "catalog_version": {"const": "3"},
     "detector": {
       "type": "object",
       "required": ["id", "version"],

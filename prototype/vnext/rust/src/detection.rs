@@ -429,6 +429,11 @@ mod tests {
             "change.integrations",
             &[
                 json!({
+                    "kind": "authorization_change",
+                    "operation": "operation.manage-access",
+                    "authorization": "authorization.order-administration",
+                }),
+                json!({
                     "kind": "external_call",
                     "operation": "operation.place-order",
                     "integration": "integration.payment-provider",
@@ -437,6 +442,11 @@ mod tests {
                     "kind": "object_write",
                     "operation": "operation.place-order",
                     "data": "data.order-archive",
+                }),
+                json!({
+                    "kind": "sensitive_data_access",
+                    "operation": "operation.view-customer",
+                    "data": "data.customer-pii",
                 }),
             ],
             &json!({
@@ -455,10 +465,12 @@ mod tests {
                 .map(|candidate| candidate.signal.as_str())
                 .collect::<Vec<_>>(),
             [
+                "authorization-control-change",
                 "distributed-effect",
                 "external-system-call",
                 "object-storage-write",
                 "persistent-data-write",
+                "sensitive-data-access",
             ]
         );
     }
