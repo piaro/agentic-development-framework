@@ -329,3 +329,230 @@ projects:
             line: 5
             suggested_kind: message_publish
             method_binding_required: false
+
+  - id: external-api-clients
+    root: projects/external-api-clients
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests: []
+    cases:
+      - path: src/requests_service.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: notify
+            resource: requests
+            method: post
+            line: 4
+        expected_framework_candidates:
+          - framework: python-requests
+            symbol: notify
+            resource: requests
+            method: post
+            line: 4
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/httpx_service.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: lookup
+            resource: httpx
+            method: get
+            line: 4
+        expected_framework_candidates:
+          - framework: python-httpx
+            symbol: lookup
+            resource: httpx
+            method: get
+            line: 4
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/fetch_service.ts
+        language: typescript
+        expected_observations:
+          - kind: other_method_call
+            symbol: notify
+            resource: window
+            method: fetch
+            line: 2
+        expected_framework_candidates:
+          - framework: web-fetch
+            symbol: notify
+            resource: window
+            method: fetch
+            line: 2
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/axios_service.ts
+        language: typescript
+        expected_observations:
+          - kind: other_method_call
+            symbol: notify
+            resource: axios
+            method: post
+            line: 3
+        expected_framework_candidates:
+          - framework: axios
+            symbol: notify
+            resource: axios
+            method: post
+            line: 3
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/JavaHttpService.java
+        language: java
+        expected_observations:
+          - kind: other_method_call
+            symbol: JavaHttpService.notify
+            resource: httpClient
+            method: sendAsync
+            line: 4
+        expected_framework_candidates:
+          - framework: java-http-client
+            symbol: JavaHttpService.notify
+            resource: httpClient
+            method: sendAsync
+            line: 4
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/SpringHttpService.kt
+        language: kotlin
+        expected_observations:
+          - kind: other_method_call
+            symbol: notify
+            resource: webClient
+            method: post
+            line: 3
+          - kind: other_method_call
+            symbol: notify
+            resource: webClient.post()
+            method: uri
+            line: 3
+          - kind: other_method_call
+            symbol: notify
+            resource: webClient.post().uri("/orders")
+            method: retrieve
+            line: 3
+        expected_framework_candidates:
+          - framework: spring-webclient
+            symbol: notify
+            resource: webClient.post().uri("/orders")
+            method: retrieve
+            line: 3
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/go_http_service.go
+        language: go
+        expected_observations:
+          - kind: other_method_call
+            symbol: Notify
+            resource: client
+            method: Do
+            line: 4
+        expected_framework_candidates:
+          - framework: go-net-http
+            symbol: Notify
+            resource: client
+            method: Do
+            line: 4
+            suggested_kind: external_call
+            method_binding_required: true
+      - path: src/DotnetHttpService.cs
+        language: csharp
+        expected_observations:
+          - kind: other_method_call
+            symbol: DotnetHttpService.Notify
+            resource: httpClient
+            method: SendAsync
+            line: 4
+        expected_framework_candidates:
+          - framework: dotnet-http-client
+            symbol: DotnetHttpService.Notify
+            resource: httpClient
+            method: SendAsync
+            line: 4
+            suggested_kind: external_call
+            method_binding_required: true
+
+  - id: object-storage-sdks
+    root: projects/object-storage-sdks
+    provenance:
+      kind: authored-fixture
+      repository: null
+      revision: null
+      license: LicenseRef-AgenticDevelopmentKit
+    manifests: []
+    cases:
+      - path: src/s3_service.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: <module>
+            resource: boto3
+            method: client
+            line: 2
+          - kind: other_method_call
+            symbol: archive
+            resource: s3
+            method: put_object
+            line: 4
+        expected_framework_candidates:
+          - framework: amazon-s3
+            symbol: archive
+            resource: s3
+            method: put_object
+            line: 4
+            suggested_kind: object_write
+            method_binding_required: true
+      - path: src/gcs_service.ts
+        language: typescript
+        expected_observations:
+          - kind: other_method_call
+            symbol: archive
+            resource: file
+            method: save
+            line: 3
+        expected_framework_candidates:
+          - framework: google-cloud-storage
+            symbol: archive
+            resource: file
+            method: save
+            line: 3
+            suggested_kind: object_write
+            method_binding_required: true
+      - path: src/AzureBlobService.cs
+        language: csharp
+        expected_observations:
+          - kind: other_method_call
+            symbol: AzureBlobService.Archive
+            resource: blobClient
+            method: UploadAsync
+            line: 4
+        expected_framework_candidates:
+          - framework: azure-blob-storage
+            symbol: AzureBlobService.Archive
+            resource: blobClient
+            method: UploadAsync
+            line: 4
+            suggested_kind: object_write
+            method_binding_required: true
+      - path: src/s3_service.ts
+        language: typescript
+        expected_observations:
+          - kind: other_method_call
+            symbol: archive
+            resource: s3
+            method: send
+            line: 3
+        expected_framework_candidates:
+          - framework: amazon-s3
+            symbol: archive
+            resource: s3
+            method: send
+            line: 3
+            suggested_kind: null
+            method_binding_required: true

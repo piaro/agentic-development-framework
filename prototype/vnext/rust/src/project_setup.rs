@@ -387,16 +387,6 @@ fn binding_artifact_template(
     })
 }
 
-fn source_observation_kind_name(kind: SourceObservationKind) -> &'static str {
-    match kind {
-        SourceObservationKind::DbWrite => "db_write",
-        SourceObservationKind::MessagePublish => "message_publish",
-        SourceObservationKind::OtherMethodCall => {
-            unreachable!("unsupported observations cannot be suggested binding kinds")
-        }
-    }
-}
-
 fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
     json!({
         "framework": candidate.framework,
@@ -405,7 +395,7 @@ fn framework_candidate_value(candidate: FrameworkCandidate) -> Value {
         "method": candidate.method,
         "line": candidate.line,
         "binding_key": candidate.binding_key,
-        "suggested_kind": candidate.suggested_kind.map(source_observation_kind_name),
+        "suggested_kind": candidate.suggested_kind.map(|kind| kind.as_str()),
         "method_binding_required": candidate.method_binding_required,
         "review_status": "required",
         "evidence": candidate.evidence,

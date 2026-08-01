@@ -23,6 +23,17 @@ const GOOGLE_CLOUD_PUBSUB: &str = "google-cloud-pubsub";
 const AZURE_SERVICE_BUS: &str = "azure-service-bus";
 const NATS: &str = "nats";
 const REDIS_STREAMS: &str = "redis-streams";
+const PYTHON_REQUESTS: &str = "python-requests";
+const PYTHON_HTTPX: &str = "python-httpx";
+const WEB_FETCH: &str = "web-fetch";
+const AXIOS: &str = "axios";
+const JAVA_HTTP_CLIENT: &str = "java-http-client";
+const SPRING_WEBCLIENT: &str = "spring-webclient";
+const GO_NET_HTTP: &str = "go-net-http";
+const DOTNET_HTTP_CLIENT: &str = "dotnet-http-client";
+const AMAZON_S3: &str = "amazon-s3";
+const GOOGLE_CLOUD_STORAGE: &str = "google-cloud-storage";
+const AZURE_BLOB_STORAGE: &str = "azure-blob-storage";
 
 // Method vocabularies follow the projects' current official persistence and
 // publishing references. Keep uncertain dual-use APIs as `suggested_kind: None`.
@@ -47,6 +58,41 @@ const REDIS_STREAMS: &str = "redis-streams";
 // https://learn.microsoft.com/dotnet/api/overview/azure/messaging.servicebus-readme
 // NATS: https://docs.nats.io/using-nats/developer/sending
 // Redis Streams: https://redis.io/docs/latest/commands/xadd/
+// Requests: https://requests.readthedocs.io/en/stable/api/
+// HTTPX: https://www.python-httpx.org/api/
+// Fetch: https://developer.mozilla.org/en-US/docs/Web/API/Window/fetch
+// Axios: https://axios-http.com/docs/api_intro
+// Java HttpClient:
+// https://docs.oracle.com/en/java/javase/25/docs/api/java.net.http/java/net/http/HttpClient.html
+// Spring WebClient:
+// https://docs.spring.io/spring-framework/reference/web/webflux-webclient.html
+// Go net/http: https://pkg.go.dev/net/http#Client
+// .NET HttpClient:
+// https://learn.microsoft.com/dotnet/api/system.net.http.httpclient
+// Amazon S3:
+// https://docs.aws.amazon.com/AmazonS3/latest/userguide/upload-objects.html
+// Google Cloud Storage: https://cloud.google.com/storage/docs/uploading-objects
+// Azure Blob Storage:
+// https://learn.microsoft.com/azure/storage/blobs/storage-blob-upload
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum SuggestedFactKind {
+    DbWrite,
+    MessagePublish,
+    ExternalCall,
+    ObjectWrite,
+}
+
+impl SuggestedFactKind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DbWrite => "db_write",
+            Self::MessagePublish => "message_publish",
+            Self::ExternalCall => "external_call",
+            Self::ObjectWrite => "object_write",
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrameworkCandidate {
@@ -56,7 +102,7 @@ pub struct FrameworkCandidate {
     pub method: String,
     pub line: usize,
     pub binding_key: String,
-    pub suggested_kind: Option<SourceObservationKind>,
+    pub suggested_kind: Option<SuggestedFactKind>,
     pub method_binding_required: bool,
     pub evidence: Vec<String>,
     pub rationale: &'static str,
@@ -179,6 +225,52 @@ impl FrameworkCatalog {
                     "stackexchange.redis",
                 ][..],
             ),
+            (
+                PYTHON_REQUESTS,
+                &["requests==", "requests>=", "requests~=", "\"requests\""][..],
+            ),
+            (
+                PYTHON_HTTPX,
+                &["httpx==", "httpx>=", "httpx~=", "\"httpx\""][..],
+            ),
+            (AXIOS, &["\"axios\"", "'axios'"][..]),
+            (
+                SPRING_WEBCLIENT,
+                &["spring-webflux", "spring-boot-starter-webflux"][..],
+            ),
+            (
+                AMAZON_S3,
+                &[
+                    "boto3",
+                    "@aws-sdk/client-s3",
+                    "@aws-sdk/lib-storage",
+                    "software.amazon.awssdk.services.s3",
+                    "awssdk.s3",
+                    "aws-sdk-go-v2/service/s3",
+                    "aws-sdk-s3",
+                ][..],
+            ),
+            (
+                GOOGLE_CLOUD_STORAGE,
+                &[
+                    "google-cloud-storage",
+                    "google/cloud-storage",
+                    "@google-cloud/storage",
+                    "google.cloud:google-cloud-storage",
+                    "google.cloud.storage",
+                    "cloud.google.com/go/storage",
+                ][..],
+            ),
+            (
+                AZURE_BLOB_STORAGE,
+                &[
+                    "azure-storage-blob",
+                    "azure.storage.blobs",
+                    "azure-storage-blobs",
+                    "@azure/storage-blob",
+                    "azblob",
+                ][..],
+            ),
         ] {
             if markers.iter().any(|marker| content.contains(marker)) {
                 self.project_evidence
@@ -238,7 +330,7 @@ impl FrameworkCatalog {
 #[derive(Clone, Copy)]
 struct FrameworkRule {
     framework: &'static str,
-    suggested_kind: Option<SourceObservationKind>,
+    suggested_kind: Option<SuggestedFactKind>,
     rationale: &'static str,
 }
 
@@ -307,6 +399,20 @@ fn framework_rules(language: &str, method: &str) -> Vec<FrameworkRule> {
     for (framework, methods, rationale) in messaging_rules(language) {
         if methods.contains(&method) {
             rules.push(message_rule(framework, rationale));
+        }
+    }
+    for (framework, methods, rationale) in external_call_rules(language) {
+        if methods.contains(&method) {
+            rules.push(external_call_rule(framework, rationale));
+        }
+    }
+    for (framework, methods, suggested_kind, rationale) in object_storage_rules(language) {
+        if methods.contains(&method) {
+            rules.push(FrameworkRule {
+                framework,
+                suggested_kind,
+                rationale,
+            });
         }
     }
     rules
@@ -534,10 +640,216 @@ fn messaging_rules(language: &str) -> Vec<(&'static str, &'static [&'static str]
     rules
 }
 
+fn external_call_rules(
+    language: &str,
+) -> Vec<(&'static str, &'static [&'static str], &'static str)> {
+    let mut rules = Vec::new();
+    match language {
+        "python" => {
+            rules.push((
+                PYTHON_REQUESTS,
+                REQUESTS_METHODS,
+                "Requests sends an HTTP request to an external endpoint.",
+            ));
+            rules.push((
+                PYTHON_HTTPX,
+                HTTPX_METHODS,
+                "HTTPX sends an HTTP request to an external endpoint.",
+            ));
+        }
+        "javascript" | "jsx" | "typescript" | "tsx" => {
+            rules.push((
+                WEB_FETCH,
+                &["fetch"][..],
+                "Fetch starts an HTTP request through an explicit global receiver.",
+            ));
+            rules.push((
+                AXIOS,
+                AXIOS_METHODS,
+                "Axios sends an HTTP request to an external endpoint.",
+            ));
+        }
+        "java" | "kotlin" => {
+            rules.push((
+                JAVA_HTTP_CLIENT,
+                &["send", "sendAsync"][..],
+                "Java HttpClient sends a reviewed HttpRequest.",
+            ));
+            rules.push((
+                SPRING_WEBCLIENT,
+                &["retrieve", "exchangeToMono", "exchangeToFlux"][..],
+                "Spring WebClient exchanges a prepared HTTP request.",
+            ));
+        }
+        "go" => rules.push((
+            GO_NET_HTTP,
+            &["Do", "Get", "Head", "Post", "PostForm"][..],
+            "Go net/http Client sends an HTTP request.",
+        )),
+        "csharp" => rules.push((
+            DOTNET_HTTP_CLIENT,
+            &[
+                "Send",
+                "SendAsync",
+                "GetAsync",
+                "GetByteArrayAsync",
+                "GetStreamAsync",
+                "GetStringAsync",
+                "PostAsync",
+                "PutAsync",
+                "PatchAsync",
+                "DeleteAsync",
+            ][..],
+            ".NET HttpClient sends an HTTP request to an external endpoint.",
+        )),
+        _ => {}
+    }
+    rules
+}
+
+type ObjectStorageRule = (
+    &'static str,
+    &'static [&'static str],
+    Option<SuggestedFactKind>,
+    &'static str,
+);
+
+fn object_storage_rules(language: &str) -> Vec<ObjectStorageRule> {
+    let write = Some(SuggestedFactKind::ObjectWrite);
+    let mut rules = Vec::new();
+    match language {
+        "python" => {
+            rules.push((
+                AMAZON_S3,
+                &["put_object", "upload_file", "upload_fileobj"][..],
+                write,
+                "Amazon S3 put or upload API writes an object.",
+            ));
+            rules.push((
+                GOOGLE_CLOUD_STORAGE,
+                &[
+                    "upload_from_filename",
+                    "upload_from_file",
+                    "upload_from_string",
+                ][..],
+                write,
+                "Google Cloud Storage Blob upload API writes an object.",
+            ));
+            rules.push((
+                AZURE_BLOB_STORAGE,
+                &["upload_blob"][..],
+                write,
+                "Azure BlobClient upload API writes a blob.",
+            ));
+        }
+        "javascript" | "jsx" | "typescript" | "tsx" => {
+            rules.push((
+                AMAZON_S3,
+                &["send"][..],
+                None,
+                "S3Client send can execute read or write commands; inspect the command before choosing a kind.",
+            ));
+            rules.push((
+                GOOGLE_CLOUD_STORAGE,
+                &["save"][..],
+                write,
+                "Google Cloud Storage File save API writes an object.",
+            ));
+            rules.push((
+                AZURE_BLOB_STORAGE,
+                &["upload", "uploadData", "uploadFile", "uploadStream"][..],
+                write,
+                "Azure BlobClient upload API writes a blob.",
+            ));
+        }
+        "java" | "kotlin" => {
+            rules.push((
+                AMAZON_S3,
+                &["putObject"][..],
+                write,
+                "Amazon S3 putObject writes an object.",
+            ));
+            rules.push((
+                GOOGLE_CLOUD_STORAGE,
+                &["create", "createFrom"][..],
+                write,
+                "Google Cloud Storage create API writes an object.",
+            ));
+            rules.push((
+                AZURE_BLOB_STORAGE,
+                &["upload", "uploadFromFile", "uploadWithResponse"][..],
+                write,
+                "Azure BlobClient upload API writes a blob.",
+            ));
+        }
+        "csharp" => {
+            rules.push((
+                AMAZON_S3,
+                &["PutObject", "PutObjectAsync"][..],
+                write,
+                "Amazon S3 PutObject API writes an object.",
+            ));
+            rules.push((
+                GOOGLE_CLOUD_STORAGE,
+                &["UploadObject", "UploadObjectAsync"][..],
+                write,
+                "Google Cloud Storage upload API writes an object.",
+            ));
+            rules.push((
+                AZURE_BLOB_STORAGE,
+                &[
+                    "Upload",
+                    "UploadAsync",
+                    "UploadFromUri",
+                    "UploadFromUriAsync",
+                ][..],
+                write,
+                "Azure BlobClient upload API writes a blob.",
+            ));
+        }
+        "go" => {
+            rules.push((
+                AMAZON_S3,
+                &["PutObject"][..],
+                write,
+                "Amazon S3 PutObject API writes an object.",
+            ));
+            rules.push((
+                AZURE_BLOB_STORAGE,
+                &["UploadBuffer", "UploadFile", "UploadStream"][..],
+                write,
+                "Azure Blob Storage upload API writes a blob.",
+            ));
+        }
+        "ruby" | "rust" => rules.push((
+            AMAZON_S3,
+            &["put_object"][..],
+            write,
+            "Amazon S3 put_object writes an object.",
+        )),
+        "php" => {
+            rules.push((
+                AMAZON_S3,
+                &["putObject"][..],
+                write,
+                "Amazon S3 putObject writes an object.",
+            ));
+            rules.push((
+                GOOGLE_CLOUD_STORAGE,
+                &["upload"][..],
+                write,
+                "Google Cloud Storage Bucket upload API writes an object.",
+            ));
+        }
+        _ => {}
+    }
+    rules
+}
+
 fn db_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
-        suggested_kind: Some(SourceObservationKind::DbWrite),
+        suggested_kind: Some(SuggestedFactKind::DbWrite),
         rationale,
     }
 }
@@ -545,10 +857,30 @@ fn db_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
 fn message_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
     FrameworkRule {
         framework,
-        suggested_kind: Some(SourceObservationKind::MessagePublish),
+        suggested_kind: Some(SuggestedFactKind::MessagePublish),
         rationale,
     }
 }
+
+fn external_call_rule(framework: &'static str, rationale: &'static str) -> FrameworkRule {
+    FrameworkRule {
+        framework,
+        suggested_kind: Some(SuggestedFactKind::ExternalCall),
+        rationale,
+    }
+}
+
+const REQUESTS_METHODS: &[&str] = &[
+    "request", "send", "get", "options", "head", "post", "put", "patch", "delete",
+];
+
+const HTTPX_METHODS: &[&str] = &[
+    "request", "send", "stream", "get", "options", "head", "post", "put", "patch", "delete",
+];
+
+const AXIOS_METHODS: &[&str] = &[
+    "request", "get", "options", "head", "post", "put", "patch", "delete",
+];
 
 fn source_evidence(
     framework: &str,
@@ -667,6 +999,66 @@ fn source_evidence(
         NATS => source.contains("nats") || resource_lower.contains("jetstream"),
         REDIS_STREAMS => {
             source.contains("redis") || source.contains("jedis") || resource_lower.contains("redis")
+        }
+        PYTHON_REQUESTS => {
+            source.contains("import requests")
+                || source.contains("from requests")
+                || resource_lower == "requests"
+        }
+        PYTHON_HTTPX => {
+            source.contains("import httpx")
+                || source.contains("from httpx")
+                || resource_lower == "httpx"
+        }
+        WEB_FETCH => matches!(resource_lower.as_str(), "window" | "globalthis" | "self"),
+        AXIOS => {
+            source.contains("from \"axios\"")
+                || source.contains("from 'axios'")
+                || source.contains("require(\"axios\")")
+                || source.contains("require('axios')")
+                || resource_lower == "axios"
+        }
+        JAVA_HTTP_CLIENT => {
+            source.contains("java.net.http.httpclient") || resource_lower.contains("httpclient")
+        }
+        SPRING_WEBCLIENT => {
+            source.contains("org.springframework.web.reactive.function.client.webclient")
+                || resource_lower.contains("webclient")
+        }
+        GO_NET_HTTP => source.contains("\"net/http\"") || resource_lower == "http.defaultclient",
+        DOTNET_HTTP_CLIENT => {
+            source.contains("system.net.http") || resource_lower.contains("httpclient")
+        }
+        AMAZON_S3 => {
+            source.contains("@aws-sdk/client-s3")
+                || source.contains("@aws-sdk/lib-storage")
+                || source.contains("software.amazon.awssdk.services.s3")
+                || source.contains("amazon.s3")
+                || source.contains("aws::s3")
+                || source.contains("aws\\s3")
+                || source.contains("awssdk.s3")
+                || source.contains("service/s3")
+                || source.contains("client(\"s3\")")
+                || source.contains("client('s3')")
+                || source.contains("resource(\"s3\")")
+                || source.contains("resource('s3')")
+                || resource_lower.contains("s3")
+        }
+        GOOGLE_CLOUD_STORAGE => {
+            source.contains("google.cloud.storage")
+                || source.contains("from google.cloud import storage")
+                || source.contains("google/cloud/storage")
+                || source.contains("google\\cloud\\storage")
+                || source.contains("google-cloud-storage")
+                || source.contains("@google-cloud/storage")
+                || source.contains("cloud.google.com/go/storage")
+        }
+        AZURE_BLOB_STORAGE => {
+            source.contains("azure.storage.blob")
+                || source.contains("azure.storage.blobs")
+                || source.contains("@azure/storage-blob")
+                || source.contains("azblob")
+                || resource_lower.contains("blobclient")
         }
         _ => false,
     };
@@ -838,10 +1230,14 @@ mod tests {
     use super::*;
 
     fn observation(method: &str) -> SourceObservation {
+        observation_on("client", method)
+    }
+
+    fn observation_on(resource: &str, method: &str) -> SourceObservation {
         SourceObservation {
             kind: SourceObservationKind::OtherMethodCall,
             symbol: "place_order".to_owned(),
-            resource: "client".to_owned(),
+            resource: resource.to_owned(),
             method: method.to_owned(),
             line: 7,
         }
@@ -907,7 +1303,7 @@ mod tests {
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
                 candidates[0].suggested_kind,
-                Some(SourceObservationKind::DbWrite)
+                Some(SuggestedFactKind::DbWrite)
             );
             assert!(candidates[0].method_binding_required);
         }
@@ -968,9 +1364,125 @@ mod tests {
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
                 candidates[0].suggested_kind,
-                Some(SourceObservationKind::MessagePublish)
+                Some(SuggestedFactKind::MessagePublish)
             );
         }
+    }
+
+    #[test]
+    fn covers_the_eight_reviewed_external_call_families() {
+        let fixtures = [
+            (
+                "python",
+                "import requests",
+                "requests",
+                "post",
+                PYTHON_REQUESTS,
+            ),
+            ("python", "import httpx", "httpx", "get", PYTHON_HTTPX),
+            ("typescript", "", "window", "fetch", WEB_FETCH),
+            (
+                "typescript",
+                "import axios from 'axios'",
+                "axios",
+                "post",
+                AXIOS,
+            ),
+            (
+                "java",
+                "import java.net.http.HttpClient;",
+                "httpClient",
+                "sendAsync",
+                JAVA_HTTP_CLIENT,
+            ),
+            (
+                "kotlin",
+                "import org.springframework.web.reactive.function.client.WebClient",
+                "webClient.get().uri(\"/orders\")",
+                "retrieve",
+                SPRING_WEBCLIENT,
+            ),
+            ("go", "import \"net/http\"", "client", "Do", GO_NET_HTTP),
+            (
+                "csharp",
+                "using System.Net.Http;",
+                "httpClient",
+                "SendAsync",
+                DOTNET_HTTP_CLIENT,
+            ),
+        ];
+        let catalog = FrameworkCatalog::default();
+        for (language, source, resource, method, framework) in fixtures {
+            let candidates = catalog.candidates(
+                "src/service",
+                language,
+                source,
+                &[observation_on(resource, method)],
+            );
+            assert_eq!(candidates.len(), 1, "{framework}");
+            assert_eq!(candidates[0].framework, framework);
+            assert_eq!(
+                candidates[0].suggested_kind,
+                Some(SuggestedFactKind::ExternalCall)
+            );
+            assert!(candidates[0].method_binding_required);
+        }
+    }
+
+    #[test]
+    fn covers_three_reviewed_object_storage_families() {
+        let fixtures = [
+            (
+                "python",
+                "import boto3\ns3 = boto3.client('s3')",
+                "s3",
+                "put_object",
+                AMAZON_S3,
+            ),
+            (
+                "typescript",
+                "import { Storage } from '@google-cloud/storage'",
+                "file",
+                "save",
+                GOOGLE_CLOUD_STORAGE,
+            ),
+            (
+                "csharp",
+                "using Azure.Storage.Blobs;",
+                "blobClient",
+                "UploadAsync",
+                AZURE_BLOB_STORAGE,
+            ),
+        ];
+        let catalog = FrameworkCatalog::default();
+        for (language, source, resource, method, framework) in fixtures {
+            let candidates = catalog.candidates(
+                "src/service",
+                language,
+                source,
+                &[observation_on(resource, method)],
+            );
+            assert_eq!(candidates.len(), 1, "{framework}");
+            assert_eq!(candidates[0].framework, framework);
+            assert_eq!(
+                candidates[0].suggested_kind,
+                Some(SuggestedFactKind::ObjectWrite)
+            );
+        }
+    }
+
+    #[test]
+    fn s3_javascript_send_requires_command_specific_review() {
+        let catalog = FrameworkCatalog::default();
+        let candidates = catalog.candidates(
+            "src/service.ts",
+            "typescript",
+            "import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'",
+            &[observation_on("s3", "send")],
+        );
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].framework, AMAZON_S3);
+        assert_eq!(candidates[0].suggested_kind, None);
     }
 
     #[test]
@@ -979,6 +1491,21 @@ mod tests {
         assert!(
             catalog
                 .candidates("src/service.ts", "typescript", "", &[observation("send")])
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn fetch_requires_an_explicit_global_receiver() {
+        let catalog = FrameworkCatalog::default();
+        assert!(
+            catalog
+                .candidates(
+                    "src/service.ts",
+                    "typescript",
+                    "fetch('/orders')",
+                    &[observation_on("client", "fetch")],
+                )
                 .is_empty()
         );
     }
@@ -1006,6 +1533,34 @@ mod tests {
         assert_eq!(
             candidates[0].evidence,
             vec!["project-manifest:composer.json"]
+        );
+
+        let mut catalog = FrameworkCatalog::default();
+        catalog.record_manifest(
+            "package.json",
+            r#"{"dependencies":{"axios":"^1","@azure/storage-blob":"^12"}}"#,
+        );
+        let candidates = catalog.candidates(
+            "src/service.ts",
+            "typescript",
+            "",
+            &[observation_on("httpClient", "post")],
+        );
+        assert_eq!(candidates[0].framework, AXIOS);
+        assert_eq!(
+            candidates[0].suggested_kind,
+            Some(SuggestedFactKind::ExternalCall)
+        );
+        let candidates = catalog.candidates(
+            "src/archive.ts",
+            "typescript",
+            "",
+            &[observation_on("blobClient", "uploadData")],
+        );
+        assert_eq!(candidates[0].framework, AZURE_BLOB_STORAGE);
+        assert_eq!(
+            candidates[0].suggested_kind,
+            Some(SuggestedFactKind::ObjectWrite)
         );
     }
 

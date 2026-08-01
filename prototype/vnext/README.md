@@ -55,7 +55,7 @@ Project Snapshot
 - 6種類のResult payload Schemaと、Result種別ごとの許可Role検証
 - outcomeの結論・根拠参照と、発行Contextに対する参照整合性の検証
 - 全ChangeのEvidence履歴と現在の入力digestから生成する条項単位のContract Health表示と、明示policyによる定期CIゲート
-- 主要8 ORM・8 messaging frameworkをproject単位で測るDetector品質benchmark
+- 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を測るDetector品質benchmark
 - Schema bundleのversionとdigestを固定するFramework lock
 - JSONだけで構成したcanonicalization・Schema・Rule Compiler・Detector・Thin Kernel・Context Compiler・Project Snapshot・Framework lock・Result submit・Application golden fixture
 - golden fixtureによる完全なKernelDecisionとContext digestの互換性検査
@@ -179,7 +179,7 @@ jobs:
 
 `benchmark`は、review済みの正解データと明示閾値を持つ固定corpusに対して、source observationとframework candidateのprecision／recallを測ります。浮動小数点や実行時間を合否に使わず、0〜10000のbasis pointで決定的に集計します。
 
-同梱の`major-frameworks-v1`は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMと、Amazon SQS、Celery、Apache Kafka、RabbitMQ、Azure Service Bus、Redis Streams、Google Cloud Pub/Sub、NATSを組み合わせた8つのproject fixtureです。外部sourceのコピーではなく、各frameworkの典型的な呼出し形とmanifest根拠を再現する最小corpusです。
+同梱の`major-frameworks-v1`は、主要8 ORM、8 messaging framework、8 HTTP client、Amazon S3・Google Cloud Storage・Azure Blob Storageを扱う10個のproject fixtureです。外部sourceのコピーではなく、各frameworkの典型的な呼出し形とmanifest・import・型・receiver根拠を再現する最小corpusです。
 
 ```sh
 agentic benchmark \
@@ -187,7 +187,7 @@ agentic benchmark \
   --format text
 ```
 
-現在の基準は、SQLAlchemyの書込み種別を自動決定できない`session.execute`を含む17 receiver callと17 framework candidateのprecision／recallがすべて100%です。構文エラーは常に失敗し、corpusの`minimum_scores`を下回ると詳細Reportをstdoutへ出して終了code 1になります。Reportはmanifest・source・dependency manifest全体の`corpus_digest`も返します。正解値・閾値をDetectorが自動更新することはありません。
+現在の基準は、SQLAlchemy `session.execute`とJavaScript版S3 `client.send`のようにkindを自動決定しない呼出しを含む32 receiver callと29 framework candidateのprecision／recallがすべて100%です。構文エラーは常に失敗し、corpusの`minimum_scores`を下回ると詳細Reportをstdoutへ出して終了code 1になります。Reportはmanifest・source・dependency manifest全体の`corpus_digest`も返します。正解値・閾値をDetectorが自動更新することはありません。
 
 corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Reportは`schemas/outputs/v1/detector-benchmark-report.schema.json`に従います。各projectは`authored-fixture`または`external-snapshot`のprovenance、license、外部snapshotならRepository URLと40桁のGit revisionを必須とします。runnerはoffline・read-onlyで、corpus root外へのpathやsymlink escapeを拒否します。実際の外部Repository snapshotを追加する場合も、sourceのライセンスとrevisionをreviewしたうえで、同じcorpus契約へ人が正解を記入します。
 
@@ -214,7 +214,7 @@ agentic project observe \
   --format yaml
 ```
 
-この出力はRepository Observation Draft v3であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。DB系はDjango ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORM、メッセージング系はAmazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。
+この出力はRepository Observation Draft v3であり、Binding Recordの下書きです。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_kind`も非authoritativeです。
 
 Draft v3の`binding_artifacts`は、`.agentic/repository-observation.yaml`の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`kind`、`logical_ref`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
@@ -527,7 +527,7 @@ sources:
 | `rust/` | build済みバイナリ移行を検証するRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
 | `agentic_vnext/application.py` | `next`と`submit`のModule呼出順を管理 |
 | `fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
-| `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging frameworkを組み合わせた8 projectの品質corpus |
+| `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
 
 ## 現時点の制約
 
@@ -542,7 +542,7 @@ sources:
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
-- `project observe`のDraft v3は、Django ORM、SQLAlchemy、Prisma、Spring Data JPA、Entity Framework Core、Rails Active Record、Laravel Eloquent、GORMに加え、Amazon SQS、Apache Kafka、RabbitMQ、Celery、Google Cloud Pub/Sub、Azure Service Bus、NATS、Redis Streamsの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`など読書き両用APIはkindを提示せず、個別reviewを要求します。`send`や`publish`など曖昧な名前は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
+- `project observe`のDraft v3は、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIはkindを提示せず、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、kind・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
 - Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v2は、`db_write`・`message_publish`に加え、review済みMethod Bindingから生成する`external_call`・`object_write`を収録します。`external_call`は`distributed-effect`と`external-system-call`、`object_write`は`persistent-data-write`と`object-storage-write`を出力します。method名だけでは自動分類せず、前者は`integration.*`、後者は`data.*`のresource Bindingを要求します。認可変更と機密data accessは、fact・binding・検出根拠の契約が未定義なため未収録です。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。

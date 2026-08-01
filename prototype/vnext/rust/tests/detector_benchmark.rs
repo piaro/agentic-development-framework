@@ -14,12 +14,12 @@ fn checked_in_major_framework_corpus_meets_its_reviewed_thresholds() {
 
     let report = run_detector_benchmark(&root).unwrap();
     assert!(report.passed(), "{}", report.render_text());
-    assert_eq!(report.summary.projects, 8);
-    assert_eq!(report.summary.cases, 8);
-    assert_eq!(report.summary.observations.expected, 17);
+    assert_eq!(report.summary.projects, 10);
+    assert_eq!(report.summary.cases, 20);
+    assert_eq!(report.summary.observations.expected, 32);
     assert_eq!(report.summary.observations.precision_bps, 10_000);
     assert_eq!(report.summary.observations.recall_bps, 10_000);
-    assert_eq!(report.summary.framework_candidates.expected, 17);
+    assert_eq!(report.summary.framework_candidates.expected, 29);
     assert_eq!(report.summary.framework_candidates.precision_bps, 10_000);
     assert_eq!(report.summary.framework_candidates.recall_bps, 10_000);
     validate_schema(
@@ -54,8 +54,8 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     validate_schema(&report, "outputs/v1/detector-benchmark-report.schema.json");
     assert_eq!(report["status"], "failed");
-    assert_eq!(report["summary"]["observations"]["detected"], 18);
-    assert_eq!(report["summary"]["observations"]["matched"], 17);
+    assert_eq!(report["summary"]["observations"]["detected"], 33);
+    assert_eq!(report["summary"]["observations"]["matched"], 32);
     assert_eq!(report["summary"]["failed_cases"], 1);
     assert_ne!(report["corpus_digest"], reviewed_digest);
     fs::remove_dir_all(temporary).unwrap();

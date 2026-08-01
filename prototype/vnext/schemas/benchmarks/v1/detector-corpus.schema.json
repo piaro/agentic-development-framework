@@ -109,7 +109,7 @@
                       "line": {"type": "integer", "minimum": 1},
                       "suggested_kind": {
                         "anyOf": [
-                          {"enum": ["db_write", "message_publish"]},
+                          {"enum": ["db_write", "external_call", "message_publish", "object_write"]},
                           {"type": "null"}
                         ]
                       },

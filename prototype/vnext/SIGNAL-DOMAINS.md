@@ -32,6 +32,8 @@ methods:
 
 対応するresource Bindingは、`external_call`では`integration.*`、`object_write`では`data.*`の論理refを要求します。未知のkind、必要なMethod Bindingがない呼出し、不正な論理refはfail-closedで停止します。
 
+`project observe`は、主要HTTP clientとAmazon S3・Google Cloud Storage・Azure Blob Storageについて、manifest・import・型・receiverの根拠がある呼出しを非authoritativeな候補として提示します。`suggested_kind`があってもBindingへ自動転記せず、reviewerが外部送信またはobject書込みであることを確認します。JavaScript版S3の`client.send`はCommandによって読書きが変わるためkindを提示しません。receiverのないbare `fetch()`も安定したresource Bindingを作れないため対象外です。
+
 ## 確認方法
 
 ```sh

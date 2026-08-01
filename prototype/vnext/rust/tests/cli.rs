@@ -773,6 +773,201 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
 }
 
 #[test]
+fn project_observe_suggests_eight_major_http_clients_without_approving_them() {
+    let root = temporary_test_root("project-observe-http-clients");
+    fs::create_dir_all(root.join("src")).unwrap();
+    let files = [
+        (
+            "src/requests_service.py",
+            "import requests\n\
+             def notify(payload):\n\
+             \x20   requests.post('https://example.test/orders', json=payload)\n",
+        ),
+        (
+            "src/httpx_service.py",
+            "import httpx\n\
+             def lookup():\n\
+             \x20   httpx.get('https://example.test/orders')\n",
+        ),
+        (
+            "src/fetch_service.ts",
+            "export function notify(payload: unknown) {\n\
+             \x20 window.fetch('https://example.test/orders', { method: 'POST' });\n\
+             }\n",
+        ),
+        (
+            "src/axios_service.ts",
+            "import axios from 'axios';\n\
+             export function notify(payload: unknown) {\n\
+             \x20 axios.post('https://example.test/orders', payload);\n\
+             }\n",
+        ),
+        (
+            "src/JavaHttpService.java",
+            "import java.net.http.HttpClient;\n\
+             class JavaHttpService {\n\
+             \x20 void notify(HttpClient httpClient, HttpRequest request, BodyHandler handler) {\n\
+             \x20   httpClient.sendAsync(request, handler);\n\
+             \x20 }\n\
+             }\n",
+        ),
+        (
+            "src/SpringHttpService.kt",
+            "import org.springframework.web.reactive.function.client.WebClient\n\
+             fun notify(webClient: WebClient) {\n\
+             \x20 webClient.post().uri(\"/orders\").retrieve()\n\
+             }\n",
+        ),
+        (
+            "src/go_http_service.go",
+            "package service\n\
+             import \"net/http\"\n\
+             func Notify(client *http.Client, request *http.Request) {\n\
+             \x20 client.Do(request)\n\
+             }\n",
+        ),
+        (
+            "src/DotnetHttpService.cs",
+            "using System.Net.Http;\n\
+             class DotnetHttpService {\n\
+             \x20 async Task Notify(HttpClient httpClient, HttpRequestMessage request) {\n\
+             \x20   await httpClient.SendAsync(request);\n\
+             \x20 }\n\
+             }\n",
+        ),
+    ];
+    for (path, source) in files {
+        fs::write(root.join(path), source).unwrap();
+    }
+    run_git(&root, &["init", "--quiet"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let expected = [
+        ("src/requests_service.py", "python-requests", "post"),
+        ("src/httpx_service.py", "python-httpx", "get"),
+        ("src/fetch_service.ts", "web-fetch", "fetch"),
+        ("src/axios_service.ts", "axios", "post"),
+        ("src/JavaHttpService.java", "java-http-client", "sendAsync"),
+        ("src/SpringHttpService.kt", "spring-webclient", "retrieve"),
+        ("src/go_http_service.go", "go-net-http", "Do"),
+        (
+            "src/DotnetHttpService.cs",
+            "dotnet-http-client",
+            "SendAsync",
+        ),
+    ];
+    assert_review_candidates(&draft, &expected, "external_call");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn project_observe_suggests_three_object_storage_families_without_approving_them() {
+    let root = temporary_test_root("project-observe-object-storage");
+    fs::create_dir_all(root.join("src")).unwrap();
+    let files = [
+        (
+            "src/s3_service.py",
+            "import boto3\n\
+             s3 = boto3.client('s3')\n\
+             def archive(payload):\n\
+             \x20   s3.put_object(Bucket='orders', Key='latest', Body=payload)\n",
+        ),
+        (
+            "src/gcs_service.ts",
+            "import { Storage } from '@google-cloud/storage';\n\
+             export function archive(file: File, payload: string) {\n\
+             \x20 file.save(payload);\n\
+             }\n",
+        ),
+        (
+            "src/AzureBlobService.cs",
+            "using Azure.Storage.Blobs;\n\
+             class AzureBlobService {\n\
+             \x20 async Task Archive(BlobClient blobClient, Stream payload) {\n\
+             \x20   await blobClient.UploadAsync(payload);\n\
+             \x20 }\n\
+             }\n",
+        ),
+    ];
+    for (path, source) in files {
+        fs::write(root.join(path), source).unwrap();
+    }
+    run_git(&root, &["init", "--quiet"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "observe",
+            "--analysis-root",
+            "src",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let expected = [
+        ("src/s3_service.py", "amazon-s3", "put_object"),
+        ("src/gcs_service.ts", "google-cloud-storage", "save"),
+        (
+            "src/AzureBlobService.cs",
+            "azure-blob-storage",
+            "UploadAsync",
+        ),
+    ];
+    assert_review_candidates(&draft, &expected, "object_write");
+    let _ = fs::remove_dir_all(root);
+}
+
+fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind: &str) {
+    let artifacts = draft["artifacts"].as_array().unwrap();
+    for (path, framework, method) in expected {
+        let artifact = artifacts
+            .iter()
+            .find(|artifact| artifact["path"] == *path)
+            .unwrap_or_else(|| panic!("missing {path}"));
+        let candidate = artifact["framework_candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|candidate| {
+                candidate["framework"] == *framework && candidate["method"] == *method
+            })
+            .unwrap_or_else(|| panic!("missing {framework}.{method} for {path}"));
+        assert_eq!(candidate["suggested_kind"], kind);
+        assert_eq!(candidate["review_status"], "required");
+        assert_eq!(candidate["method_binding_required"], true);
+        let binding = draft["binding_artifacts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|artifact| artifact["path"] == *path)
+            .unwrap();
+        assert!(
+            binding["bindings"]["methods"][candidate["binding_key"].as_str().unwrap()]["kind"]
+                .is_null()
+        );
+    }
+}
+
+#[test]
 fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
     let project = TestProject::new();
     let observe = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))

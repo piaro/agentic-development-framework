@@ -107,7 +107,9 @@ impl From<FrameworkCandidate> for FrameworkCandidateRecord {
             resource: candidate.resource,
             method: candidate.method,
             line: candidate.line,
-            suggested_kind: candidate.suggested_kind.map(kind_name).map(str::to_owned),
+            suggested_kind: candidate
+                .suggested_kind
+                .map(|kind| kind.as_str().to_owned()),
             method_binding_required: candidate.method_binding_required,
         }
     }
@@ -674,7 +676,10 @@ fn require_non_empty(value: &str, label: &str) -> Result<(), DetectorBenchmarkEr
 
 fn validate_kind(kind: &str, suggested: bool) -> Result<(), DetectorBenchmarkError> {
     let valid = if suggested {
-        matches!(kind, "db_write" | "message_publish")
+        matches!(
+            kind,
+            "db_write" | "message_publish" | "external_call" | "object_write"
+        )
     } else {
         matches!(kind, "db_write" | "message_publish" | "other_method_call")
     };
