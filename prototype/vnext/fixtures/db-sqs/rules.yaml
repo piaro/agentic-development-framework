@@ -51,6 +51,31 @@ requirements:
       - matching-contracts
       - matching-decisions
 
+  - id: security-contracts-ready
+    phase: before-build
+    role: Analyst
+    result_schema: result.analysis
+    depends_on:
+      - operation-boundaries-confirmed
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+      - affected-code
+
+  - id: security-design-challenged
+    phase: before-build
+    role: Challenger
+    result_schema: result.challenge
+    depends_on:
+      - security-contracts-ready
+    context:
+      - change
+      - matching-contracts
+      - matching-decisions
+      - dependency-results
+      - affected-code
+
   - id: platform-behavior-verified
     phase: before-build
     role: Analyst
@@ -119,6 +144,28 @@ requirements:
       - dependency-results
       - affected-code
 
+  - id: security-evidence-recorded
+    phase: before-merge
+    role: Builder
+    result_schema: result.evidence
+    assurance: evidence-backed
+    context:
+      - change
+      - matching-contracts
+      - affected-code
+
+  - id: security-implementation-challenged
+    phase: before-merge
+    role: Challenger
+    result_schema: result.challenge
+    depends_on:
+      - security-evidence-recorded
+    context:
+      - change
+      - matching-contracts
+      - dependency-results
+      - affected-code
+
 rules:
   - id: baseline.review-risk-signals
     when: always
@@ -174,6 +221,42 @@ rules:
     subjects:
       - binding.operation
 
+  - id: authorization-change.confirm-operation-boundary
+    signal: authorization-control-change
+    requirement: operation-boundaries-confirmed
+    subjects:
+      - binding.operation
+
+  - id: authorization-change.prepare-contracts
+    signal: authorization-control-change
+    requirement: security-contracts-ready
+    subjects:
+      - binding.authorization
+
+  - id: authorization-change.challenge-design
+    signal: authorization-control-change
+    requirement: security-design-challenged
+    subjects:
+      - binding.operation
+
+  - id: sensitive-data.confirm-operation-boundary
+    signal: sensitive-data-access
+    requirement: operation-boundaries-confirmed
+    subjects:
+      - binding.operation
+
+  - id: sensitive-data.prepare-contracts
+    signal: sensitive-data-access
+    requirement: security-contracts-ready
+    subjects:
+      - binding.data
+
+  - id: sensitive-data.challenge-design
+    signal: sensitive-data-access
+    requirement: security-design-challenged
+    subjects:
+      - binding.operation
+
   - id: persistent-data.record-evidence
     signal: persistent-data-write
     repository_phase: post-build
@@ -199,5 +282,33 @@ rules:
     signal: distributed-effect
     repository_phase: post-build
     requirement: distributed-effect-implementation-challenged
+    subjects:
+      - binding.operation
+
+  - id: authorization-change.record-evidence
+    signal: authorization-control-change
+    repository_phase: post-build
+    requirement: security-evidence-recorded
+    subjects:
+      - binding.operation
+
+  - id: authorization-change.challenge-implementation
+    signal: authorization-control-change
+    repository_phase: post-build
+    requirement: security-implementation-challenged
+    subjects:
+      - binding.operation
+
+  - id: sensitive-data.record-evidence
+    signal: sensitive-data-access
+    repository_phase: post-build
+    requirement: security-evidence-recorded
+    subjects:
+      - binding.operation
+
+  - id: sensitive-data.challenge-implementation
+    signal: sensitive-data-access
+    repository_phase: post-build
+    requirement: security-implementation-challenged
     subjects:
       - binding.operation

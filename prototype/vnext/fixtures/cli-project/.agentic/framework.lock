@@ -15,5 +15,5 @@ schema_bundle:
   version: "2"
   digest: sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888
 rule_set:
-  source_digest: sha256:a615e4090b643ccc4e8b860035f5266ac57c4fe3dc54afc75dd877f2faa652f4
-  index_digest: sha256:1b28e64f307122dda15e7f03e07c71f50e6a0c7e99ce55cdd7c7bb4b9fc54a4e
+  source_digest: sha256:a9dc2e8901db7e4553be042ffce47388f1e8971ebb26feb2ecc377e2396c2f07
+  index_digest: sha256:58adc0315e3f1460cb03931e0022a866a94f8718b0a071ca2863f6a0c7bec9c1

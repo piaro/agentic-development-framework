@@ -44,6 +44,17 @@ methods:
     authority_ref: decision.repository-bindings
 ```
 
+標準Ruleは、どちらのSecurity Signalにも次のゲートを適用します。
+
+| Phase | Role | Requirement | Assurance |
+|---|---|---|---|
+| before-build | Analyst | operation境界とSecurity Contractを確認 | attestation |
+| before-build | Challenger | Security設計を反証 | attestation |
+| before-merge | Builder | 現在revisionのテスト・probe証拠を提出 | evidence-backed |
+| before-merge | Challenger | Security実装を反証 | attestation |
+
+認可境界やデータ分類の意味は機械判定せず、accepted DecisionとContractを根拠に人またはAgentが判断します。一方、提出されたEvidenceについては、現在revision、成功終了、Contract条項の網羅、artifact digestをKernelが検査します。
+
 対応するresource Bindingは、`external_call`では`integration.*`、`object_write`では`data.*`の論理refを要求します。1つの呼出しに複数kindがある場合、resourceの`logical_refs`へ両方を記録し、すべてを検証してからfactを一括生成します。未知のkind、必要なMethod Bindingがない呼出し、不正または不足した論理refはfail-closedで停止します。
 
 `project observe`は、主要HTTP clientとAmazon S3・Google Cloud Storage・Azure Blob Storageについて、manifest・import・型・receiverの根拠がある呼出しを非authoritativeな候補として提示します。`suggested_fact_kinds`があってもBindingへ自動転記せず、reviewerが意味を確認します。明確なObject Storage uploadは`external_call`と`object_write`の両方を提示します。JavaScript版S3の`client.send`はCommandによって読書きが変わるため空listにし、receiverのないbare `fetch()`も安定したresource Bindingを作れないため対象外です。

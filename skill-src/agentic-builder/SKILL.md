@@ -18,6 +18,7 @@ description: Implement a repository change only after Contract Readiness succeed
 - Preserve Data Invariants after every transaction boundary and define convergence for derived or external stores.
 - Implement Operation Contract semantics for duplicate, retry, concurrency, cancellation, timeout, partial failure, and deletion.
 - Add evidence mapped to contract and clause ids.
+- For `security-evidence-recorded`, include executable allow/deny authorization probes or sensitive-data access-control and disclosure probes, as applicable to the issued Context. Do not substitute a prose claim for execution evidence.
 - Do not change a governing contract, Feature Contract, or validation condition to make implementation pass. Reopen Contract Assessment instead.
 - If the actual diff touches undeclared entities, operations, interfaces, or paths, update the change and invalidate the lock before continuing.
 

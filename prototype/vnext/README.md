@@ -80,7 +80,7 @@ Rust版のRequirement定義は、保証の強さを`assurance`で区別します
 
 `evidence-backed`は`result.evidence`だけに指定できます。Rust Kernelは、充足Resultが参照するEvidence Recordについて次を追加で要求します。
 
-標準Ruleでは`data-evidence-recorded`と`distributed-effect-evidence-recorded`を`evidence-backed`とし、分析・設計・Challenge Requirementは`attestation`のままにしています。
+標準Ruleでは`data-evidence-recorded`、`distributed-effect-evidence-recorded`、`security-evidence-recorded`を`evidence-backed`とし、分析・設計・Challenge Requirementは`attestation`のままにしています。Security Signalは、build前のoperation境界・Contract確認と設計Challenge、build後の実行証拠・実装Challengeを要求します。
 
 - 対象Requirement InstanceとChangeが一致する
 - `git_revision`が現在のRepository revisionと一致する

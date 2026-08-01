@@ -28,6 +28,7 @@ Read `references/challenge-method.md`. For data changes, also read `references/s
 4. Perform Implementation Challenge against every resolved contract clause and accepted deviation.
 5. Perform Stateful Challenge across operation sequences, concurrency, duplicate, out-of-order, timeout, partial success, retry, deletion, migration, and external convergence.
 6. Perform Completion Challenge: map every required clause to a test, probe, observation, or accepted residual risk.
-7. Write `evidence/<id>/challenge.yaml`. Use finding types `missing-global-contract`, `invariant-violation`, `implementation-violation`, and `evidence-gap`.
+7. For Security Signal actions, probe privilege escalation, unauthorized access, data disclosure through output or logs, and missing negative-path coverage where applicable.
+8. Write `evidence/<id>/challenge.yaml`. Use finding types `missing-global-contract`, `invariant-violation`, `implementation-violation`, and `evidence-gap`.
 
 Do not weaken the contract to clear a finding. Distinguish an implementation defect, a contract gap, a missing authority, a human Decision Request, a platform unknown, and an explicitly accepted risk.
