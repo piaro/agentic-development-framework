@@ -45,6 +45,112 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
 }
 
 #[test]
+fn migration_inspect_reports_current_project_without_writing() {
+    let root = legacy_migration_project("migration-current");
+    let before = git_output(
+        &root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
+    assert!(before.is_empty());
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "inspect", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&report, "migration-inspection-report.schema.json");
+    assert_eq!(report["source_state"], "current");
+    assert_eq!(report["readiness"], "review-required");
+    assert_eq!(report["installation"]["kit_version"], "3.0.0");
+    assert_eq!(report["inventory"]["contracts"]["files"], 1);
+    assert_eq!(report["inventory"]["contracts"]["tracked_files"], 1);
+    assert_eq!(report["inventory"]["decisions"]["formats"]["markdown"], 1);
+    assert!(
+        report["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|component| component["id"] == "project-source-inventory"
+                && component["classification"] == "mechanical")
+    );
+    assert!(
+        report["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|component| component["id"] == "contracts"
+                && component["classification"] == "review-required")
+    );
+    assert!(
+        git_output(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        )
+        .is_empty()
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_inspect_distinguishes_vnext_and_mixed_projects() {
+    let vnext = TestProject::new();
+    let output = vnext.run(&["migration", "inspect", "--format", "json"]);
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&report, "migration-inspection-report.schema.json");
+    assert_eq!(report["source_state"], "vnext");
+    assert_eq!(report["readiness"], "already-vnext");
+
+    let mixed = legacy_migration_project("migration-mixed");
+    fs::write(
+        mixed.join(".agentic/framework.lock"),
+        "schema_version: '2'\n",
+    )
+    .unwrap();
+    run_git(&mixed, &["add", ".agentic/framework.lock"]);
+    run_git(&mixed, &["commit", "--quiet", "-m", "add mixed marker"]);
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "inspect", "--format", "json", "--project"])
+        .arg(&mixed)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["source_state"], "mixed");
+    assert_eq!(report["readiness"], "blocked");
+    assert!(
+        report["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|finding| finding["category"] == "mixed-runtime-state")
+    );
+    let _ = fs::remove_dir_all(mixed);
+}
+
+#[test]
+fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
+    let root = legacy_migration_project("migration-dirty");
+    fs::write(
+        root.join("untracked.txt"),
+        "not part of the fixed revision\n",
+    )
+    .unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "inspect", "--format", "text", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let text = String::from_utf8_lossy(&output.stdout);
+    assert!(text.contains("Migration inspection: blocked"));
+    assert!(text.contains("dirty-worktree"));
+    assert!(text.contains("No files were changed"));
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     let json_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args(["catalog", "signal-domains", "--format", "json"])
@@ -3658,6 +3764,55 @@ fn temporary_test_root(label: &str) -> PathBuf {
     ))
 }
 
+fn legacy_migration_project(label: &str) -> PathBuf {
+    let root = temporary_test_root(label);
+    fs::create_dir_all(root.join(".agentic/changes/change.checkout")).unwrap();
+    fs::create_dir_all(root.join("contracts/project")).unwrap();
+    fs::create_dir_all(root.join("decisions")).unwrap();
+    fs::create_dir_all(root.join("evidence")).unwrap();
+    fs::write(
+        root.join(".agentic/installation.yaml"),
+        "schema_version: 2\nkit_version: '3.0.0'\nproject: shop\nmode: adopt\nlevel: standard\ninstalled_at: '2026-08-02'\nskill_path: .agents/skills/agentic-development\ncli_path: .agentic/bin/agentic\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".agentic/config.yaml"),
+        "schema_version: 1\ncontract_roots: [contracts]\ndecision_root: decisions\nevidence_root: evidence\npolicies: {}\nruntime: {python: '>=3.10', dependencies: .agentic/runtime/requirements.txt}\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".agentic/active-changes.yaml"),
+        "schema_version: 1\nchanges: [{id: checkout, status: assessing}]\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join(".agentic/changes/change.checkout/change.yaml"),
+        "schema_version: 1\nid: checkout\ntitle: Checkout\nstatus: assessing\nrisk: R1\naffected: {}\nfeature_contract: features/checkout\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("contracts/project/constitution.yaml"),
+        "schema_version: 2\nid: project/constitution\nkind: project\nstatus: accepted\nversion: 1\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("decisions/DEC-001.md"),
+        "# DEC-001\n\nUse the reviewed checkout boundary.\n",
+    )
+    .unwrap();
+    fs::write(
+        root.join("evidence/checkout.yaml"),
+        "schema_version: 1\nchange: checkout\nrequirements: []\nresidual_risks: []\n",
+    )
+    .unwrap();
+    run_git(&root, &["init", "--quiet"]);
+    run_git(&root, &["config", "user.email", "migration@example.test"]);
+    run_git(&root, &["config", "user.name", "Migration Fixture"]);
+    run_git(&root, &["add", "."]);
+    run_git(&root, &["commit", "--quiet", "-m", "legacy project"]);
+    root
+}
+
 struct TestProject {
     root: PathBuf,
     release_root: PathBuf,
@@ -3780,6 +3935,17 @@ fn run_git(root: &Path, arguments: &[&str]) {
         .output()
         .unwrap();
     assert_success(&output);
+}
+
+fn git_output(root: &Path, arguments: &[&str]) -> String {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(arguments)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
 fn copy_tree(source: &Path, target: &Path) {

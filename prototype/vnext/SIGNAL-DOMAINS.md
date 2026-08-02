@@ -97,7 +97,9 @@ JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、c
 
 組込み定義は起動時に`SignalCatalogRegistry`へ読み込み、ID重複、domain参照、Detector identity、binding、factからSignalへの参照を一度検証します。Git Repository Adapter、Detector、Rule Compiler、Application、`catalog signal-domains`は同じRegistry APIを使用します。実Projectでは、Method Bindingの検証、typed fact生成、Rule compile、Signal検出へ同じRegistryを渡すため、異なるCatalogを誤って参照しません。
 
-現在Registryへ投入できるのは組込み定義だけです。所有型と注入経路は用意していますが、外部YAML、Framework Release Catalog、Project Catalogの読込みはまだ許可していません。次の段階でSchema検証、namespace、決定的merge、署名・lock固定を追加してから有効化します。
+Signal Domain Catalog Registryへ投入できるのは、引き続き組込み定義だけです。Project固有のSignalやfact変換を外部YAMLから追加することはできません。
+
+Framework固有のmethod候補は別のFramework Detection Catalogで扱います。このCatalogは署名済みFramework Releaseのassetとしてだけ追加でき、namespace、重複rule、対応言語、fact kindを検証します。導入Project内の任意fileは読み込みません。Catalogが提示する候補も非authoritativeであり、review済みBindingなしではSignalを生成しません。
 
 ## 追加方針
 

@@ -1,0 +1,163 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/migration-inspection-report.schema.json",
+  "title": "Migration Inspection Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_state",
+    "readiness",
+    "repository",
+    "installation",
+    "inventory",
+    "components",
+    "findings",
+    "next"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1"
+    },
+    "source_state": {
+      "enum": [
+        "current",
+        "current-incomplete",
+        "mixed",
+        "vnext",
+        "vnext-incomplete",
+        "uninitialized"
+      ]
+    },
+    "readiness": {
+      "enum": [
+        "review-required",
+        "blocked",
+        "already-vnext"
+      ]
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["revision", "working_tree_clean"],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "working_tree_clean": {
+          "type": "boolean"
+        }
+      }
+    },
+    "installation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["present", "schema_version", "kit_version", "mode", "level"],
+      "properties": {
+        "present": {"type": "boolean"},
+        "schema_version": {"type": ["string", "null"]},
+        "kit_version": {"type": ["string", "null"]},
+        "mode": {"type": ["string", "null"]},
+        "level": {"type": ["string", "null"]}
+      }
+    },
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["changes", "contracts", "decisions", "evidence"],
+      "properties": {
+        "changes": {"$ref": "#/$defs/inventory"},
+        "contracts": {"$ref": "#/$defs/inventory"},
+        "decisions": {"$ref": "#/$defs/inventory"},
+        "evidence": {"$ref": "#/$defs/inventory"}
+      }
+    },
+    "components": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "classification",
+          "source_paths",
+          "target_paths",
+          "items",
+          "rationale"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "classification": {
+            "enum": [
+              "mechanical",
+              "review-required",
+              "generated",
+              "release-supplied",
+              "already-present"
+            ]
+          },
+          "source_paths": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "target_paths": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "items": {"type": "integer", "minimum": 0},
+          "rationale": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "category", "path", "message"],
+        "properties": {
+          "severity": {"enum": ["review", "blocking"]},
+          "category": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "path": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "next": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "inventory": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["roots", "files", "tracked_files", "formats"],
+      "properties": {
+        "roots": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "files": {"type": "integer", "minimum": 0},
+        "tracked_files": {"type": "integer", "minimum": 0},
+        "formats": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "yaml": {"type": "integer", "minimum": 0},
+            "json": {"type": "integer", "minimum": 0},
+            "markdown": {"type": "integer", "minimum": 0}
+          }
+        }
+      }
+    }
+  }
+}
