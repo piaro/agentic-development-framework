@@ -29,6 +29,12 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
+  -- benchmark "$KIT_ROOT/prototype/vnext/benchmarks/real-projects-v1" \
+  --format text
+cargo run \
+  --manifest-path "$RUST_ROOT/Cargo.toml" \
+  --locked \
+  --quiet \
   -- catalog signal-domains \
   --format json
 cargo run \

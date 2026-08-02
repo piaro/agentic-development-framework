@@ -48,8 +48,28 @@
                   {"type": "null"}
                 ]
               },
-              "license": {"type": "string", "minLength": 1}
+              "license": {"type": "string", "minLength": 1},
+              "license_path": {
+                "anyOf": [
+                  {"type": "string", "minLength": 1},
+                  {"type": "null"}
+                ]
+              }
             },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {"kind": {"const": "external-snapshot"}},
+                  "required": ["kind"]
+                },
+                "then": {
+                  "required": ["license_path"],
+                  "properties": {
+                    "license_path": {"type": "string", "minLength": 1}
+                  }
+                }
+              }
+            ],
             "additionalProperties": false
           },
           "manifests": {

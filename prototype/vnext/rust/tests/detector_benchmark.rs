@@ -7,7 +7,7 @@ use std::process::Command;
 
 #[test]
 fn checked_in_major_framework_corpus_meets_its_reviewed_thresholds() {
-    let root = corpus_root();
+    let root = corpus_root("major-frameworks-v1");
     let corpus: Value =
         serde_yaml::from_str(&fs::read_to_string(root.join("benchmark.yaml")).unwrap()).unwrap();
     validate_schema(&corpus, "benchmarks/v1/detector-corpus.schema.json");
@@ -29,8 +29,32 @@ fn checked_in_major_framework_corpus_meets_its_reviewed_thresholds() {
 }
 
 #[test]
+fn checked_in_real_project_corpus_meets_its_reviewed_thresholds() {
+    let root = corpus_root("real-projects-v1");
+    let corpus: Value =
+        serde_yaml::from_str(&fs::read_to_string(root.join("benchmark.yaml")).unwrap()).unwrap();
+    validate_schema(&corpus, "benchmarks/v1/detector-corpus.schema.json");
+
+    let report = run_detector_benchmark(&root).unwrap();
+    assert!(report.passed(), "{}", report.render_text());
+    assert_eq!(report.summary.projects, 4);
+    assert_eq!(report.summary.cases, 4);
+    assert_eq!(report.summary.parse_failures, 0);
+    assert_eq!(report.summary.observations.expected, 31);
+    assert_eq!(report.summary.observations.precision_bps, 10_000);
+    assert_eq!(report.summary.observations.recall_bps, 10_000);
+    assert_eq!(report.summary.framework_candidates.expected, 5);
+    assert_eq!(report.summary.framework_candidates.precision_bps, 10_000);
+    assert_eq!(report.summary.framework_candidates.recall_bps, 10_000);
+    validate_schema(
+        &report.as_value(),
+        "outputs/v1/detector-benchmark-report.schema.json",
+    );
+}
+
+#[test]
 fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
-    let reviewed_digest = run_detector_benchmark(&corpus_root())
+    let reviewed_digest = run_detector_benchmark(&corpus_root("major-frameworks-v1"))
         .unwrap()
         .corpus_digest;
     let temporary =
@@ -38,7 +62,7 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
     if temporary.exists() {
         fs::remove_dir_all(&temporary).unwrap();
     }
-    copy_tree(&corpus_root(), &temporary);
+    copy_tree(&corpus_root("major-frameworks-v1"), &temporary);
     let source_path = temporary.join("projects/python-django-sqs/shop/service.py");
     let source = fs::read_to_string(&source_path).unwrap();
     fs::write(source_path, format!("{source}    audit.insert(order)\n")).unwrap();
@@ -61,8 +85,10 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
     fs::remove_dir_all(temporary).unwrap();
 }
 
-fn corpus_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../benchmarks/major-frameworks-v1")
+fn corpus_root(corpus: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../benchmarks")
+        .join(corpus)
 }
 
 fn validate_schema(value: &Value, relative: &str) {

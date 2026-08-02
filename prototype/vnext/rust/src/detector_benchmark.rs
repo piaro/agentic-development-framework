@@ -54,6 +54,7 @@ struct BenchmarkProvenance {
     repository: Option<String>,
     revision: Option<String>,
     license: String,
+    license_path: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -594,9 +595,12 @@ fn validate_provenance(project: &BenchmarkProject) -> Result<(), DetectorBenchma
     )?;
     match project.provenance.kind.as_str() {
         "authored-fixture" => {
-            if project.provenance.repository.is_some() || project.provenance.revision.is_some() {
+            if project.provenance.repository.is_some()
+                || project.provenance.revision.is_some()
+                || project.provenance.license_path.is_some()
+            {
                 return Err(benchmark_error(format!(
-                    "authored benchmark fixture must not claim an external repository or revision: {}",
+                    "authored benchmark fixture must not claim external provenance: {}",
                     project.id
                 )));
             }
@@ -625,6 +629,13 @@ fn validate_provenance(project: &BenchmarkProject) -> Result<(), DetectorBenchma
                     project.id
                 )));
             }
+            let license_path = project.provenance.license_path.as_deref().ok_or_else(|| {
+                benchmark_error(format!(
+                    "external benchmark snapshot license path is missing: {}",
+                    project.id
+                ))
+            })?;
+            require_non_empty(license_path, "external benchmark license path")?;
         }
         other => {
             return Err(benchmark_error(format!(
@@ -645,10 +656,12 @@ fn digest_corpus(
     for project in &corpus.projects {
         let project_root = repository_path(root, &project.root)
             .map_err(|error| benchmark_error(error.to_string()))?;
+        let license_path = project.provenance.license_path.iter();
         for relative in project
             .manifests
             .iter()
             .chain(project.cases.iter().map(|case| &case.path))
+            .chain(license_path)
         {
             let path = repository_path(&project_root, relative)
                 .map_err(|error| benchmark_error(error.to_string()))?;

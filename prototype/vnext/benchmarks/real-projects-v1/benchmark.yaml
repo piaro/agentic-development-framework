@@ -1,0 +1,265 @@
+schema_version: "1"
+id: real-projects-v1
+minimum_scores:
+  observation_precision_bps: 10000
+  observation_recall_bps: 10000
+  framework_precision_bps: 10000
+  framework_recall_bps: 10000
+projects:
+  - id: django-oscar
+    root: projects/django-oscar
+    provenance:
+      kind: external-snapshot
+      repository: https://github.com/django-oscar/django-oscar
+      revision: 87d6cd37c3a4005abbf894383c154145d072949b
+      license: BSD-3-Clause
+      license_path: LICENSE
+    manifests:
+      - pyproject.toml
+    cases:
+      - path: src/oscar/apps/analytics/scores.py
+        language: python
+        expected_observations:
+          - kind: other_method_call
+            symbol: Calculator.run
+            resource: self
+            method: calculate_scores
+            line: 16
+          - kind: other_method_call
+            symbol: Calculator.calculate_scores
+            resource: self.logger
+            method: info
+            line: 19
+          - kind: other_method_call
+            symbol: Calculator.calculate_scores
+            resource: self.weights
+            method: values
+            line: 20
+          - kind: other_method_call
+            symbol: Calculator.calculate_scores
+            resource: self.weights
+            method: keys
+            line: 21
+          - kind: db_write
+            symbol: Calculator.calculate_scores
+            resource: ProductRecord.objects
+            method: update
+            line: 22
+        expected_framework_candidates:
+          - framework: django-orm
+            symbol: Calculator.calculate_scores
+            resource: ProductRecord.objects
+            method: update
+            line: 22
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: false
+
+  - id: prisma-examples
+    root: projects/prisma-examples
+    provenance:
+      kind: external-snapshot
+      repository: https://github.com/prisma/prisma-examples
+      revision: eb8f4328821c6746680a2ba02e0e5636a085a327
+      license: Apache-2.0
+      license_path: LICENSE
+    manifests:
+      - accelerate/accelerate-hacker-news/package.json
+    cases:
+      - path: accelerate/accelerate-hacker-news/app/actions/addVotes.ts
+        language: typescript
+        expected_observations:
+          - kind: db_write
+            symbol: addVotes
+            resource: prisma.post
+            method: update
+            line: 10
+          - kind: other_method_call
+            symbol: addVotes
+            resource: prisma.$accelerate
+            method: invalidate
+            line: 21
+        expected_framework_candidates:
+          - framework: prisma
+            symbol: addVotes
+            resource: prisma.post
+            method: update
+            line: 10
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: false
+
+  - id: nats-go
+    root: projects/nats-go
+    provenance:
+      kind: external-snapshot
+      repository: https://github.com/nats-io/nats.go
+      revision: 0c5d8d7245c17a418cb850ac69a1aa52b17e19c5
+      license: Apache-2.0
+      license_path: LICENSE
+    manifests:
+      - go.mod
+    cases:
+      - path: examples/docs/jetstream-basic/main.go
+        language: go
+        expected_observations:
+          - kind: other_method_call
+            symbol: main
+            resource: nats
+            method: Connect
+            line: 13
+          - kind: other_method_call
+            symbol: main
+            resource: log
+            method: Fatal
+            line: 15
+          - kind: other_method_call
+            symbol: main
+            resource: nc
+            method: Close
+            line: 17
+          - kind: other_method_call
+            symbol: main
+            resource: jetstream
+            method: New
+            line: 19
+          - kind: other_method_call
+            symbol: main
+            resource: log
+            method: Fatal
+            line: 21
+          - kind: other_method_call
+            symbol: main
+            resource: context
+            method: Background
+            line: 24
+          - kind: other_method_call
+            symbol: main
+            resource: js
+            method: CreateStream
+            line: 28
+          - kind: other_method_call
+            symbol: main
+            resource: log
+            method: Fatal
+            line: 34
+          - kind: message_publish
+            symbol: main
+            resource: js
+            method: Publish
+            line: 38
+          - kind: message_publish
+            symbol: main
+            resource: js
+            method: Publish
+            line: 39
+          - kind: message_publish
+            symbol: main
+            resource: js
+            method: Publish
+            line: 40
+          - kind: other_method_call
+            symbol: main
+            resource: stream
+            method: CreateOrUpdateConsumer
+            line: 43
+          - kind: other_method_call
+            symbol: main
+            resource: log
+            method: Fatal
+            line: 48
+          - kind: other_method_call
+            symbol: main
+            resource: consumer
+            method: Fetch
+            line: 52
+          - kind: other_method_call
+            symbol: main
+            resource: log
+            method: Fatal
+            line: 54
+          - kind: other_method_call
+            symbol: main
+            resource: msgs
+            method: Messages
+            line: 56
+          - kind: other_method_call
+            symbol: main
+            resource: fmt
+            method: Printf
+            line: 57
+          - kind: other_method_call
+            symbol: main
+            resource: msg
+            method: Subject
+            line: 57
+          - kind: other_method_call
+            symbol: main
+            resource: msg
+            method: Data
+            line: 57
+          - kind: other_method_call
+            symbol: main
+            resource: msg
+            method: Ack
+            line: 58
+        expected_framework_candidates:
+          - framework: nats
+            symbol: main
+            resource: js
+            method: Publish
+            line: 38
+            suggested_fact_kinds:
+              - message_publish
+            method_binding_required: false
+          - framework: nats
+            symbol: main
+            resource: js
+            method: Publish
+            line: 39
+            suggested_fact_kinds:
+              - message_publish
+            method_binding_required: false
+          - framework: nats
+            symbol: main
+            resource: js
+            method: Publish
+            line: 40
+            suggested_fact_kinds:
+              - message_publish
+            method_binding_required: false
+
+  - id: godot-demo-projects
+    root: projects/godot-demo-projects
+    provenance:
+      kind: external-snapshot
+      repository: https://github.com/godotengine/godot-demo-projects
+      revision: 4652e17c04fe5f249dc53949fb195a3d8b24ee5f
+      license: MIT
+      license_path: LICENSE.md
+    manifests: []
+    cases:
+      - path: 2d/finite_state_machine/player/states/die.gd
+        language: gdscript
+        expected_observations:
+          - kind: other_method_call
+            symbol: enter
+            resource: owner
+            method: set_dead
+            line: 5
+          - kind: other_method_call
+            symbol: enter
+            resource: owner
+            method: get_node
+            line: 6
+          - kind: other_method_call
+            symbol: enter
+            resource: owner.get_node(^"AnimationPlayer")
+            method: play
+            line: 6
+          - kind: message_publish
+            symbol: _on_animation_finished
+            resource: finished
+            method: emit
+            line: 10
+        expected_framework_candidates: []

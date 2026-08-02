@@ -181,15 +181,21 @@ jobs:
 
 同梱の`major-frameworks-v1`は、主要8 ORM、8 messaging framework、8 HTTP client、Amazon S3・Google Cloud Storage・Azure Blob Storageを扱う10個のproject fixtureです。外部sourceのコピーではなく、各frameworkの典型的な呼出し形とmanifest・import・型・receiver根拠を再現する最小corpusです。
 
+`real-projects-v1`は、django-oscar、Prisma Examples、NATS Go、Godot Demo Projectsから、ライセンスを保持した代表sourceと依存manifestを固定Git revisionで収録したoffline corpusです。4 sourceに含まれる31 receiver callと5 framework candidateを人が原文と照合し、期待値として固定しています。
+
 ```sh
 agentic benchmark \
   prototype/vnext/benchmarks/major-frameworks-v1 \
+  --format text
+
+agentic benchmark \
+  prototype/vnext/benchmarks/real-projects-v1 \
   --format text
 ```
 
 現在の基準は、SQLAlchemy `session.execute`とJavaScript版S3 `client.send`のようにkindを自動決定しない呼出しを含む32 receiver callと29 framework candidateのprecision／recallがすべて100%です。構文エラーは常に失敗し、corpusの`minimum_scores`を下回ると詳細Reportをstdoutへ出して終了code 1になります。Reportはmanifest・source・dependency manifest全体の`corpus_digest`も返します。正解値・閾値をDetectorが自動更新することはありません。
 
-corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Reportは`schemas/outputs/v1/detector-benchmark-report.schema.json`に従います。各projectは`authored-fixture`または`external-snapshot`のprovenance、license、外部snapshotならRepository URLと40桁のGit revisionを必須とします。runnerはoffline・read-onlyで、corpus root外へのpathやsymlink escapeを拒否します。実際の外部Repository snapshotを追加する場合も、sourceのライセンスとrevisionをreviewしたうえで、同じcorpus契約へ人が正解を記入します。
+corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Reportは`schemas/outputs/v1/detector-benchmark-report.schema.json`に従います。各projectは`authored-fixture`または`external-snapshot`のprovenance、license、外部snapshotならRepository URL、40桁のGit revision、同梱LICENSEへのpathを必須とします。LICENSEもcorpus digestへ含めます。runnerはoffline・read-onlyで、corpus root外へのpathやsymlink escapeを拒否します。実際の外部Repository snapshotを追加する場合も、sourceのライセンスとrevisionをreviewしたうえで、同じcorpus契約へ人が正解を記入します。
 
 ## 実行
 
@@ -555,6 +561,7 @@ sources:
 | `fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
 | `fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
 | `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
+| `benchmarks/real-projects-v1/` | 固定revisionの4 OSS Repositoryから代表sourceを収録したoffline品質corpus |
 
 ## 現時点の制約
 
@@ -572,7 +579,7 @@ sources:
 - `project observe`のDraft v6はsourceと生成元ObservationのSHA-256を固定し、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は反映用構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。`project promote-bindings`はDraftを再検証し、freshな場合だけ現在のphaseを保って正式Observationを原子的に置換します。
 - 主要frameworkのE2Eは、Django/SQS、SQLAlchemy/Celery、Prisma/Kafka、Spring Data JPA/RabbitMQ、Entity Framework Core/Azure Service Bus、Rails/Redis Streams、Laravel/Google Cloud Pub/Sub、GORM/NATSの8 fixtureを、`observe`、review済みDraft検証、promotion、正式Binding検証、Signal生成まで同じCLI経路で通します。SQLAlchemy `execute`のように候補が空のAPIは、明示的な個別分類なしではE2Eを通しません。
 - 外部連携のE2Eは、Requests、HTTPX、Fetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientの8系統と、Amazon S3（Python・JavaScript）、Google Cloud Storage、Azure Blob Storageの4実装を同じ経路で検証します。Object Storageは`external-system-call`と`object-storage-write`の両方を生成し、JavaScript版S3の`send`は明示reviewで両方に分類した場合だけ通します。
-- Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
+- Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。Repository全体の大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
