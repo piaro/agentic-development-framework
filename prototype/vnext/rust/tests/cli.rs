@@ -3,7 +3,7 @@ use agentic_vnext_rust::{canonical_digest, canonical_json};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
@@ -807,6 +807,91 @@ fn project_validates_and_promotes_a_reviewed_draft_safely() {
                 .to_string_lossy()
                 .starts_with(".repository-observation.tmp-"))
     );
+}
+
+#[test]
+fn major_frameworks_run_from_observation_draft_through_signal_generation() {
+    let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let corpus_root = manifest_root.join("../benchmarks/major-frameworks-v1/projects");
+    let cases: [(&str, &[&str]); 8] = [
+        ("python-django-sqs", &["amazon-sqs", "django-orm"]),
+        ("python-sqlalchemy-celery", &["celery", "sqlalchemy"]),
+        ("typescript-prisma-kafka", &["apache-kafka", "prisma"]),
+        ("java-spring-rabbit", &["rabbitmq", "spring-data-jpa"]),
+        (
+            "csharp-ef-servicebus",
+            &["azure-service-bus", "entity-framework-core"],
+        ),
+        (
+            "ruby-rails-redis",
+            &["rails-active-record", "redis-streams"],
+        ),
+        (
+            "php-laravel-pubsub",
+            &["google-cloud-pubsub", "laravel-eloquent"],
+        ),
+        ("go-gorm-nats", &["gorm", "nats"]),
+    ];
+
+    for (case_id, expected_frameworks) in cases {
+        let project = TestProject::new();
+        copy_tree(&corpus_root.join(case_id), &project.root);
+        run_git(&project.root, &["add", "-A"]);
+        run_git(
+            &project.root,
+            &["commit", "--quiet", "-m", "add framework fixture"],
+        );
+        let draft_relative = format!(".agentic/{case_id}.draft.yaml");
+        let observed = project.run(&[
+            "project",
+            "observe",
+            "--analysis-root",
+            ".",
+            "--output",
+            &draft_relative,
+        ]);
+        assert_success(&observed);
+
+        let draft_path = project.root.join(&draft_relative);
+        let mut draft = read_yaml(&draft_path);
+        let frameworks = complete_major_framework_draft(&mut draft, case_id);
+        assert_eq!(
+            frameworks,
+            expected_frameworks
+                .iter()
+                .map(|framework| (*framework).to_owned())
+                .collect::<BTreeSet<_>>(),
+            "unexpected framework candidates for {case_id}"
+        );
+        write_yaml(&draft_path, &draft);
+
+        let reviewed = project.run(&["project", "validate-bindings", "--draft", &draft_relative]);
+        assert_success(&reviewed);
+        let promoted = project.run(&["project", "promote-bindings", "--draft", &draft_relative]);
+        assert_success(&promoted);
+        let authoritative = project.run(&["project", "validate-bindings"]);
+        assert_success(&authoritative);
+
+        let next = project.run(&["next", "change.place-order", "--format", "json"]);
+        assert_success(&next);
+        let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+        assert_eq!(next["state"], "needs-analysis", "failed case: {case_id}");
+        assert!(
+            next["diagnostics"].as_array().is_some_and(Vec::is_empty),
+            "unexpected diagnostics for {case_id}: {}",
+            next["diagnostics"]
+        );
+        assert_eq!(
+            signals_for_binding(&next, "data", &format!("data.e2e-{case_id}")),
+            ["persistent-data-write"],
+            "missing persistence signal for {case_id}"
+        );
+        assert_eq!(
+            signals_for_binding(&next, "integration", &format!("integration.e2e-{case_id}")),
+            ["distributed-effect", "message-or-event-publish"],
+            "missing messaging signals for {case_id}"
+        );
+    }
 }
 
 #[test]
@@ -2635,6 +2720,128 @@ fn signals_for_binding(output: &Value, binding: &str, logical_ref: &str) -> Vec<
         .filter(|candidate| candidate["bindings"][binding].as_str() == Some(logical_ref))
         .map(|candidate| candidate["signal"].as_str().unwrap().to_owned())
         .collect()
+}
+
+fn complete_major_framework_draft(draft: &mut Value, case_id: &str) -> BTreeSet<String> {
+    let inventory = draft["artifacts"].as_array().unwrap().clone();
+    let mut frameworks = BTreeSet::new();
+    for artifact in &inventory {
+        frameworks.extend(
+            artifact["framework_candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|candidate| candidate["framework"].as_str().unwrap().to_owned()),
+        );
+    }
+
+    for binding_artifact in draft["binding_artifacts"].as_array_mut().unwrap() {
+        let path = binding_artifact["path"].as_str().unwrap();
+        let artifact = inventory
+            .iter()
+            .find(|artifact| artifact["path"].as_str() == Some(path))
+            .unwrap();
+        let candidates = artifact["framework_candidates"].as_array().unwrap();
+        let mut symbols = serde_json::Map::new();
+        let mut resources = BTreeMap::<String, BTreeSet<String>>::new();
+        let mut methods = serde_json::Map::new();
+
+        for observation in artifact["observations"].as_array().unwrap() {
+            let candidate = candidates.iter().find(|candidate| {
+                candidate["symbol"] == observation["symbol"]
+                    && candidate["resource"] == observation["resource"]
+                    && candidate["method"] == observation["method"]
+                    && candidate["line"] == observation["line"]
+            });
+            let fact_kinds = match observation["kind"].as_str().unwrap() {
+                "db_write" => vec!["db_write".to_owned()],
+                "message_publish" => vec!["message_publish".to_owned()],
+                "other_method_call" => {
+                    let Some(candidate) = candidate else {
+                        continue;
+                    };
+                    let suggested = candidate["suggested_fact_kinds"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .map(|kind| kind.as_str().unwrap().to_owned())
+                        .collect::<Vec<_>>();
+                    if suggested.is_empty() {
+                        assert_eq!(
+                            candidate["framework"], "sqlalchemy",
+                            "{case_id} requires an explicit reviewed classification"
+                        );
+                        vec!["db_write".to_owned()]
+                    } else {
+                        suggested
+                    }
+                }
+                kind => panic!("unexpected observation kind in {case_id}: {kind}"),
+            };
+            let symbol = observation["symbol"].as_str().unwrap();
+            symbols.entry(symbol.to_owned()).or_insert_with(|| {
+                json!({
+                    "logical_ref": "operation.place-order",
+                    "owner": "team.ordering",
+                    "authority_ref": "decision.repository-bindings",
+                })
+            });
+            let resource = observation["resource"].as_str().unwrap();
+            let resource_bindings = resources.entry(resource.to_owned()).or_default();
+            for fact_kind in &fact_kinds {
+                resource_bindings.insert(resource_binding_for_fact(fact_kind).to_owned());
+            }
+            if observation["kind"] == "other_method_call" {
+                let candidate = candidate.unwrap();
+                methods.insert(
+                    candidate["binding_key"].as_str().unwrap().to_owned(),
+                    json!({
+                        "fact_kinds": fact_kinds,
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    }),
+                );
+            }
+        }
+
+        let resources = resources
+            .into_iter()
+            .map(|(physical, bindings)| {
+                let logical_refs = bindings
+                    .into_iter()
+                    .map(|binding| {
+                        (
+                            binding.clone(),
+                            Value::String(format!("{binding}.e2e-{case_id}")),
+                        )
+                    })
+                    .collect::<serde_json::Map<_, _>>();
+                (
+                    physical,
+                    json!({
+                        "logical_refs": logical_refs,
+                        "owner": "team.ordering",
+                        "authority_ref": "decision.repository-bindings",
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        binding_artifact["bindings"] = json!({
+            "symbols": symbols,
+            "resources": resources,
+            "methods": methods,
+        });
+    }
+    frameworks
+}
+
+fn resource_binding_for_fact(fact_kind: &str) -> &'static str {
+    match fact_kind {
+        "db_write" | "object_write" | "sensitive_data_access" => "data",
+        "external_call" | "message_publish" => "integration",
+        "authorization_change" => "authorization",
+        other => panic!("unsupported reviewed fact kind: {other}"),
+    }
 }
 
 #[test]
