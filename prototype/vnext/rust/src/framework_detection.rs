@@ -120,7 +120,10 @@ impl FrameworkCatalog {
         for (framework, markers) in [
             (DJANGO, &["django"][..]),
             (SQLALCHEMY, &["sqlalchemy"][..]),
-            (PRISMA, &["@prisma/client", "\"prisma\""][..]),
+            // The `prisma` package is a development CLI and is also used by
+            // non-Prisma ORMs against Prisma Postgres. Only the runtime client
+            // is project-level evidence for Prisma Client call candidates.
+            (PRISMA, &["@prisma/client"][..]),
             (
                 SPRING_DATA_JPA,
                 &[
@@ -296,8 +299,11 @@ impl FrameworkCatalog {
                 let mut evidence = self
                     .project_evidence
                     .get(rule.framework)
+                    .into_iter()
+                    .flatten()
+                    .filter(|evidence| manifest_evidence_applies(evidence, path))
                     .cloned()
-                    .unwrap_or_default();
+                    .collect::<BTreeSet<_>>();
                 evidence.extend(source_evidence(
                     rule.framework,
                     path,
@@ -306,6 +312,15 @@ impl FrameworkCatalog {
                     &observation.method,
                 ));
                 if evidence.is_empty() {
+                    continue;
+                }
+                if !candidate_receiver_is_plausible(
+                    rule.framework,
+                    language,
+                    &source_lower,
+                    &observation.resource,
+                    &observation.method,
+                ) {
                     continue;
                 }
                 candidates.push(FrameworkCandidate {
@@ -333,6 +348,75 @@ impl FrameworkCatalog {
         candidates.sort();
         candidates
     }
+}
+
+fn manifest_evidence_applies(evidence: &str, source_path: &str) -> bool {
+    let Some(manifest_path) = evidence.strip_prefix("project-manifest:") else {
+        return true;
+    };
+    let Some((directory, _)) = manifest_path.rsplit_once('/') else {
+        return true;
+    };
+    source_path == directory
+        || source_path
+            .strip_prefix(directory)
+            .is_some_and(|remainder| remainder.starts_with('/'))
+}
+
+fn candidate_receiver_is_plausible(
+    framework: &str,
+    language: &str,
+    source: &str,
+    resource: &str,
+    method: &str,
+) -> bool {
+    if framework == PRISMA {
+        let resource = resource.to_ascii_lowercase();
+        if resource.contains("prisma") {
+            return true;
+        }
+        let root = resource
+            .split(|character: char| !character.is_ascii_alphanumeric() && character != '_')
+            .next()
+            .unwrap_or_default();
+        return !root.is_empty()
+            && ["const", "let", "var"].iter().any(|declaration| {
+                source.contains(&format!("{declaration} {root} = new prismaclient"))
+            });
+    }
+
+    if framework == DJANGO
+        && language == "python"
+        && method == "update"
+        && is_explicit_python_collection(source, resource)
+    {
+        return false;
+    }
+    true
+}
+
+fn is_explicit_python_collection(source: &str, resource: &str) -> bool {
+    if resource == "__dict__" || resource.ends_with(".__dict__") {
+        return true;
+    }
+    let constructors = ["{", "dict(", "set(", "list(", "["];
+    if resource
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+        && constructors
+            .iter()
+            .any(|constructor| source.contains(&format!("{resource} = {constructor}")))
+    {
+        return true;
+    }
+    if let Some(field) = resource.strip_prefix("self.") {
+        return constructors.iter().any(|constructor| {
+            source.contains(&format!("self.{field} = {constructor}"))
+                || source.contains(&format!("\"{field}\": {constructor}"))
+                || source.contains(&format!("'{field}': {constructor}"))
+        });
+    }
+    false
 }
 
 pub(crate) fn is_framework_manifest_path(path: &str) -> bool {
@@ -1329,8 +1413,12 @@ mod tests {
         ];
         let catalog = FrameworkCatalog::default();
         for (language, source, method, framework) in fixtures {
-            let candidates =
-                catalog.candidates("src/service", language, source, &[observation(method)]);
+            let observation = if framework == PRISMA {
+                observation_on("prisma.order", method)
+            } else {
+                observation(method)
+            };
+            let candidates = catalog.candidates("src/service", language, source, &[observation]);
             assert_eq!(candidates.len(), 1, "{framework}");
             assert_eq!(candidates[0].framework, framework);
             assert_eq!(
@@ -1599,6 +1687,87 @@ mod tests {
                 SuggestedFactKind::ExternalCall,
                 SuggestedFactKind::ObjectWrite,
             ]
+        );
+    }
+
+    #[test]
+    fn nested_manifests_do_not_leak_framework_evidence_to_siblings() {
+        let mut catalog = FrameworkCatalog::default();
+        catalog.record_manifest(
+            "apps/prisma/package.json",
+            r#"{"dependencies":{"@prisma/client":"latest"}}"#,
+        );
+
+        assert!(
+            catalog
+                .candidates(
+                    "apps/cache/service.ts",
+                    "typescript",
+                    "caches.delete(key)",
+                    &[observation_on("caches", "delete")],
+                )
+                .is_empty()
+        );
+        assert_eq!(
+            catalog
+                .candidates(
+                    "apps/prisma/service.ts",
+                    "typescript",
+                    "prisma.order.delete({ where: { id } })",
+                    &[observation_on("prisma.order", "delete")],
+                )
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn prisma_requires_a_receiver_or_explicit_client_alias() {
+        let mut catalog = FrameworkCatalog::default();
+        catalog.record_manifest(
+            "package.json",
+            r#"{"dependencies":{"@prisma/client":"latest"}}"#,
+        );
+        assert!(
+            catalog
+                .candidates(
+                    "src/main.ts",
+                    "typescript",
+                    "NestFactory.create(AppModule)",
+                    &[observation_on("NestFactory", "create")],
+                )
+                .is_empty()
+        );
+        assert_eq!(
+            catalog
+                .candidates(
+                    "src/main.ts",
+                    "typescript",
+                    "const db = new PrismaClient(); db.order.create({ data })",
+                    &[observation_on("db.order", "create")],
+                )
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn django_does_not_suggest_explicit_python_collection_updates() {
+        let mut catalog = FrameworkCatalog::default();
+        catalog.record_manifest("pyproject.toml", "dependencies = [\"Django>=6\"]");
+        let source = "d = {}\nd.update(value)\nself.__dict__.update(value)\n";
+        assert!(
+            catalog
+                .candidates(
+                    "shop/service.py",
+                    "python",
+                    source,
+                    &[
+                        observation_on("d", "update"),
+                        observation_on("self.__dict__", "update"),
+                    ],
+                )
+                .is_empty()
         );
     }
 

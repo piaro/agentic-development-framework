@@ -90,6 +90,7 @@
           "language",
           "status",
           "parse_error",
+          "reviewed_outputs",
           "observations",
           "framework_candidates"
         ],
@@ -103,6 +104,12 @@
               {"type": "string", "minLength": 1},
               {"type": "null"}
             ]
+          },
+          "reviewed_outputs": {
+            "type": "array",
+            "minItems": 1,
+            "items": {"enum": ["observations", "framework_candidates"]},
+            "uniqueItems": true
           },
           "observations": {
             "type": "object",

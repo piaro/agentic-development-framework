@@ -1,0 +1,11 @@
+schema_version: "1"
+id: django-oscar-87d6cd37
+repository: https://github.com/django-oscar/django-oscar
+revision: 87d6cd37c3a4005abbf894383c154145d072949b
+content_digest: sha256:db920d091efed95c848a6c2071ddc3085dac9915326623ecc4ccdc3125223c3f
+report_digest: sha256:4bb3fd824ffdc32722451b1b382c7a01bf3ac5fc1d1d2fc24c9df52e940ae2ac
+expected_audit_status: complete
+expected_gaps: []
+review:
+  reviewed_at: "2026-08-02"
+  basis: Full Git-tracked source audit at the pinned revision; no coverage gaps were found.

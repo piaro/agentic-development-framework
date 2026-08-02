@@ -181,7 +181,7 @@ jobs:
 
 同梱の`major-frameworks-v1`は、主要8 ORM、8 messaging framework、8 HTTP client、Amazon S3・Google Cloud Storage・Azure Blob Storageを扱う10個のproject fixtureです。外部sourceのコピーではなく、各frameworkの典型的な呼出し形とmanifest・import・型・receiver根拠を再現する最小corpusです。
 
-`real-projects-v1`は、django-oscar、Prisma Examples、NATS Go、Godot Demo Projectsから、ライセンスを保持した代表sourceと依存manifestを固定Git revisionで収録したoffline corpusです。4 sourceに含まれる31 receiver callと5 framework candidateを人が原文と照合し、期待値として固定しています。
+`real-projects-v1`は、django-oscar、Prisma Examples、NATS Go、Godot Demo Projectsから、ライセンスを保持した代表sourceと依存manifestを固定Git revisionで収録したoffline corpusです。8 sourceに含まれる31 receiver callと9 framework candidateを人が原文と照合し、期待値として固定しています。候補だけをreviewするcaseは`reviewed_outputs: [framework_candidates]`を明示し、未reviewの全receiver callをprecision／recallへ混ぜません。Djangoの明示的なcollection更新と、Prismaを使わないService Worker・Drizzle・TypeORM sourceをnegative caseとして含めます。
 
 ```sh
 agentic benchmark \
@@ -199,26 +199,34 @@ corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Report
 
 ### Repository Detector Audit
 
-`detector-audit`は、Git管理下にある登録済み拡張子のsourceをRepository全体で走査します。言語別・file別にparse結果、`db_write`、`message_publish`、未分類receiver call、framework candidate、明示method Bindingが必要な候補、空のsuggestionを集計します。
+`detector-audit`は、Git管理下にある登録済み拡張子のsourceをRepository全体で走査します。言語別・file別にparse結果、`db_write`、`message_publish`、未分類receiver call、framework candidate、明示method Bindingが必要な候補、空のsuggestionを集計します。JSONの`candidate_records`には、候補ごとのpath、symbol、resource、method、根拠、提案kindを保持し、人手review対象を再現できます。
 
 ```sh
 agentic detector-audit /path/to/repository --format text --require-clean
+
+agentic detector-audit-check /path/to/repository \
+  --baseline prototype/vnext/benchmarks/repository-audits-v1/django-oscar.yaml \
+  --format text
 ```
 
 このReportは正解ラベルを持たないため、precision／recallや違反有無を推測しません。未対応言語、parse失敗、source・依存manifestの読込み失敗が1件でもあれば`blocked`と終了code 1を返します。`--require-clean`はrevisionと解析bytesの対応を要求する再現検証用です。JSONは`schemas/outputs/v1/repository-detector-audit-report.schema.json`に従い、全source・読込み済み依存manifestから`content_digest`を生成します。
+
+`detector-audit-check`は、固定revision、全入力の`content_digest`、候補詳細を含む監査Report全体のdigest、coverage gapをreview済みbaselineと比較します。baseline一致は「同じ監査結果を再現した」ことだけを表し、既知gapを通常評価で許可しません。Prisma baselineは一致しても`audit_status: blocked`を保持し、通常の`detector-audit`は終了code 1のままです。入力は`schemas/benchmarks/v1/repository-audit-baseline.schema.json`、出力は`schemas/outputs/v1/repository-audit-baseline-report.schema.json`に従います。
 
 固定revisionの4 OSS cloneをRepository全体で監査した初回結果は次のとおりです。観測数と候補数はparse成功fileだけを集計します。
 
 | Repository | source | parsed | parse gap | observations | framework candidates |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| django-oscar | 836 | 836 | 0 | 16,387 | 808 |
-| Prisma Examples | 652 | 651 | 1 | 2,785 | 362 |
+| django-oscar | 836 | 836 | 0 | 16,387 | 766 |
+| Prisma Examples | 652 | 651 | 1 | 2,785 | 344 |
 | NATS Go | 179 | 179 | 0 | 26,429 | 648 |
 | Godot Demo Projects | 497 | 497 | 0 | 5,833 | 0 |
 
 初回監査で見つかったGodot Demo Projectsの2件は、Godotで有効な`$%UniqueNode`を同梱Tree-sitter文法が読めないことが原因でした。Godot公式の[GDScript reference](https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_basics.html#literals)は`$NodePath`と`%UniqueNode`を定義し、固定revisionの公式demoでも[`$%SDFGI`](https://github.com/godotengine/godot-demo-projects/blob/4652e17c04fe5f249dc53949fb195a3d8b24ee5f/3d/truck_town/car_select/car_select.gd#L12)が使われています。Detectorは解析時だけ同じbyte長の互換表現を使い、報告する行番号とresource文字列には原文を維持します。修正後は固定revisionの497件をすべてparseできました。
 
 Prisma Examplesの1件は、同一の`const db`初期化が未完了の式の途中へ重複している[上流source](https://github.com/prisma/prisma-examples/blob/eb8f4328821c6746680a2ba02e0e5636a085a327/databases/kysely-prisma-postgres/src/index.ts#L27-L41)自体の構文不整合です。このgapはDetectorで読み替えず、file path付きの`parse-error`としてfail closedを維持します。正当な新構文、上流source自体の構文不整合、生成途中fileなどの区別は人が確認し、Detectorまたは監査対象の期待値へ明示的に反映します。
+
+候補reviewでは、nested manifestのFramework根拠がmonorepoの兄弟projectへ漏れる問題と、Prisma CLIだけを使うDrizzle projectをPrisma Clientと誤認する問題が見つかりました。manifest根拠はそのmanifestのdirectory配下だけへ適用し、Prismaのproject根拠はruntime packageの`@prisma/client`に限定します。さらにPrisma candidateは`prisma`を含むreceiverまたは明示的な`new PrismaClient()` aliasを要求します。Djangoの`__dict__`やsource上でcollection生成が明らかなreceiverの`update`も候補から除外します。4 OSSのbaselineは`benchmarks/repository-audits-v1/`へ固定しています。
 
 ## 実行
 
@@ -564,6 +572,7 @@ sources:
 | `rust/src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
 | `rust/src/binding_draft_validation.rs` | review済みObservation Draftの完全性・authority・source freshnessを正式反映前に検証 |
 | `rust/src/detector_benchmark.rs` | review済みcorpusに対するDetector・framework候補のprecision／recallと閾値判定を生成 |
+| `rust/src/detector_audit_baseline.rs` | 固定Repositoryの全入力・監査Report・既知gapをreview済みbaselineと比較 |
 | `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
 | `rust/src/signal_catalog.rs` | 標準Signal Domain、Signal、binding、typed repository factからの変換と、全Consumer共通の検証済みRegistryを提供 |
 | `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
@@ -585,6 +594,7 @@ sources:
 | `fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
 | `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
 | `benchmarks/real-projects-v1/` | 固定revisionの4 OSS Repositoryから代表sourceを収録したoffline品質corpus |
+| `benchmarks/repository-audits-v1/` | 固定revisionの4 OSS Repository全体に対するreview済み監査digestと既知gap |
 
 ## 現時点の制約
 
@@ -602,7 +612,7 @@ sources:
 - `project observe`のDraft v6はsourceと生成元ObservationのSHA-256を固定し、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は反映用構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。`project promote-bindings`はDraftを再検証し、freshな場合だけ現在のphaseを保って正式Observationを原子的に置換します。
 - 主要frameworkのE2Eは、Django/SQS、SQLAlchemy/Celery、Prisma/Kafka、Spring Data JPA/RabbitMQ、Entity Framework Core/Azure Service Bus、Rails/Redis Streams、Laravel/Google Cloud Pub/Sub、GORM/NATSの8 fixtureを、`observe`、review済みDraft検証、promotion、正式Binding検証、Signal生成まで同じCLI経路で通します。SQLAlchemy `execute`のように候補が空のAPIは、明示的な個別分類なしではE2Eを通しません。
 - 外部連携のE2Eは、Requests、HTTPX、Fetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientの8系統と、Amazon S3（Python・JavaScript）、Google Cloud Storage、Azure Blob Storageの4実装を同じ経路で検証します。Object Storageは`external-system-call`と`object-storage-write`の両方を生成し、JavaScript版S3の`send`は明示reviewで両方に分類した場合だけ通します。
-- Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。`detector-audit`は外部clone全体のcoverageと候補分布を測りますが、正解ラベルを持たないため誤検知率とは呼びません。Repository全体のreview済みsnapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
+- Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。`detector-audit`は外部clone全体のcoverageと候補分布を測り、review済みbaselineがrevision・全入力・Report digest・既知gapの変化を検出します。ただしRepository全件へ意味上の正解ラベルを付けたものではないため、全件の誤検知率とは呼びません。review済みsampleの拡大、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。

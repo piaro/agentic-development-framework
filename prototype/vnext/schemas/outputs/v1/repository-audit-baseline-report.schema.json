@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/outputs/v1/repository-audit-baseline-report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "baseline_id",
+    "baseline_digest",
+    "status",
+    "repository",
+    "revision",
+    "audit_status",
+    "content_digest",
+    "report_digest",
+    "expected_gaps",
+    "actual_gaps",
+    "mismatches"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "baseline_id": {"type": "string", "minLength": 1},
+    "baseline_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "status": {"enum": ["matched", "mismatched"]},
+    "repository": {"type": "string", "pattern": "^https://"},
+    "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "audit_status": {"enum": ["complete", "blocked"]},
+    "content_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "report_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expected_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "actual_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "mismatches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["field", "expected", "actual"],
+        "properties": {
+          "field": {
+            "enum": ["revision", "content_digest", "report_digest", "audit_status", "gaps"]
+          },
+          "expected": {},
+          "actual": {}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "gap": {
+      "type": "object",
+      "required": ["category", "path", "language", "detail"],
+      "properties": {
+        "category": {
+          "enum": [
+            "unsupported-language",
+            "parse-error",
+            "source-read-error",
+            "manifest-read-error"
+          ]
+        },
+        "path": {"type": "string", "minLength": 1},
+        "language": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "detail": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

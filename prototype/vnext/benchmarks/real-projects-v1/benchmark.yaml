@@ -54,6 +54,44 @@ projects:
             suggested_fact_kinds:
               - db_write
             method_binding_required: false
+      - path: src/oscar/apps/catalogue/product_attributes.py
+        language: python
+        reviewed_outputs:
+          - framework_candidates
+        expected_observations: []
+        expected_framework_candidates:
+          - framework: django-orm
+            symbol: ProductAttributesContainer.prepare_save
+            resource: bound_value_obj
+            method: save
+            line: 291
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: true
+          - framework: django-orm
+            symbol: ProductAttributesContainer.save
+            resource: self.product.attribute_values
+            method: bulk_create
+            line: 322
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: true
+          - framework: django-orm
+            symbol: ProductAttributesContainer.save
+            resource: self.product.attribute_values
+            method: bulk_update
+            line: 318
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: true
+          - framework: django-orm
+            symbol: ProductAttributesContainer.save
+            resource: self.product.attribute_values.filter(pk__in=to_be_deleted)
+            method: delete
+            line: 316
+            suggested_fact_kinds:
+              - db_write
+            method_binding_required: false
 
   - id: prisma-examples
     root: projects/prisma-examples
@@ -65,6 +103,9 @@ projects:
       license_path: LICENSE
     manifests:
       - accelerate/accelerate-hacker-news/package.json
+      - accelerate/solidstart-starter/package.json
+      - databases/drizzle-prisma-postgres/package.json
+      - databases/typeorm-prisma-postgres/package.json
     cases:
       - path: accelerate/accelerate-hacker-news/app/actions/addVotes.ts
         language: typescript
@@ -88,6 +129,24 @@ projects:
             suggested_fact_kinds:
               - db_write
             method_binding_required: false
+      - path: accelerate/solidstart-starter/public/sw.js
+        language: javascript
+        reviewed_outputs:
+          - framework_candidates
+        expected_observations: []
+        expected_framework_candidates: []
+      - path: databases/drizzle-prisma-postgres/src/index.ts
+        language: typescript
+        reviewed_outputs:
+          - framework_candidates
+        expected_observations: []
+        expected_framework_candidates: []
+      - path: databases/typeorm-prisma-postgres/src/index.ts
+        language: typescript
+        reviewed_outputs:
+          - framework_candidates
+        expected_observations: []
+        expected_framework_candidates: []
 
   - id: nats-go
     root: projects/nats-go

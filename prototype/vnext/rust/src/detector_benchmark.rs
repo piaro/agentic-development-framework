@@ -62,6 +62,8 @@ struct BenchmarkProvenance {
 struct BenchmarkCase {
     path: String,
     language: String,
+    #[serde(default = "all_reviewed_outputs")]
+    reviewed_outputs: Vec<String>,
     expected_observations: Vec<ObservationRecord>,
     expected_framework_candidates: Vec<FrameworkCandidateRecord>,
 }
@@ -134,6 +136,7 @@ pub struct BenchmarkCaseReport {
     pub language: String,
     pub status: String,
     pub parse_error: Option<String>,
+    pub reviewed_outputs: Vec<String>,
     pub observations: BenchmarkComparison<ObservationRecord>,
     pub framework_candidates: BenchmarkComparison<FrameworkCandidateRecord>,
 }
@@ -276,6 +279,12 @@ pub fn run_detector_benchmark(
     let observation_metric = aggregate_metric(
         reports
             .iter()
+            .filter(|report| {
+                report
+                    .reviewed_outputs
+                    .iter()
+                    .any(|item| item == "observations")
+            })
             .map(|report| &report.observations)
             .collect::<Vec<_>>()
             .as_slice(),
@@ -283,6 +292,12 @@ pub fn run_detector_benchmark(
     let framework_metric = aggregate_metric(
         reports
             .iter()
+            .filter(|report| {
+                report
+                    .reviewed_outputs
+                    .iter()
+                    .any(|item| item == "framework_candidates")
+            })
             .map(|report| &report.framework_candidates)
             .collect::<Vec<_>>()
             .as_slice(),
@@ -367,8 +382,24 @@ fn run_case(
         }
         Err(error) => (Some(error), Vec::new(), Vec::new()),
     };
-    let observations = compare(expected_observations, detected_observations);
-    let framework_candidates = compare(expected_candidates, detected_candidates);
+    let observations = if case
+        .reviewed_outputs
+        .iter()
+        .any(|item| item == "observations")
+    {
+        compare(expected_observations, detected_observations)
+    } else {
+        compare(Vec::new(), Vec::new())
+    };
+    let framework_candidates = if case
+        .reviewed_outputs
+        .iter()
+        .any(|item| item == "framework_candidates")
+    {
+        compare(expected_candidates, detected_candidates)
+    } else {
+        compare(Vec::new(), Vec::new())
+    };
     let status = if parse_error.is_none()
         && observations.missing.is_empty()
         && observations.unexpected.is_empty()
@@ -385,6 +416,7 @@ fn run_case(
         language: case.language.clone(),
         status: status.to_owned(),
         parse_error,
+        reviewed_outputs: case.reviewed_outputs.clone(),
         observations,
         framework_candidates,
     })
@@ -528,10 +560,30 @@ fn validate_corpus(corpus: &BenchmarkCorpus) -> Result<(), DetectorBenchmarkErro
                     project.id, case.path
                 )));
             }
+            let reviewed_outputs = case
+                .reviewed_outputs
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            if reviewed_outputs.len() != case.reviewed_outputs.len()
+                || reviewed_outputs.is_empty()
+                || reviewed_outputs
+                    .iter()
+                    .any(|item| !matches!(*item, "observations" | "framework_candidates"))
+            {
+                return Err(benchmark_error(format!(
+                    "benchmark case reviewed_outputs must contain unique supported outputs: {}:{}",
+                    project.id, case.path
+                )));
+            }
             validate_records(project, case)?;
         }
     }
     Ok(())
+}
+
+fn all_reviewed_outputs() -> Vec<String> {
+    vec!["observations".to_owned(), "framework_candidates".to_owned()]
 }
 
 fn validate_records(

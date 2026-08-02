@@ -91,6 +91,12 @@
               "properties": {
                 "path": {"type": "string", "minLength": 1},
                 "language": {"type": "string", "minLength": 1},
+                "reviewed_outputs": {
+                  "type": "array",
+                  "minItems": 1,
+                  "items": {"enum": ["observations", "framework_candidates"]},
+                  "uniqueItems": true
+                },
                 "expected_observations": {
                   "type": "array",
                   "items": {

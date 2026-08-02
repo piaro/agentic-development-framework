@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/benchmarks/v1/repository-audit-baseline",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "repository",
+    "revision",
+    "content_digest",
+    "report_digest",
+    "expected_audit_status",
+    "expected_gaps",
+    "review"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "id": {"type": "string", "minLength": 1},
+    "repository": {"type": "string", "pattern": "^https://"},
+    "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "content_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "report_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "expected_audit_status": {"enum": ["complete", "blocked"]},
+    "expected_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "review": {
+      "type": "object",
+      "required": ["reviewed_at", "basis"],
+      "properties": {
+        "reviewed_at": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"},
+        "basis": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "$defs": {
+    "gap": {
+      "type": "object",
+      "required": ["category", "path", "language", "detail"],
+      "properties": {
+        "category": {
+          "enum": [
+            "unsupported-language",
+            "parse-error",
+            "source-read-error",
+            "manifest-read-error"
+          ]
+        },
+        "path": {"type": "string", "minLength": 1},
+        "language": {
+          "anyOf": [
+            {"type": "string", "minLength": 1},
+            {"type": "null"}
+          ]
+        },
+        "detail": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

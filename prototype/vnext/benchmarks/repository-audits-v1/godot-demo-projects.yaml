@@ -1,0 +1,11 @@
+schema_version: "1"
+id: godot-demo-projects-4652e17c
+repository: https://github.com/godotengine/godot-demo-projects
+revision: 4652e17c04fe5f249dc53949fb195a3d8b24ee5f
+content_digest: sha256:3d6d660e88aa9bb4ec18474e30336471a21516f6612fd64ff38a75e89ab45c0f
+report_digest: sha256:259ec19dc8ab171da8886e50f8652e71631a43879e8672c43af0482b7aae10d7
+expected_audit_status: complete
+expected_gaps: []
+review:
+  reviewed_at: "2026-08-02"
+  basis: Full Git-tracked source audit at the pinned revision after reviewing and supporting the valid $%UniqueNode syntax; no coverage gaps remain.

@@ -1,6 +1,8 @@
-use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
+use agentic_vnext_rust::canonical_digest;
+use agentic_vnext_rust::detector_audit::{DetectorAuditReport, run_repository_detector_audit};
+use agentic_vnext_rust::detector_audit_baseline::check_repository_detector_audit_baseline;
 use agentic_vnext_rust::schema::validate_json_document;
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -66,6 +68,99 @@ fn repository_audit_blocks_on_parse_and_language_gaps() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn reviewed_baseline_matches_a_clean_repository_and_reports_regressions() {
+    let root = test_repository("baseline-complete");
+    fs::write(
+        root.join("service.py"),
+        "def run(order):\n    orders.insert(order)\n",
+    )
+    .unwrap();
+    commit_all(&root);
+    let audit = run_repository_detector_audit(&root, true).unwrap();
+    let baseline_path = write_baseline("complete", &audit);
+    validate_schema_at(
+        &serde_yaml::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap(),
+        "benchmarks/v1/repository-audit-baseline.schema.json",
+    );
+
+    let report = check_repository_detector_audit_baseline(&root, &baseline_path).unwrap();
+    assert!(report.matched(), "{}", report.render_text());
+    assert_eq!(report.audit_status, "complete");
+    validate_schema_at(
+        &report.as_value(),
+        "outputs/v1/repository-audit-baseline-report.schema.json",
+    );
+
+    let mut baseline: Value =
+        serde_yaml::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap();
+    baseline["report_digest"] = json!(format!("sha256:{}", "0".repeat(64)));
+    fs::write(&baseline_path, serde_yaml::to_string(&baseline).unwrap()).unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["detector-audit-check", root.to_str().unwrap()])
+        .arg("--baseline")
+        .arg(&baseline_path)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["status"], "mismatched");
+    assert_eq!(report["mismatches"][0]["field"], "report_digest");
+
+    fs::remove_file(baseline_path).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn matching_baseline_never_waives_a_known_coverage_gap() {
+    let root = test_repository("baseline-blocked");
+    fs::write(root.join("broken.py"), "def broken(:\n").unwrap();
+    commit_all(&root);
+    let audit = run_repository_detector_audit(&root, true).unwrap();
+    let baseline_path = write_baseline("blocked", &audit);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["detector-audit-check", root.to_str().unwrap()])
+        .arg("--baseline")
+        .arg(&baseline_path)
+        .args(["--format", "json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let baseline_report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(baseline_report["status"], "matched");
+    assert_eq!(baseline_report["audit_status"], "blocked");
+    assert_eq!(baseline_report["actual_gaps"].as_array().unwrap().len(), 1);
+
+    let audit_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["detector-audit", root.to_str().unwrap(), "--format", "json"])
+        .output()
+        .unwrap();
+    assert!(!audit_output.status.success());
+
+    fs::remove_file(baseline_path).unwrap();
+    fs::remove_dir_all(root).unwrap();
+}
+
+#[test]
+fn checked_in_repository_audit_baselines_follow_the_input_schema() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../benchmarks/repository-audits-v1");
+    for name in [
+        "django-oscar.yaml",
+        "prisma-examples.yaml",
+        "nats-go.yaml",
+        "godot-demo-projects.yaml",
+    ] {
+        let value: Value =
+            serde_yaml::from_str(&fs::read_to_string(root.join(name)).unwrap()).unwrap();
+        validate_schema_at(
+            &value,
+            "benchmarks/v1/repository-audit-baseline.schema.json",
+        );
+    }
+}
+
 fn test_repository(name: &str) -> PathBuf {
     let root = std::env::temp_dir().join(format!(
         "agentic-detector-audit-{}-{name}",
@@ -101,9 +196,40 @@ fn run_git(root: &Path, arguments: &[&str]) {
     );
 }
 
+fn write_baseline(name: &str, audit: &DetectorAuditReport) -> PathBuf {
+    let path = std::env::temp_dir().join(format!(
+        "agentic-detector-audit-baseline-{}-{name}.yaml",
+        std::process::id()
+    ));
+    let value = json!({
+        "schema_version": "1",
+        "id": format!("test-{name}"),
+        "repository": "https://example.com/repository",
+        "revision": audit.revision,
+        "content_digest": audit.content_digest,
+        "report_digest": canonical_digest(&audit.as_value()).unwrap(),
+        "expected_audit_status": audit.status,
+        "expected_gaps": audit.gaps,
+        "review": {
+            "reviewed_at": "2026-08-02",
+            "basis": "Test fixture reviewed against its complete source"
+        }
+    });
+    fs::write(&path, serde_yaml::to_string(&value).unwrap()).unwrap();
+    path
+}
+
 fn validate_schema(value: &Value) {
+    validate_schema_at(
+        value,
+        "outputs/v1/repository-detector-audit-report.schema.json",
+    );
+}
+
+fn validate_schema_at(value: &Value, relative: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/outputs/v1/repository-detector-audit-report.schema.json");
+        .join("../schemas")
+        .join(relative);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();
 }

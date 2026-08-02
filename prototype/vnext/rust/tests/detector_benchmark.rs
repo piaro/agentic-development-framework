@@ -38,14 +38,29 @@ fn checked_in_real_project_corpus_meets_its_reviewed_thresholds() {
     let report = run_detector_benchmark(&root).unwrap();
     assert!(report.passed(), "{}", report.render_text());
     assert_eq!(report.summary.projects, 4);
-    assert_eq!(report.summary.cases, 4);
+    assert_eq!(report.summary.cases, 8);
     assert_eq!(report.summary.parse_failures, 0);
     assert_eq!(report.summary.observations.expected, 31);
     assert_eq!(report.summary.observations.precision_bps, 10_000);
     assert_eq!(report.summary.observations.recall_bps, 10_000);
-    assert_eq!(report.summary.framework_candidates.expected, 5);
+    assert_eq!(report.summary.framework_candidates.expected, 9);
     assert_eq!(report.summary.framework_candidates.precision_bps, 10_000);
     assert_eq!(report.summary.framework_candidates.recall_bps, 10_000);
+    let django_container = report
+        .cases
+        .iter()
+        .find(|case| case.path.ends_with("product_attributes.py"))
+        .unwrap();
+    assert_eq!(django_container.framework_candidates.matched, 4);
+    for path in [
+        "accelerate/solidstart-starter/public/sw.js",
+        "databases/drizzle-prisma-postgres/src/index.ts",
+        "databases/typeorm-prisma-postgres/src/index.ts",
+    ] {
+        let case = report.cases.iter().find(|case| case.path == path).unwrap();
+        assert_eq!(case.reviewed_outputs, ["framework_candidates"]);
+        assert_eq!(case.framework_candidates.detected, 0, "{path}");
+    }
     validate_schema(
         &report.as_value(),
         "outputs/v1/detector-benchmark-report.schema.json",

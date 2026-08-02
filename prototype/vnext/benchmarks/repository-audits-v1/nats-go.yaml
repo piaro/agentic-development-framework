@@ -1,0 +1,11 @@
+schema_version: "1"
+id: nats-go-0c5d8d72
+repository: https://github.com/nats-io/nats.go
+revision: 0c5d8d7245c17a418cb850ac69a1aa52b17e19c5
+content_digest: sha256:f07881f72f22f0608d19309ba448aca910cd8c8e05b6188ff8a9079503fe0bc1
+report_digest: sha256:c9eae788eade879c1832f524aef66990fbdcc5b348fc0e701a4d82511cc09309
+expected_audit_status: complete
+expected_gaps: []
+review:
+  reviewed_at: "2026-08-02"
+  basis: Full Git-tracked source audit at the pinned revision; no coverage gaps were found.

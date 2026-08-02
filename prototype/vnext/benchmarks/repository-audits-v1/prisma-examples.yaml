@@ -1,0 +1,15 @@
+schema_version: "1"
+id: prisma-examples-eb8f4328
+repository: https://github.com/prisma/prisma-examples
+revision: eb8f4328821c6746680a2ba02e0e5636a085a327
+content_digest: sha256:ebbed28c46ea0b4a5a9ff8c2861cc533659e5b88f4cd43a783dcd3c41f7b6402
+report_digest: sha256:390e245ec0a2fb1b679d53a524adad6c8430a0efd00c2f6622c360fb0c4d3f75
+expected_audit_status: blocked
+expected_gaps:
+  - category: parse-error
+    path: databases/kysely-prisma-postgres/src/index.ts
+    language: typescript
+    detail: TypeScript source contains a syntax error
+review:
+  reviewed_at: "2026-08-02"
+  basis: Full Git-tracked source audit at the pinned revision; the exact parse gap was confirmed as malformed upstream source and remains blocked.

@@ -11,6 +11,7 @@
     "summary",
     "languages",
     "frameworks",
+    "candidate_records",
     "files",
     "gaps"
   ],
@@ -93,6 +94,47 @@
           "candidates": {"type": "integer", "minimum": 1},
           "method_binding_required": {"type": "integer", "minimum": 0},
           "empty_suggestions": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "candidate_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "language",
+          "framework",
+          "symbol",
+          "resource",
+          "method",
+          "line",
+          "suggested_fact_kinds",
+          "method_binding_required",
+          "evidence",
+          "rationale"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "language": {"type": "string", "minLength": 1},
+          "framework": {"type": "string", "minLength": 1},
+          "symbol": {"type": "string", "minLength": 1},
+          "resource": {"type": "string", "minLength": 1},
+          "method": {"type": "string", "minLength": 1},
+          "line": {"type": "integer", "minimum": 1},
+          "suggested_fact_kinds": {
+            "type": "array",
+            "items": {"enum": ["db_write", "external_call", "message_publish", "object_write"]},
+            "uniqueItems": true
+          },
+          "method_binding_required": {"type": "boolean"},
+          "evidence": {
+            "type": "array",
+            "items": {"type": "string", "minLength": 1},
+            "uniqueItems": true
+          },
+          "rationale": {"type": "string", "minLength": 1}
         },
         "additionalProperties": false
       }

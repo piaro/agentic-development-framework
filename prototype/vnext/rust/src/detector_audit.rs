@@ -8,7 +8,7 @@
 use crate::canonical_digest;
 use crate::framework_detection::{FrameworkCatalog, is_framework_manifest_path};
 use crate::source_detection::{SourceObservationKind, detector_for_path, source_pathspecs};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::fmt;
@@ -90,7 +90,22 @@ pub struct DetectorAuditFramework {
     pub empty_suggestions: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct DetectorAuditCandidate {
+    pub path: String,
+    pub language: String,
+    pub framework: String,
+    pub symbol: String,
+    pub resource: String,
+    pub method: String,
+    pub line: usize,
+    pub suggested_fact_kinds: Vec<String>,
+    pub method_binding_required: bool,
+    pub evidence: Vec<String>,
+    pub rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 pub struct DetectorAuditGap {
     pub category: String,
     pub path: String,
@@ -123,6 +138,7 @@ pub struct DetectorAuditReport {
     pub summary: DetectorAuditSummary,
     pub languages: Vec<DetectorAuditLanguage>,
     pub frameworks: Vec<DetectorAuditFramework>,
+    pub candidate_records: Vec<DetectorAuditCandidate>,
     pub files: Vec<DetectorAuditFile>,
     pub gaps: Vec<DetectorAuditGap>,
 }
@@ -241,6 +257,7 @@ pub fn run_repository_detector_audit(
 
     let mut files = Vec::new();
     let mut frameworks = BTreeMap::<String, DetectorAuditFramework>::new();
+    let mut candidate_records = Vec::new();
     for relative in &source_paths {
         let detector = detector_for_path(relative)
             .expect("Git source pathspecs and the detector registry stay aligned");
@@ -336,6 +353,23 @@ pub fn run_repository_detector_audit(
             if candidate.suggested_fact_kinds.is_empty() {
                 framework.empty_suggestions += 1;
             }
+            candidate_records.push(DetectorAuditCandidate {
+                path: relative.clone(),
+                language: detector.language.to_owned(),
+                framework: candidate.framework.to_owned(),
+                symbol: candidate.symbol.clone(),
+                resource: candidate.resource.clone(),
+                method: candidate.method.clone(),
+                line: candidate.line,
+                suggested_fact_kinds: candidate
+                    .suggested_fact_kinds
+                    .iter()
+                    .map(|kind| kind.as_str().to_owned())
+                    .collect(),
+                method_binding_required: candidate.method_binding_required,
+                evidence: candidate.evidence.clone(),
+                rationale: candidate.rationale.to_owned(),
+            });
         }
         files.push(DetectorAuditFile {
             path: relative.clone(),
@@ -399,6 +433,7 @@ pub fn run_repository_detector_audit(
     }
     let languages = languages.into_values().collect::<Vec<_>>();
     let frameworks = frameworks.into_values().collect::<Vec<_>>();
+    candidate_records.sort();
     let summary = DetectorAuditSummary {
         tracked_source_files: files.len(),
         supported_source_files: files
@@ -441,6 +476,7 @@ pub fn run_repository_detector_audit(
         summary,
         languages,
         frameworks,
+        candidate_records,
         files,
         gaps,
     })
