@@ -151,6 +151,73 @@ fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
 }
 
 #[test]
+fn migration_draft_describes_reviewed_actions_without_writing() {
+    let root = legacy_migration_project("migration-draft");
+    let revision = git_output(&root, &["rev-parse", "HEAD"]);
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&draft, "migration-draft.schema.json");
+    assert_eq!(draft["kind"], "migration-draft");
+    assert_eq!(draft["source_revision"], revision);
+    assert_eq!(draft["status"], "review-required");
+    let actions = draft["actions"].as_array().unwrap();
+    assert!(actions.iter().any(|action| {
+        action["id"] == "project-source-inventory"
+            && action["operation"] == "inventory-only"
+            && action["requires_human_review"] == false
+    }));
+    assert!(actions.iter().any(|action| {
+        action["id"] == "contracts"
+            && action["operation"] == "transform-after-review"
+            && action["requires_human_review"] == true
+    }));
+    assert!(actions.iter().any(|action| {
+        action["id"] == "framework-release" && action["operation"] == "install-from-release"
+    }));
+    assert!(
+        draft["next"]
+            .as_str()
+            .unwrap()
+            .contains("No files were changed")
+    );
+    assert!(
+        git_output(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        )
+        .is_empty()
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_draft_requires_a_clean_migratable_current_project() {
+    let dirty = legacy_migration_project("migration-draft-dirty");
+    fs::write(dirty.join("untracked.txt"), "dirty\n").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--project"])
+        .arg(&dirty)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr)
+            .contains("resolve the findings from `agentic migration inspect` first")
+    );
+
+    let vnext = TestProject::new();
+    let output = vnext.run(&["migration", "draft"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("project already uses vNext"));
+    let _ = fs::remove_dir_all(dirty);
+}
+
+#[test]
 fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     let json_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args(["catalog", "signal-domains", "--format", "json"])

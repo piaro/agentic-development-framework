@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べるread-only診断まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftを生成するread-only経路まで接続しています。
 
 ## 検証できること
 
@@ -256,7 +256,29 @@ agentic migration inspect \
 
 `readiness`は`review-required`、`blocked`、`already-vnext`のいずれかです。現行configとvNext activation fileが混在する場合、worktreeがdirtyな場合、必要なroot・metadataが読めない場合は`blocked`になります。診断Reportを生成できた場合は、`blocked`でもcommand自体は成功します。Gitまたはfilesystemを安全に読めずReportを生成できない場合だけ非0で終了します。
 
-診断はProject fileを作成・更新・削除せず、stageやcommitも行いません。JSON形式は`schemas/outputs/v1/migration-inspection-report.schema.json`に従います。次段階のMigration Draft生成はまだ実装していません。
+診断はProject fileを作成・更新・削除せず、stageやcommitも行いません。JSON形式は`schemas/outputs/v1/migration-inspection-report.schema.json`に従います。
+
+診断結果が`review-required`の場合は、同じclean revisionからMigration Draftを生成できます。
+
+```sh
+agentic migration draft \
+  --project /path/to/current-project \
+  --format text
+
+agentic migration draft \
+  --project /path/to/current-project \
+  --format json
+```
+
+Migration Draftは、移行対象ごとに元のpath、移行先、処理区分、人のreviewが必要か、完了確認を示す作業票です。現行configやContractの意味を自動変換せず、次の処理区分を使います。
+
+- `inventory-only`: 移行入力を列挙するだけで、fileを変換しない
+- `replace-after-review`: 現行の意味をreviewし、vNextの別形式へ置き換える
+- `transform-after-review`: 対応関係を人が決めた後で変換する
+- `generate-from-revision`: 固定revisionからDetector出力を生成してreviewする
+- `install-from-release`: review済みの署名済みFramework Releaseから導入する
+
+診断結果が`blocked`の場合は、指摘を解消して`migration inspect`をやり直します。`already-vnext`の場合はDraftを生成しません。Draft生成もProject file、Git index、commitを変更しません。JSON形式は`schemas/outputs/v1/migration-draft.schema.json`に従います。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
@@ -611,7 +633,7 @@ sources:
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
 | `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
-| `rust/src/migration.rs` | 現行CLI Projectを変更せず、移行対象・意味review・混在状態を診断 |
+| `rust/src/migration.rs` | 現行CLI Projectを変更せず、移行対象・意味review・混在状態を診断し、Migration Draftを生成 |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |

@@ -13,7 +13,7 @@ use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
 use agentic_vnext_rust::detector_audit_baseline::check_repository_detector_audit_baseline;
 use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
 use agentic_vnext_rust::mcp_server::run_stdio_server;
-use agentic_vnext_rust::migration::inspect_migration;
+use agentic_vnext_rust::migration::{draft_migration, inspect_migration};
 use agentic_vnext_rust::project_runtime::LoadedProject;
 use agentic_vnext_rust::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
@@ -971,14 +971,23 @@ enum OutputFormat {
 }
 
 struct MigrationCommand {
+    operation: MigrationOperation,
     project_root: PathBuf,
     format: OutputFormat,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MigrationOperation {
+    Inspect,
+    Draft,
+}
+
 fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, String> {
-    if arguments.first().map(String::as_str) != Some("inspect") {
-        return Err("migration requires the inspect operation".to_owned());
-    }
+    let operation = match arguments.first().map(String::as_str) {
+        Some("inspect") => MigrationOperation::Inspect,
+        Some("draft") => MigrationOperation::Draft,
+        _ => return Err("migration requires the inspect or draft operation".to_owned()),
+    };
     let mut project_root = PathBuf::from(".");
     let mut format = OutputFormat::Text;
     let mut index = 1;
@@ -999,18 +1008,34 @@ fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, Str
         index += 1;
     }
     Ok(MigrationCommand {
+        operation,
         project_root,
         format,
     })
 }
 
 fn run_migration_command(options: &MigrationCommand) -> Result<String, String> {
-    let report = inspect_migration(&options.project_root).map_err(|error| error.to_string())?;
-    match options.format {
-        OutputFormat::Text => Ok(report.render_text()),
-        OutputFormat::Json => serde_json::to_string_pretty(&report)
-            .map(|value| value + "\n")
-            .map_err(|error| error.to_string()),
+    match options.operation {
+        MigrationOperation::Inspect => {
+            let report =
+                inspect_migration(&options.project_root).map_err(|error| error.to_string())?;
+            match options.format {
+                OutputFormat::Text => Ok(report.render_text()),
+                OutputFormat::Json => serde_json::to_string_pretty(&report)
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string()),
+            }
+        }
+        MigrationOperation::Draft => {
+            let report =
+                draft_migration(&options.project_root).map_err(|error| error.to_string())?;
+            match options.format {
+                OutputFormat::Text => Ok(report.render_text()),
+                OutputFormat::Json => serde_json::to_string_pretty(&report)
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string()),
+            }
+        }
     }
 }
 
@@ -1887,7 +1912,7 @@ usage:\n\
   agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
   agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   agentic project promote-bindings --draft <path> [--project <root>]\n\
-  agentic migration inspect [--project <root>] [--format <text|json>]\n\
+  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
@@ -1910,7 +1935,7 @@ fn mcp_usage() {
 }
 
 fn migration_usage() {
-    eprintln!("usage: agentic migration inspect [--project <root>] [--format <text|json>]");
+    eprintln!("usage: agentic migration <inspect|draft> [--project <root>] [--format <text|json>]");
 }
 
 fn binary_usage() {

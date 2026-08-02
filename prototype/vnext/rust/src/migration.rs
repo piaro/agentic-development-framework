@@ -1,7 +1,8 @@
 //! Read-only inspection of a current CLI project before vNext migration.
 //!
-//! This module inventories mechanically observable state. It never writes a
-//! migration candidate and never decides whether legacy semantics are valid.
+//! This module inventories mechanically observable state and prepares a
+//! reviewable work plan. It never writes Project files or decides whether
+//! legacy semantics are valid.
 
 use serde::Serialize;
 use serde_json::Value;
@@ -13,6 +14,7 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 pub const MIGRATION_INSPECTION_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -72,6 +74,64 @@ impl MigrationInspectionReport {
         output.push_str(&format!("Next: {}\n", self.next));
         output
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationDraftReport {
+    pub schema_version: String,
+    pub kind: String,
+    pub source_revision: String,
+    pub source_state: String,
+    pub status: String,
+    pub actions: Vec<MigrationDraftAction>,
+    pub next: String,
+}
+
+impl MigrationDraftReport {
+    pub fn render_text(&self) -> String {
+        let mut output = format!(
+            "Migration draft: {}\nsource state: {}\nsource revision: {}\n",
+            self.status, self.source_state, self.source_revision
+        );
+        output.push_str("proposed actions:\n");
+        for action in &self.actions {
+            output.push_str(&format!(
+                "- {}: {} / {} (items={}, human review={})\n",
+                action.id,
+                action.classification,
+                action.operation,
+                action.items,
+                action.requires_human_review
+            ));
+            output.push_str(&format!(
+                "  source: {}\n",
+                display_paths(&action.source_paths)
+            ));
+            output.push_str(&format!(
+                "  target: {}\n",
+                display_paths(&action.target_paths)
+            ));
+            output.push_str(&format!("  instruction: {}\n", action.instruction));
+            for check in &action.completion_checks {
+                output.push_str(&format!("  check: {check}\n"));
+            }
+        }
+        output.push_str(&format!("Next: {}\n", self.next));
+        output
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationDraftAction {
+    pub id: String,
+    pub classification: String,
+    pub operation: String,
+    pub source_paths: Vec<String>,
+    pub target_paths: Vec<String>,
+    pub items: usize,
+    pub requires_human_review: bool,
+    pub instruction: String,
+    pub completion_checks: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -403,6 +463,137 @@ pub fn inspect_migration(
         components,
         findings,
         next,
+    })
+}
+
+pub fn draft_migration(
+    project_root: impl AsRef<Path>,
+) -> Result<MigrationDraftReport, MigrationError> {
+    let inspection = inspect_migration(project_root)?;
+    match inspection.readiness.as_str() {
+        "blocked" => {
+            return Err(migration_error(
+                "migration draft is blocked; resolve the findings from `agentic migration inspect` first",
+            ));
+        }
+        "already-vnext" => {
+            return Err(migration_error(
+                "migration draft is not required because the project already uses vNext",
+            ));
+        }
+        "review-required" => {}
+        other => {
+            return Err(migration_error(format!(
+                "unsupported migration readiness: {other}"
+            )));
+        }
+    }
+
+    let actions = inspection
+        .components
+        .iter()
+        .map(draft_action)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(MigrationDraftReport {
+        schema_version: MIGRATION_DRAFT_SCHEMA_VERSION.to_owned(),
+        kind: "migration-draft".to_owned(),
+        source_revision: inspection.repository.revision,
+        source_state: inspection.source_state,
+        status: "review-required".to_owned(),
+        actions,
+        next: "Review and complete every action against this source revision. Generate candidate files only after the semantic mappings and signed Framework Release have been selected. No files were changed."
+            .to_owned(),
+    })
+}
+
+fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, MigrationError> {
+    let (operation, requires_human_review, instruction, checks): (&str, bool, &str, &[&str]) =
+        match component.id.as_str() {
+            "project-source-inventory" => (
+                "inventory-only",
+                false,
+                "Use the inventoried repository-relative roots as migration inputs; do not copy the legacy config into the vNext config.",
+                &["Every configured source root is represented in the migration review."],
+            ),
+            "legacy-policies" => (
+                "replace-after-review",
+                true,
+                "Review each legacy policy and express only accepted semantics as vNext Rules.",
+                &[
+                    "Every legacy policy is mapped to a reviewed Rule or explicitly retired.",
+                    "The resulting rules validate against the selected Framework Release schema.",
+                ],
+            ),
+            "contracts" => (
+                "transform-after-review",
+                true,
+                "Map each current Contract to reviewed vNext Contract clauses without inferring equivalent semantics from field names.",
+                &[
+                    "Every source Contract is mapped or explicitly retired.",
+                    "Every generated Contract validates against the vNext Contract schema.",
+                ],
+            ),
+            "decisions" => (
+                "transform-after-review",
+                true,
+                "Map accepted Decision outcomes and references to reviewed vNext Decisions.",
+                &[
+                    "Every source Decision is mapped or explicitly retained as history only.",
+                    "Resolution references point to existing vNext records.",
+                ],
+            ),
+            "change-workflow" => (
+                "transform-after-review",
+                true,
+                "Review active and historical change state, then create only the vNext Records still required for ongoing work.",
+                &[
+                    "Every active legacy change has an explicit migration or closure decision.",
+                    "Historical workflow data is preserved outside active vNext state when required.",
+                ],
+            ),
+            "evidence" => (
+                "transform-after-review",
+                true,
+                "Attach accepted legacy Evidence to explicit vNext requirement instances and Contract clauses.",
+                &[
+                    "Every retained Evidence item has an explicit vNext requirement and clause reference.",
+                    "Unmapped Evidence is reported before activation.",
+                ],
+            ),
+            "repository-observation" => (
+                "generate-from-revision",
+                true,
+                "Run the vNext Detector against the fixed source revision and review every Binding candidate.",
+                &[
+                    "Detector coverage is complete for every tracked source file.",
+                    "Every Binding candidate is reviewed before promotion.",
+                ],
+            ),
+            "framework-release" => (
+                "install-from-release",
+                true,
+                "Select a reviewed signed Framework Release and derive the lock and trust configuration from it.",
+                &[
+                    "The Framework Release signature and asset digests verify.",
+                    "The selected Release supports the migrated Project schemas and Rules.",
+                ],
+            ),
+            other => {
+                return Err(migration_error(format!(
+                    "unsupported migration component in draft: {other}"
+                )));
+            }
+        };
+    Ok(MigrationDraftAction {
+        id: component.id.clone(),
+        classification: component.classification.clone(),
+        operation: operation.to_owned(),
+        source_paths: component.source_paths.clone(),
+        target_paths: component.target_paths.clone(),
+        items: component.items,
+        requires_human_review,
+        instruction: instruction.to_owned(),
+        completion_checks: checks.iter().map(|check| (*check).to_owned()).collect(),
     })
 }
 
@@ -890,6 +1081,14 @@ fn relative_display(root: &Path, path: &Path) -> String {
 
 fn display_optional(value: &Option<String>) -> &str {
     value.as_deref().unwrap_or("-")
+}
+
+fn display_paths(paths: &[String]) -> String {
+    if paths.is_empty() {
+        "-".to_owned()
+    } else {
+        paths.join(",")
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
