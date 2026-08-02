@@ -1,0 +1,179 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "agentic://schemas/outputs/v1/repository-detector-audit-report",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "status",
+    "revision",
+    "working_tree_clean",
+    "content_digest",
+    "summary",
+    "languages",
+    "frameworks",
+    "files",
+    "gaps"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "status": {"enum": ["complete", "blocked"]},
+    "revision": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "working_tree_clean": {"type": "boolean"},
+    "content_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "summary": {
+      "type": "object",
+      "required": [
+        "tracked_source_files",
+        "supported_source_files",
+        "unsupported_source_files",
+        "parsed_files",
+        "parse_failures",
+        "source_read_failures",
+        "manifests_discovered",
+        "manifests_loaded",
+        "manifest_failures",
+        "observations",
+        "framework_candidates"
+      ],
+      "properties": {
+        "tracked_source_files": {"type": "integer", "minimum": 0},
+        "supported_source_files": {"type": "integer", "minimum": 0},
+        "unsupported_source_files": {"type": "integer", "minimum": 0},
+        "parsed_files": {"type": "integer", "minimum": 0},
+        "parse_failures": {"type": "integer", "minimum": 0},
+        "source_read_failures": {"type": "integer", "minimum": 0},
+        "manifests_discovered": {"type": "integer", "minimum": 0},
+        "manifests_loaded": {"type": "integer", "minimum": 0},
+        "manifest_failures": {"type": "integer", "minimum": 0},
+        "observations": {"$ref": "#/$defs/observation_counts"},
+        "framework_candidates": {"$ref": "#/$defs/framework_candidate_counts"}
+      },
+      "additionalProperties": false
+    },
+    "languages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "language",
+          "detector_status",
+          "files",
+          "parsed_files",
+          "failed_files",
+          "observations",
+          "framework_candidates"
+        ],
+        "properties": {
+          "language": {"type": "string", "minLength": 1},
+          "detector_status": {"enum": ["supported", "unsupported"]},
+          "files": {"type": "integer", "minimum": 1},
+          "parsed_files": {"type": "integer", "minimum": 0},
+          "failed_files": {"type": "integer", "minimum": 0},
+          "observations": {"$ref": "#/$defs/observation_counts"},
+          "framework_candidates": {"$ref": "#/$defs/framework_candidate_counts"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "frameworks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "framework",
+          "candidates",
+          "method_binding_required",
+          "empty_suggestions"
+        ],
+        "properties": {
+          "framework": {"type": "string", "minLength": 1},
+          "candidates": {"type": "integer", "minimum": 1},
+          "method_binding_required": {"type": "integer", "minimum": 0},
+          "empty_suggestions": {"type": "integer", "minimum": 0}
+        },
+        "additionalProperties": false
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "path",
+          "language",
+          "status",
+          "detail",
+          "observations",
+          "framework_candidates"
+        ],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "language": {"type": "string", "minLength": 1},
+          "status": {"enum": ["parsed", "unsupported", "parse-error", "read-error"]},
+          "detail": {
+            "anyOf": [
+              {"type": "string", "minLength": 1},
+              {"type": "null"}
+            ]
+          },
+          "observations": {"$ref": "#/$defs/observation_counts"},
+          "framework_candidates": {"$ref": "#/$defs/framework_candidate_counts"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "gaps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["category", "path", "language", "detail"],
+        "properties": {
+          "category": {
+            "enum": [
+              "unsupported-language",
+              "parse-error",
+              "source-read-error",
+              "manifest-read-error"
+            ]
+          },
+          "path": {"type": "string", "minLength": 1},
+          "language": {
+            "anyOf": [
+              {"type": "string", "minLength": 1},
+              {"type": "null"}
+            ]
+          },
+          "detail": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "observation_counts": {
+      "type": "object",
+      "required": ["total", "db_write", "message_publish", "other_method_call"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "db_write": {"type": "integer", "minimum": 0},
+        "message_publish": {"type": "integer", "minimum": 0},
+        "other_method_call": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "framework_candidate_counts": {
+      "type": "object",
+      "required": ["total", "method_binding_required", "empty_suggestions"],
+      "properties": {
+        "total": {"type": "integer", "minimum": 0},
+        "method_binding_required": {"type": "integer", "minimum": 0},
+        "empty_suggestions": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

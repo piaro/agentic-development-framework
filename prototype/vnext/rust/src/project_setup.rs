@@ -1,7 +1,9 @@
 //! Safe, mechanical setup for a project without inventing semantic bindings.
 
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
-use crate::framework_detection::{FrameworkCandidate, FrameworkCatalog};
+use crate::framework_detection::{
+    FrameworkCandidate, FrameworkCatalog, is_framework_manifest_path,
+};
 use crate::project_config::load_project_config;
 use crate::remote_delivery::install_release_archive;
 use crate::source_detection::{
@@ -533,7 +535,10 @@ fn framework_catalog(root: &Path) -> Result<FrameworkCatalog, ProjectSetupError>
         &["ls-files", "--cached", "--others", "--exclude-standard"],
     )?;
     let mut catalog = FrameworkCatalog::default();
-    for relative in output.lines().filter(|path| framework_manifest(path)) {
+    for relative in output
+        .lines()
+        .filter(|path| is_framework_manifest_path(path))
+    {
         let relative_path = Path::new(relative);
         if reject_symlink_components(root, relative_path).is_err() {
             continue;
@@ -551,30 +556,6 @@ fn framework_catalog(root: &Path) -> Result<FrameworkCatalog, ProjectSetupError>
         catalog.record_manifest(relative, &content);
     }
     Ok(catalog)
-}
-
-fn framework_manifest(path: &str) -> bool {
-    let path = Path::new(path);
-    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
-        return false;
-    };
-    matches!(
-        name,
-        "pyproject.toml"
-            | "requirements.txt"
-            | "Pipfile"
-            | "setup.py"
-            | "setup.cfg"
-            | "package.json"
-            | "pom.xml"
-            | "build.gradle"
-            | "build.gradle.kts"
-            | "Directory.Packages.props"
-            | "Gemfile"
-            | "composer.json"
-            | "go.mod"
-    ) || name.starts_with("requirements") && name.ends_with(".txt")
-        || path.extension().and_then(|extension| extension.to_str()) == Some("csproj")
 }
 
 pub fn default_candidate_root() -> Result<PathBuf, ProjectSetupError> {

@@ -197,6 +197,27 @@ agentic benchmark \
 
 corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Reportは`schemas/outputs/v1/detector-benchmark-report.schema.json`に従います。各projectは`authored-fixture`または`external-snapshot`のprovenance、license、外部snapshotならRepository URL、40桁のGit revision、同梱LICENSEへのpathを必須とします。LICENSEもcorpus digestへ含めます。runnerはoffline・read-onlyで、corpus root外へのpathやsymlink escapeを拒否します。実際の外部Repository snapshotを追加する場合も、sourceのライセンスとrevisionをreviewしたうえで、同じcorpus契約へ人が正解を記入します。
 
+### Repository Detector Audit
+
+`detector-audit`は、Git管理下にある登録済み拡張子のsourceをRepository全体で走査します。言語別・file別にparse結果、`db_write`、`message_publish`、未分類receiver call、framework candidate、明示method Bindingが必要な候補、空のsuggestionを集計します。
+
+```sh
+agentic detector-audit /path/to/repository --format text --require-clean
+```
+
+このReportは正解ラベルを持たないため、precision／recallや違反有無を推測しません。未対応言語、parse失敗、source・依存manifestの読込み失敗が1件でもあれば`blocked`と終了code 1を返します。`--require-clean`はrevisionと解析bytesの対応を要求する再現検証用です。JSONは`schemas/outputs/v1/repository-detector-audit-report.schema.json`に従い、全source・読込み済み依存manifestから`content_digest`を生成します。
+
+固定revisionの4 OSS cloneをRepository全体で監査した初回結果は次のとおりです。観測数と候補数はparse成功fileだけを集計します。
+
+| Repository | source | parsed | parse gap | observations | framework candidates |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| django-oscar | 836 | 836 | 0 | 16,387 | 808 |
+| Prisma Examples | 652 | 651 | 1 | 2,785 | 362 |
+| NATS Go | 179 | 179 | 0 | 26,429 | 648 |
+| Godot Demo Projects | 497 | 495 | 2 | 5,773 | 0 |
+
+3件のparse gapはReportへfile path付きで残り、網羅済みとは扱いません。正当な新構文、上流source自体の構文不整合、生成途中fileなどの区別は人が確認し、Detectorまたは監査対象の期待値へ明示的に反映します。
+
 ## 実行
 
 Repository rootで実行します。正準実装と受入テストはRust版です。`agentic_vnext/`のPython実装は過去の設計探索用参照であり、新しい設計の実装・同等性確認の対象にはしません。
@@ -552,7 +573,7 @@ sources:
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
 | `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
 | `schemas/catalog/v1/` | 標準Signal Domain Catalogの機械可読な固定形式 |
-| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report |
+| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report、Detector Benchmark／Repository Audit Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
@@ -579,7 +600,7 @@ sources:
 - `project observe`のDraft v6はsourceと生成元ObservationのSHA-256を固定し、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は反映用構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。`project promote-bindings`はDraftを再検証し、freshな場合だけ現在のphaseを保って正式Observationを原子的に置換します。
 - 主要frameworkのE2Eは、Django/SQS、SQLAlchemy/Celery、Prisma/Kafka、Spring Data JPA/RabbitMQ、Entity Framework Core/Azure Service Bus、Rails/Redis Streams、Laravel/Google Cloud Pub/Sub、GORM/NATSの8 fixtureを、`observe`、review済みDraft検証、promotion、正式Binding検証、Signal生成まで同じCLI経路で通します。SQLAlchemy `execute`のように候補が空のAPIは、明示的な個別分類なしではE2Eを通しません。
 - 外部連携のE2Eは、Requests、HTTPX、Fetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientの8系統と、Amazon S3（Python・JavaScript）、Google Cloud Storage、Azure Blob Storageの4実装を同じ経路で検証します。Object Storageは`external-system-call`と`object-storage-write`の両方を生成し、JavaScript版S3の`send`は明示reviewで両方に分類した場合だけ通します。
-- Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。Repository全体の大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
+- Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。`detector-audit`は外部clone全体のcoverageと候補分布を測りますが、正解ラベルを持たないため誤検知率とは呼びません。Repository全体のreview済みsnapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。

@@ -16,6 +16,7 @@ mod contract_scope;
 mod csharp_detection;
 pub mod delivery;
 pub mod detection;
+pub mod detector_audit;
 pub mod detector_benchmark;
 pub mod distribution_trust;
 pub mod explain;

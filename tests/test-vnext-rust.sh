@@ -35,6 +35,12 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
+  -- detector-audit "$KIT_ROOT" \
+  --format text
+cargo run \
+  --manifest-path "$RUST_ROOT/Cargo.toml" \
+  --locked \
+  --quiet \
   -- catalog signal-domains \
   --format json
 cargo run \

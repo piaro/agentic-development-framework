@@ -9,6 +9,7 @@ use agentic_vnext_rust::contract_health_gate::{ContractHealthGateReport, Contrac
 use agentic_vnext_rust::delivery::{
     install_release, read_framework_lock, rollback_framework_lock, switch_framework_lock,
 };
+use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
 use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
 use agentic_vnext_rust::mcp_server::run_stdio_server;
 use agentic_vnext_rust::project_runtime::LoadedProject;
@@ -212,6 +213,30 @@ fn main() -> ExitCode {
             Ok((output, passed)) => {
                 print!("{output}");
                 if passed {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "detector-audit" {
+        let options = match parse_detector_audit_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                detector_audit_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_detector_audit(&options) {
+            Ok((output, complete)) => {
+                print!("{output}");
+                if complete {
                     ExitCode::SUCCESS
                 } else {
                     ExitCode::FAILURE
@@ -904,6 +929,12 @@ struct BenchmarkCommand {
     format: OutputFormat,
 }
 
+struct DetectorAuditCommand {
+    repository_root: PathBuf,
+    format: OutputFormat,
+    require_clean: bool,
+}
+
 struct CatalogCommand {
     format: OutputFormat,
 }
@@ -1473,6 +1504,36 @@ fn parse_benchmark_command(arguments: &[String]) -> Result<BenchmarkCommand, Str
     })
 }
 
+fn parse_detector_audit_command(arguments: &[String]) -> Result<DetectorAuditCommand, String> {
+    let repository_root = arguments
+        .first()
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| "detector-audit requires a repository root".to_owned())
+        .map(PathBuf::from)?;
+    let mut format = OutputFormat::Text;
+    let mut require_clean = false;
+    let mut index = 1;
+    while index < arguments.len() {
+        match arguments[index].as_str() {
+            "--format" => {
+                format = match flag_value(arguments, &mut index, "--format")? {
+                    "text" => OutputFormat::Text,
+                    "json" => OutputFormat::Json,
+                    other => return Err(format!("unsupported output format: {other}")),
+                };
+            }
+            "--require-clean" => require_clean = true,
+            other => return Err(format!("unknown detector-audit argument: {other}")),
+        }
+        index += 1;
+    }
+    Ok(DetectorAuditCommand {
+        repository_root,
+        format,
+        require_clean,
+    })
+}
+
 fn parse_catalog_command(arguments: &[String]) -> Result<CatalogCommand, String> {
     if arguments.first().map(String::as_str) != Some("signal-domains") {
         return Err("catalog requires the signal-domains operation".to_owned());
@@ -1604,6 +1665,19 @@ fn run_benchmark(options: &BenchmarkCommand) -> Result<(String, bool), String> {
     Ok((output, passed))
 }
 
+fn run_detector_audit(options: &DetectorAuditCommand) -> Result<(String, bool), String> {
+    let report = run_repository_detector_audit(&options.repository_root, options.require_clean)
+        .map_err(|error| error.to_string())?;
+    let complete = report.complete();
+    let output = match options.format {
+        OutputFormat::Text => report.render_text(),
+        OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
+            .map(|value| value + "\n")
+            .map_err(|error| error.to_string())?,
+    };
+    Ok((output, complete))
+}
+
 fn run_catalog(options: &CatalogCommand) -> Result<String, String> {
     let catalog = SignalCatalogRegistry::built_in()
         .map_err(|error| error.to_string())?
@@ -1653,6 +1727,7 @@ usage:\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   agentic benchmark <corpus-root> [--format <text|json>]\n\
+  agentic detector-audit <repository-root> [--format <text|json>] [--require-clean]\n\
   agentic catalog signal-domains [--format <text|json>]\n\
   agentic mcp [--project <root>] [--release <root>]\n\
   agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
@@ -1716,6 +1791,12 @@ fn repository_usage(command: &str) {
 
 fn benchmark_usage() {
     eprintln!("usage: agentic benchmark <corpus-root> [--format <text|json>]");
+}
+
+fn detector_audit_usage() {
+    eprintln!(
+        "usage: agentic detector-audit <repository-root> [--format <text|json>] [--require-clean]"
+    );
 }
 
 fn catalog_usage() {

@@ -6,6 +6,7 @@
 
 use crate::source_detection::{SourceObservation, SourceObservationKind};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 const DJANGO: &str = "django-orm";
 const SQLALCHEMY: &str = "sqlalchemy";
@@ -332,6 +333,30 @@ impl FrameworkCatalog {
         candidates.sort();
         candidates
     }
+}
+
+pub(crate) fn is_framework_manifest_path(path: &str) -> bool {
+    let path = Path::new(path);
+    let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+        return false;
+    };
+    matches!(
+        name,
+        "pyproject.toml"
+            | "requirements.txt"
+            | "Pipfile"
+            | "setup.py"
+            | "setup.cfg"
+            | "package.json"
+            | "pom.xml"
+            | "build.gradle"
+            | "build.gradle.kts"
+            | "Directory.Packages.props"
+            | "Gemfile"
+            | "composer.json"
+            | "go.mod"
+    ) || name.starts_with("requirements") && name.ends_with(".txt")
+        || path.extension().and_then(|extension| extension.to_str()) == Some("csproj")
 }
 
 #[derive(Clone, Copy)]
