@@ -75,12 +75,27 @@ pub(crate) fn observe_tree(
     label: &str,
     collect: CollectObservations,
 ) -> Result<Vec<SourceObservation>, String> {
+    observe_tree_with_parser_source(source, source, language, label, collect)
+}
+
+pub(crate) fn observe_tree_with_parser_source(
+    source: &str,
+    parser_source: &str,
+    language: &Language,
+    label: &str,
+    collect: CollectObservations,
+) -> Result<Vec<SourceObservation>, String> {
+    if source.len() != parser_source.len() {
+        return Err(format!(
+            "{label} parser compatibility source changed byte offsets"
+        ));
+    }
     let mut parser = Parser::new();
     parser
         .set_language(language)
         .map_err(|error| format!("cannot initialize {label} parser: {error}"))?;
     let tree = parser
-        .parse(source, None)
+        .parse(parser_source, None)
         .ok_or_else(|| format!("{label} parser returned no syntax tree"))?;
     let root = tree.root_node();
     if root.has_error() {
@@ -88,6 +103,9 @@ pub(crate) fn observe_tree(
     }
 
     let mut observations = Vec::new();
+    // `parser_source` may contain same-width compatibility substitutions for
+    // syntax missing from the bundled grammar. Read names and receivers from
+    // the original source so reported identities remain exact.
     collect(root, source.as_bytes(), &mut observations);
     // Keep equal observations: two calls can share a line, symbol, receiver,
     // and method while still representing two distinct source operations.

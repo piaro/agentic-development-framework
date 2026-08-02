@@ -214,9 +214,11 @@ agentic detector-audit /path/to/repository --format text --require-clean
 | django-oscar | 836 | 836 | 0 | 16,387 | 808 |
 | Prisma Examples | 652 | 651 | 1 | 2,785 | 362 |
 | NATS Go | 179 | 179 | 0 | 26,429 | 648 |
-| Godot Demo Projects | 497 | 495 | 2 | 5,773 | 0 |
+| Godot Demo Projects | 497 | 497 | 0 | 5,833 | 0 |
 
-3件のparse gapはReportへfile path付きで残り、網羅済みとは扱いません。正当な新構文、上流source自体の構文不整合、生成途中fileなどの区別は人が確認し、Detectorまたは監査対象の期待値へ明示的に反映します。
+初回監査で見つかったGodot Demo Projectsの2件は、Godotで有効な`$%UniqueNode`を同梱Tree-sitter文法が読めないことが原因でした。Godot公式の[GDScript reference](https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_basics.html#literals)は`$NodePath`と`%UniqueNode`を定義し、固定revisionの公式demoでも[`$%SDFGI`](https://github.com/godotengine/godot-demo-projects/blob/4652e17c04fe5f249dc53949fb195a3d8b24ee5f/3d/truck_town/car_select/car_select.gd#L12)が使われています。Detectorは解析時だけ同じbyte長の互換表現を使い、報告する行番号とresource文字列には原文を維持します。修正後は固定revisionの497件をすべてparseできました。
+
+Prisma Examplesの1件は、同一の`const db`初期化が未完了の式の途中へ重複している[上流source](https://github.com/prisma/prisma-examples/blob/eb8f4328821c6746680a2ba02e0e5636a085a327/databases/kysely-prisma-postgres/src/index.ts#L27-L41)自体の構文不整合です。このgapはDetectorで読み替えず、file path付きの`parse-error`としてfail closedを維持します。正当な新構文、上流source自体の構文不整合、生成途中fileなどの区別は人が確認し、Detectorまたは監査対象の期待値へ明示的に反映します。
 
 ## 実行
 

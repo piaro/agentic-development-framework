@@ -1,17 +1,39 @@
 //! Mechanical observations extracted from Godot GDScript syntax.
 
 use crate::source_detection::{
-    SourceObservation, canonical_node_text, classify_method, observe_tree,
+    SourceObservation, canonical_node_text, classify_method, observe_tree_with_parser_source,
 };
+use std::borrow::Cow;
 use tree_sitter::Node;
 
 pub fn observe_gdscript(source: &str) -> Result<Vec<SourceObservation>, String> {
-    observe_tree(
+    let parser_source = gdscript_parser_source(source);
+    observe_tree_with_parser_source(
         source,
+        &parser_source,
         &tree_sitter_gdscript::LANGUAGE.into(),
         "GDScript",
         collect_root,
     )
+}
+
+fn gdscript_parser_source(source: &str) -> Cow<'_, str> {
+    // Godot accepts `$%UniqueNode` as get_node("%UniqueNode"), while the
+    // bundled grammar currently accepts `$NodePath` and `%UniqueNode` only.
+    // Replace the `%` for parsing with an identifier byte. Keeping the byte
+    // length unchanged lets observations retain exact source locations and
+    // the original `$%UniqueNode` receiver text.
+    if !source.contains("$%") {
+        return Cow::Borrowed(source);
+    }
+
+    let mut parser_source = source.as_bytes().to_vec();
+    for index in 1..parser_source.len() {
+        if parser_source[index - 1] == b'$' && parser_source[index] == b'%' {
+            parser_source[index] = b'_';
+        }
+    }
+    Cow::Owned(String::from_utf8(parser_source).expect("ASCII substitution preserves UTF-8"))
 }
 
 fn collect_root(node: Node<'_>, source: &[u8], observations: &mut Vec<SourceObservation>) {
@@ -327,6 +349,30 @@ func place_order(order):
             }),
             "{observations:?}"
         );
+    }
+
+    #[test]
+    fn accepts_explicit_unique_node_shorthand_and_backslash_continuation() {
+        let observations = observe_gdscript(
+            r#"
+@onready var button_sdfgi: CheckBox = $%SDFGI
+
+func supported() -> bool:
+    var display_server_name = DisplayServer.get_name()
+    return display_server_name == &"Windows" \
+            or display_server_name == &"macOS"
+
+func remove_button() -> void:
+    $%SDFGI.queue_free()
+"#,
+        )
+        .unwrap();
+
+        assert!(observations.iter().any(|observation| {
+            observation.symbol == "remove_button"
+                && observation.resource == "$%SDFGI"
+                && observation.method == "queue_free"
+        }));
     }
 
     #[test]
