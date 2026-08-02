@@ -5,7 +5,7 @@ use serde::Serialize;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const BINDING_DRAFT_SCHEMA_VERSION: &str = "5";
+pub const BINDING_DRAFT_SCHEMA_VERSION: &str = "6";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct BindingDraftValidationIssue {
@@ -114,7 +114,8 @@ impl BindingDraftValidationReport {
         }
         if self.is_valid() {
             lines.push(
-                "Next: the reviewed Draft is ready for an explicit promotion step.".to_owned(),
+                "Next: run agentic project promote-bindings --draft <path> to explicitly promote the reviewed Draft."
+                    .to_owned(),
             );
         } else {
             lines.push("Next: resolve every listed issue and validate the Draft again.".to_owned());
@@ -161,6 +162,7 @@ fn validate_top_level(draft: &Value, issues: &mut Vec<BindingDraftValidationIssu
             "schema_version",
             "kind",
             "analysis_roots",
+            "base_observation_digest",
             "source_digests",
             "artifacts",
             "binding_artifacts",
@@ -196,6 +198,24 @@ fn validate_freshness(
     current: &Value,
     issues: &mut Vec<BindingDraftValidationIssue>,
 ) {
+    match (
+        draft["base_observation_digest"].as_str(),
+        current["base_observation_digest"].as_str(),
+    ) {
+        (Some(expected), Some(actual)) if is_sha256_digest(expected) && expected == actual => {}
+        (Some(expected), Some(_)) if is_sha256_digest(expected) => issue(
+            issues,
+            "stale-observation",
+            None,
+            "Repository Observation changed after Draft generation",
+        ),
+        _ => issue(
+            issues,
+            "invalid-observation-digest",
+            None,
+            "base_observation_digest must be a lowercase SHA-256 digest",
+        ),
+    }
     if draft["artifacts"] != current["artifacts"] {
         issue(
             issues,

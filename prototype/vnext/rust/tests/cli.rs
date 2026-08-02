@@ -330,7 +330,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     validate_output_schema(&draft, "repository-observation-draft.schema.json");
-    assert_eq!(draft["schema_version"], "5");
+    assert_eq!(draft["schema_version"], "6");
     assert_eq!(draft["kind"], "repository-observation-draft");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let python = artifacts
@@ -616,7 +616,7 @@ fn project_observe_refuses_a_symlinked_draft_output() {
 }
 
 #[test]
-fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
+fn project_validates_and_promotes_a_reviewed_draft_safely() {
     let project = TestProject::new();
     fs::write(
         project.root.join("src/place_order.py"),
@@ -625,6 +625,10 @@ fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
          \x20   orders.save(order)\n",
     )
     .unwrap();
+    let active_path = project.root.join(".agentic/repository-observation.yaml");
+    let mut base_observation = read_yaml(&active_path);
+    base_observation["phase"] = json!("post-build");
+    write_yaml(&active_path, &base_observation);
     let draft_relative = ".agentic/repository-observation.draft.yaml";
     let observed = project.run(&[
         "project",
@@ -635,12 +639,18 @@ fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
         draft_relative,
     ]);
     assert_success(&observed);
-    let active_path = project.root.join(".agentic/repository-observation.yaml");
     let active_before = fs::read(&active_path).unwrap();
 
     let incomplete = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
     assert!(!incomplete.status.success());
     assert!(String::from_utf8_lossy(&incomplete.stdout).contains("incomplete-binding"));
+    let rejected_promotion =
+        project.run(&["project", "promote-bindings", "--draft", draft_relative]);
+    assert!(!rejected_promotion.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected_promotion.stdout).contains("Promotion was not performed")
+    );
+    assert_eq!(fs::read(&active_path).unwrap(), active_before);
 
     let draft_path = project.root.join(draft_relative);
     let mut draft = read_yaml(&draft_path);
@@ -726,9 +736,40 @@ fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
     assert_success(&valid);
     let valid_stdout = String::from_utf8_lossy(&valid.stdout);
     assert!(valid_stdout.contains("Binding Draft validation: valid"));
-    assert!(valid_stdout.contains("ready for an explicit promotion step"));
+    assert!(valid_stdout.contains("project promote-bindings --draft <path>"));
     assert!(valid_stdout.contains("No authoritative project file was changed"));
     assert_eq!(fs::read(&active_path).unwrap(), active_before);
+
+    let mut changed_observation = read_yaml(&active_path);
+    changed_observation["phase"] = json!("pre-build");
+    write_yaml(&active_path, &changed_observation);
+    let changed_bytes = fs::read(&active_path).unwrap();
+    let stale_observation =
+        project.run(&["project", "promote-bindings", "--draft", draft_relative]);
+    assert!(!stale_observation.status.success());
+    assert!(String::from_utf8_lossy(&stale_observation.stdout).contains("stale-observation"));
+    assert_eq!(fs::read(&active_path).unwrap(), changed_bytes);
+    fs::write(&active_path, &active_before).unwrap();
+
+    let promoted = project.run(&["project", "promote-bindings", "--draft", draft_relative]);
+    assert_success(&promoted);
+    let promoted_stdout = String::from_utf8_lossy(&promoted.stdout);
+    assert!(promoted_stdout.contains("Binding Draft promoted successfully"));
+    assert!(promoted_stdout.contains("Draft retained"));
+    assert!(draft_path.is_file());
+    let active = read_yaml(&active_path);
+    assert_eq!(active["schema_version"], "5");
+    assert_eq!(active["phase"], "post-build");
+    assert_eq!(active["analysis"], json!({"roots": ["src"]}));
+    assert_eq!(active["artifacts"], draft["binding_artifacts"]);
+    let active_validation = project.run(&["project", "validate-bindings"]);
+    assert_success(&active_validation);
+
+    let promoted_bytes = fs::read(&active_path).unwrap();
+    let repeated = project.run(&["project", "promote-bindings", "--draft", draft_relative]);
+    assert!(!repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stdout).contains("stale-observation"));
+    assert_eq!(fs::read(&active_path).unwrap(), promoted_bytes);
 
     fs::write(
         project.root.join("src/place_order.py"),
@@ -741,7 +782,7 @@ fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
     let stale = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
     assert!(!stale.status.success());
     assert!(String::from_utf8_lossy(&stale.stdout).contains("stale-source"));
-    assert_eq!(fs::read(&active_path).unwrap(), active_before);
+    assert_eq!(fs::read(&active_path).unwrap(), promoted_bytes);
 
     let json = project.run(&[
         "project",
@@ -753,6 +794,19 @@ fn project_validate_bindings_checks_a_reviewed_draft_before_promotion() {
     ]);
     assert!(!json.status.success());
     assert!(String::from_utf8_lossy(&json.stderr).contains("supports only text output"));
+
+    let missing_draft = project.run(&["project", "promote-bindings"]);
+    assert!(!missing_draft.status.success());
+    assert!(String::from_utf8_lossy(&missing_draft.stderr).contains("requires --draft"));
+    assert!(
+        !fs::read_dir(project.root.join(".agentic"))
+            .unwrap()
+            .any(|entry| entry
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".repository-observation.tmp-"))
+    );
 }
 
 #[test]
@@ -849,7 +903,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
         .unwrap();
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
-    assert_eq!(draft["schema_version"], "5");
+    assert_eq!(draft["schema_version"], "6");
     let artifacts = draft["artifacts"].as_array().unwrap();
     let expected = [
         ("src/django_service.py", "django-orm", "save"),

@@ -6,19 +6,24 @@
     "schema_version",
     "kind",
     "analysis_roots",
+    "base_observation_digest",
     "source_digests",
     "artifacts",
     "binding_artifacts",
     "next"
   ],
   "properties": {
-    "schema_version": {"const": "5"},
+    "schema_version": {"const": "6"},
     "kind": {"const": "repository-observation-draft"},
     "analysis_roots": {
       "type": "array",
       "minItems": 1,
       "items": {"type": "string", "minLength": 1},
       "uniqueItems": true
+    },
+    "base_observation_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
     },
     "source_digests": {
       "type": "object",

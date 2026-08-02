@@ -217,9 +217,9 @@ agentic project observe \
   --output .agentic/repository-observation.draft.yaml
 ```
 
-この出力はRepository Observation Draft v5であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。sourceごとのSHA-256を`source_digests`へ固定し、反映前のfreshness検査に使います。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
+この出力はRepository Observation Draft v6であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。sourceごとのSHA-256を`source_digests`へ、生成時点の正式ObservationのSHA-256を`base_observation_digest`へ固定し、反映前のfreshness検査に使います。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
 
-Draft v5の`binding_artifacts`は、Observation Schema v5の`artifacts`へ転記できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`fact_kinds`、`logical_refs`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
+Draft v6の`binding_artifacts`は、Observation Schema v5の`artifacts`へ反映できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`fact_kinds`、`logical_refs`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
 編集したDraftは、正式Observationへ反映する前に検査できます。Draft検査は未記入、物理名・論理ID・fact kindの不整合、未承認Decision、生成後のsource変更を停止対象にします。text出力だけを提供し、正式Observationやその他のProject fileは変更しません。
 
@@ -228,6 +228,16 @@ agentic project validate-bindings \
   --project /path/to/project \
   --draft .agentic/repository-observation.draft.yaml
 ```
+
+検査に成功したDraftだけを、明示commandで正式Observationへ反映できます。反映直前にも同じ検査を行い、source、accepted Decision、生成元Observationのいずれかが変わっていれば何も変更しません。成功時は現在の`phase`を保ち、`analysis_roots`とreview済み`binding_artifacts`だけからObservation Schema v5を作り、設定済みfileを原子的に置換します。Draft自体は削除しません。
+
+```sh
+agentic project promote-bindings \
+  --project /path/to/project \
+  --draft .agentic/repository-observation.draft.yaml
+```
+
+反映後は`git diff`と`agentic project validate-bindings`で正式Observationを確認し、Observationとaccepted Decisionを一緒にcommitします。
 
 転記・review後は、通常評価の前にBindingだけを検査できます。`invalid`は不足・曖昧・不正なBindingまたは未承認authority、`blocked`は未対応言語や構文エラーなど、完全なBinding検査を妨げるcoverage gapです。どちらも終了codeは非0です。`--require-clean`はCIで使用します。
 
@@ -240,9 +250,10 @@ agentic project validate-bindings \
 JSON出力は`schemas/outputs/v1/binding-validation-report.schema.json`に従い、issueごとに`category: binding|coverage`、安定した`kind`、artifact ref、理由を返します。このcommandは論理ID、owner、kind、authorityを補完せず、既存の観測・Binding・Decisionだけを検証します。
 
 ```yaml
-schema_version: "5"
+schema_version: "6"
 kind: repository-observation-draft
 analysis_roots: [shop]
+base_observation_digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 source_digests:
   shop/service.py: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 artifacts:
@@ -558,7 +569,7 @@ sources:
 - Rustのturbofish付きmethod callとJavaScript・TypeScriptの文字列computed propertyを観測します。動的computed propertyも`OtherMethodCall`として残すため、Binding済みreceiverなら`unsupported-observation`で停止します。aliasと動的dispatchの意味解決は今後のDetector追加対象です。
 - class・impl・receiver内のsymbolは型名で修飾します。既存の短縮Binding keyはartifact内で一意な場合だけ互換利用し、同名symbolが複数ある場合は`ambiguous-symbol-binding`で停止して修飾keyを要求します。TypeScriptのclass field関数、default export、CommonJS代入、Pythonの代入lambda・class body、Javaのstatic initializer、Swiftのinitializer・型property closure、Scalaの型初期化・extension receiver・型level val closureにも安定した物理symbolを割り当てます。
 - Binding Recordはartifact内の関数名・物理resource名、および必要なframework固有methodごとに論理IDまたは観測kind、owner、承認Decisionを記録します。Schema v5では1つのresourceにbinding種別ごとの`logical_refs`、1つのmethodに複数の`fact_kinds`を記録でき、全組合せの妥当性を確認してから複数factを一括生成します。承認Decisionは`accepted`でなければならず、artifact・binding・承認Decisionの変更は検出根拠digestへ反映されます。
-- `project observe`のDraft v5はsource SHA-256を固定し、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は転記構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。
+- `project observe`のDraft v6はsourceと生成元ObservationのSHA-256を固定し、主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClient、Amazon S3、Google Cloud Storage、Azure Blob Storageの候補を提示します。候補はBinding Recordへ自動反映せず、通常評価も参照しません。明確なObject Storage uploadは`external_call`と`object_write`の両方を候補にします。SQLAlchemy `execute`やJavaScript版S3 `client.send`など読書き両用APIは空の候補listとし、個別reviewを要求します。通常のbare `fetch()`はBinding可能なreceiver identityを持たないため候補化せず、`window.fetch`・`globalThis.fetch`・`self.fetch`だけを扱います。曖昧なmethod名は、対応するmanifest・import・型・receiverの根拠がある場合だけ候補化します。`binding_artifacts`は反映用構造だけを作り、fact kinds・論理ID・owner・承認先を`null`にするため、そのままではBinding Recordとして受理されません。`project promote-bindings`はDraftを再検証し、freshな場合だけ現在のphaseを保って正式Observationを原子的に置換します。
 - Detector benchmarkは同梱の代表fixtureに対する品質回帰を測ります。外部OSS Repositoryの大規模snapshot、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。

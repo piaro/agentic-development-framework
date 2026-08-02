@@ -2,6 +2,7 @@
 
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
 use crate::framework_detection::{FrameworkCandidate, FrameworkCatalog};
+use crate::project_config::load_project_config;
 use crate::remote_delivery::install_release_archive;
 use crate::source_detection::{
     SourceObservation, SourceObservationKind, detector_for_path, source_pathspecs,
@@ -14,11 +15,13 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const CANDIDATE_LOCK_FILE: &str = "candidate-framework.lock";
 pub const FRAMEWORK_ARCHIVE_FILE: &str = "framework-release.tar";
 pub const PUBLISH_RECEIPT_FILE: &str = "publish-receipt.json";
 pub const PUBLICATION_RECORD_FILE: &str = "publication-record.json";
+static PROMOTION_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct ProjectInitOptions<'a> {
     pub project_root: &'a Path,
@@ -32,6 +35,12 @@ pub struct ProjectInitReceipt {
     pub release_id: String,
     pub already_installed: bool,
     pub created_files: Vec<PathBuf>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObservationPromotionReceipt {
+    pub observation_path: PathBuf,
+    pub artifacts: usize,
 }
 
 pub fn initialize_project(
@@ -210,6 +219,7 @@ pub fn observation_draft(
         .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
     assert_git_root(&root)?;
     let roots = normalize_analysis_roots(analysis_roots)?;
+    let base_observation_digest = observation_base_digest(&root)?;
     let pathspecs = source_pathspecs();
     let mut arguments = vec![
         "ls-files",
@@ -303,14 +313,62 @@ pub fn observation_draft(
     artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     binding_artifacts.sort_by(|left, right| left["path"].as_str().cmp(&right["path"].as_str()));
     Ok(json!({
-        "schema_version": "5",
+        "schema_version": "6",
         "kind": "repository-observation-draft",
         "analysis_roots": roots,
+        "base_observation_digest": base_observation_digest,
         "source_digests": source_digests,
         "artifacts": artifacts,
         "binding_artifacts": binding_artifacts,
-        "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with reviewed logical_refs or fact_kinds, owner, and accepted Decision authority_ref before copying the artifacts into a repository observation schema v5 file. Suggested fact kinds are non-authoritative, and candidates with an empty list require call-specific classification. This draft is not authoritative and never updates project files.",
+        "next": "Review each physical symbol, resource, and framework candidate. In binding_artifacts, remove irrelevant placeholders and fill every retained null with reviewed logical_refs or fact_kinds, owner, and accepted Decision authority_ref. Validate the Draft, then explicitly promote it into the repository observation schema v5 file. Suggested fact kinds are non-authoritative, and candidates with an empty list require call-specific classification. This draft is not authoritative and never updates project files by itself.",
     }))
+}
+
+/// Atomically replace the configured authoritative Observation with reviewed Draft bindings.
+pub fn promote_observation_draft(
+    project_root: &Path,
+    draft: &Value,
+) -> Result<ObservationPromotionReceipt, ProjectSetupError> {
+    let root = project_root
+        .canonicalize()
+        .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
+    assert_git_root(&root)?;
+    let observation_path = configured_observation_path(&root)?;
+    let current_bytes = read_regular_file(&observation_path, "Repository Observation")?;
+    let expected_digest = draft["base_observation_digest"]
+        .as_str()
+        .filter(|digest| *digest == sha256_digest(&current_bytes))
+        .ok_or_else(|| {
+            setup_error(
+                "Repository Observation changed after Draft generation; generate and review a new Draft",
+            )
+        })?;
+    let current: Value = serde_yaml::from_slice(&current_bytes)
+        .map_err(|error| setup_error(format!("{}: {error}", observation_path.display())))?;
+    let phase = current["phase"]
+        .as_str()
+        .filter(|phase| matches!(*phase, "pre-build" | "post-build"))
+        .ok_or_else(|| setup_error("Repository Observation phase is invalid"))?;
+    let roots = draft["analysis_roots"]
+        .as_array()
+        .ok_or_else(|| setup_error("Binding Draft analysis_roots must be an array"))?;
+    let artifacts = draft["binding_artifacts"]
+        .as_array()
+        .ok_or_else(|| setup_error("Binding Draft binding_artifacts must be an array"))?;
+    let promoted = json!({
+        "schema_version": "5",
+        "phase": phase,
+        "analysis": {"roots": roots},
+        "artifacts": artifacts,
+    });
+    let bytes = serde_yaml::to_string(&promoted)
+        .map_err(|error| setup_error(error.to_string()))?
+        .into_bytes();
+    atomic_replace_if_digest(&observation_path, expected_digest, &bytes)?;
+    Ok(ObservationPromotionReceipt {
+        observation_path,
+        artifacts: artifacts.len(),
+    })
 }
 
 /// Write an explicitly requested Observation Draft without replacing any file.
@@ -662,6 +720,149 @@ fn reject_symlink_components(root: &Path, relative: &Path) -> Result<(), Project
         }
     }
     Ok(())
+}
+
+fn configured_observation_path(root: &Path) -> Result<PathBuf, ProjectSetupError> {
+    let config = load_project_config(root).map_err(|error| setup_error(error.to_string()))?;
+    let relative = Path::new(&config.repository_observation);
+    reject_symlink_components(root, relative)?;
+    Ok(root.join(relative))
+}
+
+fn observation_base_digest(root: &Path) -> Result<String, ProjectSetupError> {
+    match fs::symlink_metadata(root.join(".agentic/config.yaml")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            // Observation-only use remains available before Project initialization.
+            // Such a Draft cannot be promoted because promotion requires a configured
+            // authoritative Observation whose digest will not match this sentinel.
+            return Ok(sha256_digest(&[]));
+        }
+        Err(error) => {
+            return Err(setup_error(format!(
+                "cannot inspect Project config: {error}"
+            )));
+        }
+        Ok(_) => {}
+    }
+    let path = configured_observation_path(root)?;
+    read_regular_file(&path, "Repository Observation").map(|bytes| sha256_digest(&bytes))
+}
+
+fn read_regular_file(path: &Path, label: &str) -> Result<Vec<u8>, ProjectSetupError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| setup_error(format!("{}: {error}", path.display())))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(setup_error(format!(
+            "{label} is not a regular file: {}",
+            path.display()
+        )));
+    }
+    fs::read(path).map_err(|error| setup_error(format!("{}: {error}", path.display())))
+}
+
+fn sha256_digest(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn atomic_replace_if_digest(
+    path: &Path,
+    expected_digest: &str,
+    bytes: &[u8],
+) -> Result<(), ProjectSetupError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| setup_error("Repository Observation has no parent directory"))?;
+    let temporary = parent.join(format!(
+        ".repository-observation.tmp-{}-{}",
+        std::process::id(),
+        PROMOTION_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let permissions = fs::symlink_metadata(path)
+            .map_err(|error| setup_error(format!("{}: {error}", path.display())))?
+            .permissions();
+        let mut output = OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)
+            .map_err(|error| setup_error(format!("{}: {error}", temporary.display())))?;
+        output
+            .write_all(bytes)
+            .and_then(|()| output.sync_all())
+            .map_err(|error| setup_error(format!("{}: {error}", temporary.display())))?;
+        fs::set_permissions(&temporary, permissions)
+            .map_err(|error| setup_error(format!("{}: {error}", temporary.display())))?;
+        let current = read_regular_file(path, "Repository Observation")?;
+        if sha256_digest(&current) != expected_digest {
+            return Err(setup_error(
+                "Repository Observation changed during promotion; no replacement was performed",
+            ));
+        }
+        replace_file(&temporary, path)?;
+        sync_directory(parent)
+    })();
+    if temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+#[cfg(unix)]
+fn sync_directory(path: &Path) -> Result<(), ProjectSetupError> {
+    fs::File::open(path)
+        .and_then(|directory| directory.sync_all())
+        .map_err(|error| setup_error(format!("{}: {error}", path.display())))
+}
+
+#[cfg(windows)]
+fn sync_directory(_path: &Path) -> Result<(), ProjectSetupError> {
+    Ok(())
+}
+
+#[cfg(not(windows))]
+fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
+    fs::rename(source, target)
+        .map_err(|error| setup_error(format!("{}: {error}", target.display())))
+}
+
+#[cfg(windows)]
+fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
+    use std::os::windows::ffi::OsStrExt;
+
+    const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;
+    const MOVEFILE_WRITE_THROUGH: u32 = 0x8;
+    #[link(name = "Kernel32")]
+    unsafe extern "system" {
+        fn MoveFileExW(existing: *const u16, replacement: *const u16, flags: u32) -> i32;
+    }
+    let source_wide = source
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    let target_wide = target
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect::<Vec<_>>();
+    // SAFETY: both pointers refer to live NUL-terminated buffers and the flags
+    // request a documented replacement with write-through semantics.
+    let moved = unsafe {
+        MoveFileExW(
+            source_wide.as_ptr(),
+            target_wide.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if moved == 0 {
+        Err(setup_error(format!(
+            "{}: {}",
+            target.display(),
+            std::io::Error::last_os_error()
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), ProjectSetupError> {
