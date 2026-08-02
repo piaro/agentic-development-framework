@@ -1,5 +1,6 @@
 //! Safe, mechanical setup for a project without inventing semantic bindings.
 
+use crate::delivery::resolve_verified_release;
 use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
 use crate::framework_detection::{
     FrameworkCandidate, FrameworkCatalog, is_framework_manifest_path,
@@ -534,7 +535,15 @@ fn framework_catalog(root: &Path) -> Result<FrameworkCatalog, ProjectSetupError>
         root,
         &["ls-files", "--cached", "--others", "--exclude-standard"],
     )?;
-    let mut catalog = FrameworkCatalog::default();
+    let lock_path = root.join(".agentic/framework.lock");
+    let mut catalog = if lock_path.is_file() {
+        let framework_lock = read_yaml(&lock_path)?;
+        resolve_verified_release(root, &framework_lock, None)
+            .map_err(|error| setup_error(error.to_string()))?
+            .framework_catalog
+    } else {
+        FrameworkCatalog::default()
+    };
     for relative in output
         .lines()
         .filter(|path| is_framework_manifest_path(path))

@@ -6,6 +6,7 @@
 //! download into a temporary directory and reuse this same trust boundary.
 
 use crate::canonical_digest;
+use crate::framework_detection::FrameworkCatalog;
 use crate::framework_lock::validate_framework_lock;
 use crate::framework_lock::{FRAMEWORK_LOCK_SCHEMA_VERSION, SIGNED_FRAMEWORK_LOCK_SCHEMA_VERSION};
 use crate::rules::compile_rule_index;
@@ -34,6 +35,7 @@ pub struct VerifiedRelease {
     pub root: PathBuf,
     pub rule_source: Value,
     pub schema_registry: SchemaRegistry,
+    pub framework_catalog: FrameworkCatalog,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +54,7 @@ pub struct SwitchReceipt {
 struct VerifiedManifest {
     rules: String,
     schemas: String,
+    framework_catalog: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -106,6 +109,11 @@ fn resolve_verified_release_for(
     let manifest = verify_release_manifest(project_root, framework_lock, &release_root, trust_use)?;
     let rules_path = release_asset_path(&release_root, &manifest.rules)?;
     let schemas_path = release_asset_path(&release_root, &manifest.schemas)?;
+    let framework_catalog_path = manifest
+        .framework_catalog
+        .as_deref()
+        .map(|path| release_asset_path(&release_root, path))
+        .transpose()?;
     if !rules_path.is_file() {
         return Err(delivery_error(format!(
             "Framework Rule source is not a file: {}",
@@ -116,6 +124,14 @@ fn resolve_verified_release_for(
         return Err(delivery_error(format!(
             "Framework Schema root is not a directory: {}",
             schemas_path.display()
+        )));
+    }
+    if let Some(path) = &framework_catalog_path
+        && !path.is_file()
+    {
+        return Err(delivery_error(format!(
+            "Framework Catalog is not a file: {}",
+            path.display()
         )));
     }
 
@@ -148,12 +164,21 @@ fn resolve_verified_release_for(
             schema_registry.digest()
         )));
     }
+    let framework_catalog = match framework_catalog_path {
+        Some(path) => {
+            let source = read_yaml(&path)?;
+            FrameworkCatalog::with_release_source(&source)
+                .map_err(|error| delivery_error(error.to_string()))?
+        }
+        None => FrameworkCatalog::default(),
+    };
 
     Ok(VerifiedRelease {
         release_id: release_id.to_owned(),
         root: release_root,
         rule_source,
         schema_registry,
+        framework_catalog,
     })
 }
 
@@ -360,12 +385,6 @@ fn verify_release_manifest(
         .get("assets")
         .and_then(Value::as_object)
         .ok_or_else(|| delivery_error("Framework Release assets must be a mapping"))?;
-    assert_exact_fields(assets, &["rules", "schemas"], "Framework Release assets")?;
-    let verified = VerifiedManifest {
-        rules: required_string(assets, "rules", "Framework Release assets")?.to_owned(),
-        schemas: required_string(assets, "schemas", "Framework Release assets")?.to_owned(),
-    };
-
     match schema_version {
         LEGACY_RELEASE_MANIFEST_SCHEMA_VERSION => {
             if framework_lock.get("schema_version").and_then(Value::as_str)
@@ -380,8 +399,10 @@ fn verify_release_manifest(
                 &["schema_version", "release_id", "assets"],
                 "Framework Release manifest",
             )?;
+            assert_exact_fields(assets, &["rules", "schemas"], "Framework Release assets")?;
         }
         SIGNED_RELEASE_MANIFEST_SCHEMA_VERSION => {
+            assert_optional_framework_catalog_asset(assets)?;
             verify_signed_manifest(
                 project_root,
                 framework_lock,
@@ -396,7 +417,32 @@ fn verify_release_manifest(
             )));
         }
     }
-    Ok(verified)
+    Ok(VerifiedManifest {
+        rules: required_string(assets, "rules", "Framework Release assets")?.to_owned(),
+        schemas: required_string(assets, "schemas", "Framework Release assets")?.to_owned(),
+        framework_catalog: assets
+            .get("framework_catalog")
+            .map(|_| {
+                required_string(assets, "framework_catalog", "Framework Release assets")
+                    .map(str::to_owned)
+            })
+            .transpose()?,
+    })
+}
+
+fn assert_optional_framework_catalog_asset(
+    assets: &Map<String, Value>,
+) -> Result<(), DeliveryError> {
+    let allowed = ["framework_catalog", "rules", "schemas"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let actual = assets.keys().map(String::as_str).collect::<BTreeSet<_>>();
+    if !actual.contains("rules") || !actual.contains("schemas") || !actual.is_subset(&allowed) {
+        return Err(delivery_error(format!(
+            "signed Framework Release assets fields must be rules, schemas, and optional framework_catalog; got {actual:?}"
+        )));
+    }
+    Ok(())
 }
 
 fn verify_signed_manifest(

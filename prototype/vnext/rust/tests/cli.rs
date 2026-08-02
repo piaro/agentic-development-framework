@@ -576,6 +576,65 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     let _ = fs::remove_dir_all(root);
 }
 
+#[test]
+fn project_observe_uses_only_the_signed_release_framework_catalog() {
+    let project = TestProject::new();
+    fs::create_dir_all(project.root.join("catalog-src")).unwrap();
+    fs::write(
+        project.root.join("catalog-src/package.json"),
+        r#"{"dependencies":{"typeorm":"latest"}}"#,
+    )
+    .unwrap();
+    fs::write(
+        project.root.join("catalog-src/orders.ts"),
+        "import { Repository } from \"typeorm\";\n\
+         export async function placeOrder(repository: Repository<Order>, order: Order) {\n\
+         \x20 await repository.save(order);\n\
+         }\n",
+    )
+    .unwrap();
+    run_git(&project.root, &["add", "catalog-src"]);
+    run_git(
+        &project.root,
+        &["commit", "--quiet", "-m", "add typeorm source"],
+    );
+
+    let observed = project.run(&[
+        "project",
+        "observe",
+        "--analysis-root",
+        "catalog-src",
+        "--format",
+        "json",
+    ]);
+    assert_success(&observed);
+    let draft: Value = serde_json::from_slice(&observed.stdout).unwrap();
+    let candidate = &draft["artifacts"][0]["framework_candidates"][0];
+    assert_eq!(candidate["framework"], "dev.agentic-kit/typeorm");
+    assert_eq!(candidate["method"], "save");
+    assert_eq!(candidate["suggested_fact_kinds"], json!(["db_write"]));
+    assert_eq!(candidate["review_status"], "required");
+
+    fs::write(
+        project.release_root.join("framework-catalog.yaml"),
+        "schema_version: '1'\nnamespace: tampered\nrules: []\n",
+    )
+    .unwrap();
+    let rejected = project.run(&[
+        "project",
+        "observe",
+        "--analysis-root",
+        "catalog-src",
+        "--format",
+        "json",
+    ]);
+    assert!(!rejected.status.success());
+    assert!(
+        String::from_utf8_lossy(&rejected.stderr)
+            .contains("Framework Release file digest mismatch")
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn project_observe_refuses_a_symlinked_draft_output() {
@@ -3251,6 +3310,25 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("protocols.kernel"));
     assert!(!project.root.join("published/release.tar").exists());
+
+    fs::write(
+        source.join("framework-catalog.yaml"),
+        "schema_version: '1'\nnamespace: agentic\nrules: []\n",
+    )
+    .unwrap();
+    let invalid_catalog = project.run_with_env(
+        &publisher_arguments(
+            "publisher-source",
+            "published/invalid-catalog.tar",
+            "published/invalid-catalog.lock",
+        ),
+        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        &"07".repeat(32),
+    );
+    assert!(!invalid_catalog.status.success());
+    assert!(String::from_utf8_lossy(&invalid_catalog.stderr).contains("namespace agentic"));
+    assert!(!project.root.join("published/invalid-catalog.tar").exists());
+    assert!(!project.root.join("published/invalid-catalog.lock").exists());
 }
 
 #[test]
@@ -3608,6 +3686,15 @@ impl TestProject {
             release_root.join("rules.yaml"),
         )
         .unwrap();
+        fs::copy(
+            manifest_root.join("../fixtures/framework-catalog/framework-catalog.yaml"),
+            release_root.join("framework-catalog.yaml"),
+        )
+        .unwrap();
+        validate_catalog_schema(
+            &read_yaml(&release_root.join("framework-catalog.yaml")),
+            "framework-catalog.schema.json",
+        );
         copy_tree(
             &manifest_root.join("../schemas/v1"),
             &release_root.join("schemas/v1"),
@@ -3720,6 +3807,8 @@ fn publisher_arguments<'a>(source: &'a str, archive: &'a str, lock: &'a str) -> 
         "remote:test-fixture",
         "--key-id",
         "test.framework.release",
+        "--framework-catalog",
+        "framework-catalog.yaml",
         "--output",
         archive,
         "--lock-output",
@@ -3845,14 +3934,18 @@ fn write_signed_release(
             })
         })
         .collect::<Vec<_>>();
+    let mut assets = json!({
+        "rules": "rules.yaml",
+        "schemas": "schemas/v1",
+    });
+    if root.join("framework-catalog.yaml").is_file() {
+        assets["framework_catalog"] = Value::String("framework-catalog.yaml".to_owned());
+    }
     let payload = json!({
         "schema_version": "2",
         "release_id": "prototype-vnext-dev",
         "source_id": source_id,
-        "assets": {
-            "rules": "rules.yaml",
-            "schemas": "schemas/v1",
-        },
+        "assets": assets,
         "files": files,
         "signer": {
             "algorithm": "ed25519",

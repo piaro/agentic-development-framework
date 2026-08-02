@@ -5,7 +5,10 @@
 //! reviewer may turn into an accepted Binding Record.
 
 use crate::source_detection::{SourceObservation, SourceObservationKind};
+use serde::Deserialize;
+use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt;
 use std::path::Path;
 
 const DJANGO: &str = "django-orm";
@@ -97,7 +100,7 @@ impl SuggestedFactKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrameworkCandidate {
-    pub framework: &'static str,
+    pub framework: String,
     pub symbol: String,
     pub resource: String,
     pub method: String,
@@ -106,15 +109,161 @@ pub struct FrameworkCandidate {
     pub suggested_fact_kinds: Vec<SuggestedFactKind>,
     pub method_binding_required: bool,
     pub evidence: Vec<String>,
-    pub rationale: &'static str,
+    pub rationale: String,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct FrameworkCatalog {
-    project_evidence: BTreeMap<&'static str, BTreeSet<String>>,
+    project_evidence: BTreeMap<String, BTreeSet<String>>,
+    release_rules: Vec<ReleaseFrameworkRule>,
+    release_project_evidence: BTreeMap<String, BTreeSet<String>>,
+}
+
+#[derive(Debug, Clone)]
+struct ReleaseFrameworkRule {
+    key: String,
+    framework: String,
+    languages: BTreeSet<String>,
+    methods: BTreeSet<String>,
+    manifest_markers: Vec<String>,
+    source_markers: Vec<String>,
+    receiver_markers: Vec<String>,
+    suggested_fact_kinds: Vec<SuggestedFactKind>,
+    rationale: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseCatalogSource {
+    schema_version: String,
+    namespace: String,
+    rules: Vec<ReleaseRuleSource>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ReleaseRuleSource {
+    id: String,
+    framework: String,
+    languages: Vec<String>,
+    methods: Vec<String>,
+    #[serde(default)]
+    manifest_markers: Vec<String>,
+    #[serde(default)]
+    source_markers: Vec<String>,
+    #[serde(default)]
+    receiver_markers: Vec<String>,
+    #[serde(default)]
+    suggested_fact_kinds: Vec<String>,
+    rationale: String,
 }
 
 impl FrameworkCatalog {
+    /// Merge non-authoritative detector hints from a signed Framework Release.
+    ///
+    /// External framework identities are always qualified as `namespace/name`.
+    /// This keeps them disjoint from built-in identities and makes ownership
+    /// visible in every generated review candidate.
+    pub fn with_release_source(source: &Value) -> Result<Self, FrameworkCatalogError> {
+        let parsed: ReleaseCatalogSource = serde_json::from_value(source.clone())
+            .map_err(|error| catalog_error(format!("invalid Framework Catalog: {error}")))?;
+        validate_identifier(&parsed.namespace, "Framework Catalog namespace", true)?;
+        if parsed.namespace == "agentic" || parsed.namespace.starts_with("agentic.") {
+            return Err(catalog_error(
+                "Framework Catalog namespace agentic is reserved for built-in rules",
+            ));
+        }
+        if parsed.schema_version != "1" {
+            return Err(catalog_error(format!(
+                "unsupported Framework Catalog Schema: {}",
+                parsed.schema_version
+            )));
+        }
+        if parsed.rules.is_empty() {
+            return Err(catalog_error("Framework Catalog rules must be non-empty"));
+        }
+
+        let mut seen_rule_ids = BTreeSet::new();
+        let mut seen_matches = BTreeSet::new();
+        let mut release_rules = Vec::new();
+        for rule in parsed.rules {
+            validate_identifier(&rule.id, "Framework Catalog rule ID", false)?;
+            validate_identifier(&rule.framework, "Framework Catalog framework name", false)?;
+            if !seen_rule_ids.insert(rule.id.clone()) {
+                return Err(catalog_error(format!(
+                    "duplicate Framework Catalog rule ID: {:?}",
+                    rule.id
+                )));
+            }
+            let languages = unique_non_empty(rule.languages, "rule languages")?;
+            for language in &languages {
+                let supported = crate::source_detection::detector_for_language(language)
+                    .is_some_and(|detector| detector.is_supported());
+                if !supported {
+                    return Err(catalog_error(format!(
+                        "Framework Catalog rule {:?} uses unsupported language {:?}",
+                        rule.id, language
+                    )));
+                }
+            }
+            let methods = unique_non_empty(rule.methods, "rule methods")?;
+            let manifest_markers = normalized_markers(rule.manifest_markers, "manifest markers")?;
+            let source_markers = normalized_markers(rule.source_markers, "source markers")?;
+            let receiver_markers = normalized_markers(rule.receiver_markers, "receiver markers")?;
+            if manifest_markers.is_empty() && source_markers.is_empty() {
+                return Err(catalog_error(format!(
+                    "Framework Catalog rule {:?} requires a manifest or source marker",
+                    rule.id
+                )));
+            }
+            if rule.rationale.trim().is_empty() {
+                return Err(catalog_error(format!(
+                    "Framework Catalog rule {:?} rationale must be non-empty",
+                    rule.id
+                )));
+            }
+            let suggested_fact_kind_count = rule.suggested_fact_kinds.len();
+            let suggested_fact_kinds = rule
+                .suggested_fact_kinds
+                .iter()
+                .map(|kind| parse_suggested_fact_kind(kind, &rule.id))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            if suggested_fact_kinds.len() != suggested_fact_kind_count {
+                return Err(catalog_error(format!(
+                    "Framework Catalog rule {:?} suggested fact kinds must be unique",
+                    rule.id
+                )));
+            }
+            let suggested_fact_kinds = suggested_fact_kinds.into_iter().collect::<Vec<_>>();
+            let framework = format!("{}/{}", parsed.namespace, rule.framework);
+            for language in &languages {
+                for method in &methods {
+                    if !seen_matches.insert((framework.clone(), language.clone(), method.clone())) {
+                        return Err(catalog_error(format!(
+                            "duplicate Framework Catalog match for {framework} {language}.{method}"
+                        )));
+                    }
+                }
+            }
+            release_rules.push(ReleaseFrameworkRule {
+                key: format!("{}/{}", parsed.namespace, rule.id),
+                framework,
+                languages,
+                methods,
+                manifest_markers,
+                source_markers,
+                receiver_markers,
+                suggested_fact_kinds,
+                rationale: rule.rationale,
+            });
+        }
+        release_rules.sort_by(|left, right| left.key.cmp(&right.key));
+        Ok(Self {
+            release_rules,
+            ..Self::default()
+        })
+    }
+
     pub fn record_manifest(&mut self, path: &str, content: &str) {
         let content = content.to_ascii_lowercase();
         for (framework, markers) in [
@@ -278,7 +427,19 @@ impl FrameworkCatalog {
         ] {
             if markers.iter().any(|marker| content.contains(marker)) {
                 self.project_evidence
-                    .entry(framework)
+                    .entry(framework.to_owned())
+                    .or_default()
+                    .insert(format!("project-manifest:{path}"));
+            }
+        }
+        for rule in &self.release_rules {
+            if rule
+                .manifest_markers
+                .iter()
+                .any(|marker| content.contains(marker))
+            {
+                self.release_project_evidence
+                    .entry(rule.key.clone())
                     .or_default()
                     .insert(format!("project-manifest:{path}"));
             }
@@ -324,7 +485,7 @@ impl FrameworkCatalog {
                     continue;
                 }
                 candidates.push(FrameworkCandidate {
-                    framework: rule.framework,
+                    framework: rule.framework.to_owned(),
                     symbol: observation.symbol.clone(),
                     resource: observation.resource.clone(),
                     method: observation.method.clone(),
@@ -341,12 +502,152 @@ impl FrameworkCatalog {
                     method_binding_required: observation.kind
                         == SourceObservationKind::OtherMethodCall,
                     evidence: evidence.into_iter().collect(),
-                    rationale: rule.rationale,
+                    rationale: rule.rationale.to_owned(),
+                });
+            }
+            let resource_lower = observation.resource.to_ascii_lowercase();
+            for rule in self.release_rules.iter().filter(|rule| {
+                rule.languages.contains(language) && rule.methods.contains(&observation.method)
+            }) {
+                let mut evidence = self
+                    .release_project_evidence
+                    .get(&rule.key)
+                    .into_iter()
+                    .flatten()
+                    .filter(|evidence| manifest_evidence_applies(evidence, path))
+                    .cloned()
+                    .collect::<BTreeSet<_>>();
+                evidence.extend(
+                    rule.source_markers
+                        .iter()
+                        .filter(|marker| source_lower.contains(marker.as_str()))
+                        .map(|marker| format!("source-marker:{}:{marker}", rule.key)),
+                );
+                if evidence.is_empty()
+                    || !rule.receiver_markers.is_empty()
+                        && !rule
+                            .receiver_markers
+                            .iter()
+                            .any(|marker| resource_lower.contains(marker))
+                {
+                    continue;
+                }
+                candidates.push(FrameworkCandidate {
+                    framework: rule.framework.clone(),
+                    symbol: observation.symbol.clone(),
+                    resource: observation.resource.clone(),
+                    method: observation.method.clone(),
+                    line: observation.line,
+                    binding_key: format!("{}.{}", observation.resource, observation.method),
+                    suggested_fact_kinds: rule.suggested_fact_kinds.clone(),
+                    method_binding_required: observation.kind
+                        == SourceObservationKind::OtherMethodCall,
+                    evidence: evidence.into_iter().collect(),
+                    rationale: rule.rationale.clone(),
                 });
             }
         }
         candidates.sort();
         candidates
+    }
+}
+
+fn validate_identifier(
+    value: &str,
+    label: &str,
+    allow_dots: bool,
+) -> Result<(), FrameworkCatalogError> {
+    let bytes = value.as_bytes();
+    let valid = bytes.first().is_some_and(u8::is_ascii_lowercase)
+        && bytes.iter().enumerate().all(|(index, byte)| {
+            if byte.is_ascii_lowercase() || byte.is_ascii_digit() {
+                return true;
+            }
+            let separator = matches!(byte, b'-' | b'_') || allow_dots && *byte == b'.';
+            separator
+                && index > 0
+                && bytes
+                    .get(index + 1)
+                    .is_some_and(|next| next.is_ascii_lowercase() || next.is_ascii_digit())
+        });
+    if !valid {
+        return Err(catalog_error(format!("{label} is invalid: {value:?}")));
+    }
+    Ok(())
+}
+
+fn unique_non_empty(
+    values: Vec<String>,
+    label: &str,
+) -> Result<BTreeSet<String>, FrameworkCatalogError> {
+    if values.is_empty() || values.iter().any(|value| value.trim().is_empty()) {
+        return Err(catalog_error(format!(
+            "Framework Catalog {label} must be non-empty"
+        )));
+    }
+    let count = values.len();
+    let unique = values.into_iter().collect::<BTreeSet<_>>();
+    if unique.len() != count {
+        return Err(catalog_error(format!(
+            "Framework Catalog {label} must be unique"
+        )));
+    }
+    Ok(unique)
+}
+
+fn normalized_markers(
+    values: Vec<String>,
+    label: &str,
+) -> Result<Vec<String>, FrameworkCatalogError> {
+    if values.iter().any(|value| value.trim().is_empty()) {
+        return Err(catalog_error(format!(
+            "Framework Catalog {label} must not contain empty values"
+        )));
+    }
+    let count = values.len();
+    let unique = values
+        .into_iter()
+        .map(|value| value.to_ascii_lowercase())
+        .collect::<BTreeSet<_>>();
+    if unique.len() != count {
+        return Err(catalog_error(format!(
+            "Framework Catalog {label} must be case-insensitively unique"
+        )));
+    }
+    Ok(unique.into_iter().collect())
+}
+
+fn parse_suggested_fact_kind(
+    kind: &str,
+    rule_id: &str,
+) -> Result<SuggestedFactKind, FrameworkCatalogError> {
+    match kind {
+        "db_write" => Ok(SuggestedFactKind::DbWrite),
+        "message_publish" => Ok(SuggestedFactKind::MessagePublish),
+        "external_call" => Ok(SuggestedFactKind::ExternalCall),
+        "object_write" => Ok(SuggestedFactKind::ObjectWrite),
+        other => Err(catalog_error(format!(
+            "Framework Catalog rule {rule_id:?} has unsupported suggested fact kind {other:?}"
+        ))),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FrameworkCatalogError {
+    message: String,
+}
+
+impl fmt::Display for FrameworkCatalogError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for FrameworkCatalogError {}
+
+fn catalog_error(message: impl Into<String>) -> FrameworkCatalogError {
+    FrameworkCatalogError {
+        message: message.into(),
     }
 }
 
@@ -1797,5 +2098,83 @@ mod tests {
             &[builtin],
         );
         assert!(!candidates[0].method_binding_required);
+    }
+
+    #[test]
+    fn release_catalog_adds_namespaced_review_candidates() {
+        let source = serde_json::json!({
+            "schema_version": "1",
+            "namespace": "example.queue",
+            "rules": [{
+                "id": "publisher",
+                "framework": "client",
+                "languages": ["python"],
+                "methods": ["enqueue"],
+                "manifest_markers": ["example-queue"],
+                "source_markers": ["import example_queue"],
+                "receiver_markers": ["queue"],
+                "suggested_fact_kinds": ["message_publish"],
+                "rationale": "Example Queue enqueue publishes a broker message."
+            }]
+        });
+        let mut catalog = FrameworkCatalog::with_release_source(&source).unwrap();
+        catalog.record_manifest("pyproject.toml", "dependencies = ['example-queue']");
+        let candidates = catalog.candidates(
+            "src/jobs.py",
+            "python",
+            "queue.enqueue(job)",
+            &[observation_on("queue", "enqueue")],
+        );
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].framework, "example.queue/client");
+        assert_eq!(
+            candidates[0].suggested_fact_kinds,
+            vec![SuggestedFactKind::MessagePublish]
+        );
+        assert!(candidates[0].method_binding_required);
+    }
+
+    #[test]
+    fn release_catalog_rejects_reserved_namespaces_and_duplicate_matches() {
+        let reserved = serde_json::json!({
+            "schema_version": "1",
+            "namespace": "agentic",
+            "rules": []
+        });
+        assert!(
+            FrameworkCatalog::with_release_source(&reserved)
+                .unwrap_err()
+                .to_string()
+                .contains("reserved")
+        );
+
+        let duplicate = serde_json::json!({
+            "schema_version": "1",
+            "namespace": "example.queue",
+            "rules": [
+                {
+                    "id": "first",
+                    "framework": "client",
+                    "languages": ["python"],
+                    "methods": ["enqueue"],
+                    "source_markers": ["example_queue"],
+                    "rationale": "First rule."
+                },
+                {
+                    "id": "second",
+                    "framework": "client",
+                    "languages": ["python"],
+                    "methods": ["enqueue"],
+                    "source_markers": ["example_queue"],
+                    "rationale": "Second rule."
+                }
+            ]
+        });
+        assert!(
+            FrameworkCatalog::with_release_source(&duplicate)
+                .unwrap_err()
+                .to_string()
+                .contains("duplicate Framework Catalog match")
+        );
     }
 }

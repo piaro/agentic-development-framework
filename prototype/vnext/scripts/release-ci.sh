@@ -7,6 +7,7 @@ KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
 RUST_ROOT=$KIT_ROOT/prototype/vnext/rust
 SOURCE_RULES=$KIT_ROOT/prototype/vnext/fixtures/db-sqs/rules.yaml
 SOURCE_SCHEMAS=$KIT_ROOT/prototype/vnext/schemas/v1
+SOURCE_FRAMEWORK_CATALOG=$KIT_ROOT/prototype/vnext/fixtures/framework-catalog/framework-catalog.yaml
 BASE_LOCK=$KIT_ROOT/prototype/vnext/fixtures/db-sqs/framework-lock.yaml
 OUTPUT_DIR=${AGENTIC_RELEASE_OUTPUT_DIR:-"$KIT_ROOT/dist/vnext"}
 SOURCE_ID=${AGENTIC_RELEASE_SOURCE_ID:-remote:official}
@@ -34,6 +35,7 @@ trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$WORK_ROOT/source/schemas" "$WORK_ROOT/first" "$WORK_ROOT/second"
 cp "$SOURCE_RULES" "$WORK_ROOT/source/rules.yaml"
+cp "$SOURCE_FRAMEWORK_CATALOG" "$WORK_ROOT/source/framework-catalog.yaml"
 cp -R "$SOURCE_SCHEMAS" "$WORK_ROOT/source/schemas/v1"
 
 cargo build \
@@ -49,6 +51,7 @@ build_release() {
     --source-id "$SOURCE_ID" \
     --key-id "$SIGNER_KEY_ID" \
     --expected-public-key "$PUBLIC_KEY" \
+    --framework-catalog framework-catalog.yaml \
     --output "$destination/framework-release.tar" \
     --lock-output "$destination/candidate-framework.lock" \
     --format json >"$destination/publish-receipt.json"

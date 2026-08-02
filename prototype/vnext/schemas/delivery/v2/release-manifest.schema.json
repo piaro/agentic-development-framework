@@ -40,6 +40,10 @@
         "schemas": {
           "type": "string",
           "minLength": 1
+        },
+        "framework_catalog": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

@@ -1,0 +1,29 @@
+schema_version: "1"
+namespace: dev.agentic-kit
+rules:
+  - id: typeorm-persistence
+    framework: typeorm
+    languages:
+      - javascript
+      - jsx
+      - typescript
+      - tsx
+    methods:
+      - save
+      - insert
+      - update
+      - delete
+      - remove
+      - softRemove
+      - softDelete
+      - upsert
+    manifest_markers:
+      - '"typeorm"'
+    source_markers:
+      - 'from "typeorm"'
+      - "from 'typeorm'"
+      - 'require("typeorm")'
+      - "require('typeorm')"
+    suggested_fact_kinds:
+      - db_write
+    rationale: TypeORM repository and entity manager persistence APIs can write database state.

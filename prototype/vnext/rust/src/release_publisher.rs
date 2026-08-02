@@ -6,6 +6,7 @@
 //! files or Release manifests.
 
 use crate::canonical_digest;
+use crate::framework_detection::FrameworkCatalog;
 use crate::framework_lock::{SIGNED_FRAMEWORK_LOCK_SCHEMA_VERSION, validate_framework_lock};
 use crate::remote_delivery::{MAX_ARCHIVE_BYTES, MAX_ARCHIVE_ENTRIES};
 use crate::rules::compile_rule_index;
@@ -34,6 +35,7 @@ pub struct PublishOptions<'a> {
     pub expected_signer_public_key: Option<&'a str>,
     pub rules_path: &'a str,
     pub schemas_path: &'a str,
+    pub framework_catalog_path: Option<&'a str>,
     pub archive_output: &'a Path,
     pub lock_output: &'a Path,
 }
@@ -66,6 +68,9 @@ pub fn publish_release(
     validate_non_empty(options.signer_key_id, "signer key ID")?;
     validate_relative_path(options.rules_path)?;
     validate_relative_path(options.schemas_path)?;
+    if let Some(path) = options.framework_catalog_path {
+        validate_relative_path(path)?;
+    }
 
     let source_root = options
         .source_root
@@ -106,6 +111,17 @@ pub fn publish_release(
             options.schemas_path
         )));
     }
+    if let Some(relative) = options.framework_catalog_path {
+        let path = source_root.join(relative);
+        if files.get(relative) != Some(&path) {
+            return Err(publish_error(format!(
+                "Framework Catalog is not a regular source file: {relative}"
+            )));
+        }
+        let source = read_yaml(&path)?;
+        FrameworkCatalog::with_release_source(&source)
+            .map_err(|error| publish_error(error.to_string()))?;
+    }
 
     let rule_source = read_yaml(&rules_file)?;
     let schema_registry =
@@ -124,14 +140,18 @@ pub fn publish_release(
             }))
         })
         .collect::<Result<Vec<_>, PublishError>>()?;
+    let mut assets = json!({
+        "rules": options.rules_path,
+        "schemas": options.schemas_path,
+    });
+    if let Some(path) = options.framework_catalog_path {
+        assets["framework_catalog"] = Value::String(path.to_owned());
+    }
     let payload = json!({
         "schema_version": "2",
         "release_id": release_id,
         "source_id": options.source_id,
-        "assets": {
-            "rules": options.rules_path,
-            "schemas": options.schemas_path,
-        },
+        "assets": assets,
         "files": inventory,
         "signer": {
             "algorithm": "ed25519",

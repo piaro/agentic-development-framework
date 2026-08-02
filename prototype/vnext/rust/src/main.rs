@@ -489,6 +489,7 @@ enum ReleaseCommand {
         expected_signer_public_key: Option<String>,
         rules_path: String,
         schemas_path: String,
+        framework_catalog_path: Option<String>,
         archive_output: PathBuf,
         lock_output: PathBuf,
         format: OutputFormat,
@@ -534,6 +535,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
     let mut lock_output = None;
     let mut rules_path = "rules.yaml".to_owned();
     let mut schemas_path = "schemas/v1".to_owned();
+    let mut framework_catalog_path = None;
     let mut build_format = OutputFormat::Text;
     let mut index = 2;
     while index < arguments.len() {
@@ -572,6 +574,10 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
             "--schemas" => {
                 schemas_path = flag_value(arguments, &mut index, "--schemas")?.to_owned();
             }
+            "--framework-catalog" => {
+                framework_catalog_path =
+                    Some(flag_value(arguments, &mut index, "--framework-catalog")?.to_owned());
+            }
             "--format" => {
                 build_format = match flag_value(arguments, &mut index, "--format")? {
                     "text" => OutputFormat::Text,
@@ -595,6 +601,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
             expected_signer_public_key,
             rules_path,
             schemas_path,
+            framework_catalog_path,
             archive_output: archive_output
                 .ok_or_else(|| "release build requires --output <archive>".to_owned())?,
             lock_output: lock_output
@@ -607,6 +614,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
                 (&archive_output, &lock_output),
                 &rules_path,
                 &schemas_path,
+                &framework_catalog_path,
                 build_format,
             )?;
             if lock.is_some() {
@@ -622,6 +630,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
                 (&archive_output, &lock_output),
                 &rules_path,
                 &schemas_path,
+                &framework_catalog_path,
                 build_format,
             )?;
             ReleaseCommand::Install {
@@ -636,6 +645,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
                 (&archive_output, &lock_output),
                 &rules_path,
                 &schemas_path,
+                &framework_catalog_path,
                 build_format,
             )?;
             ReleaseCommand::InstallArchive {
@@ -651,6 +661,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
                 (&archive_output, &lock_output),
                 &rules_path,
                 &schemas_path,
+                &framework_catalog_path,
                 build_format,
             )?;
             if lock.is_some() {
@@ -666,6 +677,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
                 (&archive_output, &lock_output),
                 &rules_path,
                 &schemas_path,
+                &framework_catalog_path,
                 build_format,
             )?;
             if lock.is_some() {
@@ -688,6 +700,7 @@ fn reject_build_only_options(
     outputs: (&Option<PathBuf>, &Option<PathBuf>),
     rules_path: &str,
     schemas_path: &str,
+    framework_catalog_path: &Option<String>,
     format: OutputFormat,
 ) -> Result<(), String> {
     let (source_id, signer_key_id, expected_signer_public_key) = identity;
@@ -699,6 +712,7 @@ fn reject_build_only_options(
         || lock_output.is_some()
         || rules_path != "rules.yaml"
         || schemas_path != "schemas/v1"
+        || framework_catalog_path.is_some()
         || format != OutputFormat::Text
     {
         Err("publisher options are accepted only by release build".to_owned())
@@ -717,6 +731,7 @@ fn run_release_command(options: &ReleaseOptions) -> Result<String, String> {
             expected_signer_public_key,
             rules_path,
             schemas_path,
+            framework_catalog_path,
             archive_output,
             lock_output,
             format,
@@ -736,6 +751,7 @@ fn run_release_command(options: &ReleaseOptions) -> Result<String, String> {
                     expected_signer_public_key: expected_signer_public_key.as_deref(),
                     rules_path,
                     schemas_path,
+                    framework_catalog_path: framework_catalog_path.as_deref(),
                     archive_output: &archive_output,
                     lock_output: &lock_output,
                 },
@@ -1844,7 +1860,8 @@ fn release_usage() {
          --lock <base-lock> --source-id <id> --key-id <id> \
          [--expected-public-key <64-hex-public-key>] \
          --output <archive> --lock-output <candidate-lock> \
-         [--rules <path>] [--schemas <path>] [--format <text|json>] \
+         [--rules <path>] [--schemas <path>] [--framework-catalog <path>] \
+         [--format <text|json>] \
          [--project <root>]\n  \
          agentic release fetch <candidate-lock> \
          [--project <root>]\n  \

@@ -254,7 +254,7 @@ agentic project observe \
   --output .agentic/repository-observation.draft.yaml
 ```
 
-この出力はRepository Observation Draft v6であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。sourceごとのSHA-256を`source_digests`へ、生成時点の正式ObservationのSHA-256を`base_observation_digest`へ固定し、反映前のfreshness検査に使います。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
+この出力はRepository Observation Draft v6であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。sourceごとのSHA-256を`source_digests`へ、生成時点の正式ObservationのSHA-256を`base_observation_digest`へ固定し、反映前のfreshness検査に使います。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。署名済み公式ReleaseのFramework Detection Catalogを使う場合は、TypeORMも候補化します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
 
 Draft v6の`binding_artifacts`は、Observation Schema v5の`artifacts`へ反映できる構造だけを機械的に作ります。観測に関係する物理symbol・resourceと、明示Bindingが必要なframework methodをキーにしますが、意味を持つ`fact_kinds`、`logical_refs`、owner、`authority_ref`は`null`のままです。不要な項目を除き、残すすべての`null`を既存コードと設計の調査結果、accepted Decisionに基づいて埋めるまで有効なBinding Recordにはなりません。`project observe`はproject fileを更新しません。
 
@@ -406,10 +406,15 @@ Release rootには次を置きます。
 ```text
 release.yaml
 rules.yaml
+framework-catalog.yaml  # 任意。署名済みRelease v2だけが指定可能
 schemas/v1/
 ```
 
 署名済みRelease manifest v2は、Release ID、取得元ID、assetの相対path、全fileのSHA-256、署名鍵ID、Ed25519署名を持ちます。Framework lock v2はmanifestの署名対象部分のdigest、取得元ID、署名鍵IDを固定します。導入Projectは公開鍵と、その鍵に許可する取得元IDを`.agentic/trusted-release-keys.yaml`でGit管理します。`source_id`はURLやlocal pathではなく、配布経路を表す安定した論理IDです。
+
+Framework Releaseの開発者は、`framework-catalog.yaml`でFramework固有のmethod候補を追加できます。各ruleにはnamespace、対象言語、method、manifestまたはsourceの根拠、候補のfact kind、説明を記述します。外部Framework IDは`namespace/name`になるため、組込みruleとは衝突しません。`agentic` namespaceは組込みrule専用です。
+
+導入先の開発者がProject内に任意のCatalogを追加する仕組みではありません。`project observe`が読むのは、activeなFramework lockから解決し、署名と全file digestを検証したRelease内のCatalogだけです。Catalogが生成するのは`review_status: required`の候補であり、Binding Recordへ自動反映されません。Catalogを書き換えたReleaseへ切り替える場合も、Release全体のinstallとlockのswitchが必要です。rollbackでは以前のlockとReleaseに含まれるCatalogへ戻ります。
 
 公開鍵の初回信頼には`distribution-trust.json`を使います。このfileはRelease archiveやPublish Receiptとは独立してGitHub Artifact Attestationを付け、bootstrapが実行binaryと同じRepository、workflow、source revision、source refに固定して検証します。`publish-receipt.json`や`publication-record.json`内の公開鍵だけを信頼起点にはしません。
 
@@ -424,6 +429,7 @@ agentic release build /path/to/release-source \
   --source-id remote:official \
   --key-id framework.release.2026 \
   --expected-public-key <64-character-ed25519-public-key> \
+  --framework-catalog framework-catalog.yaml \
   --output /path/to/prototype-vnext-dev.tar \
   --lock-output /path/to/candidate-framework.lock \
   --format json
@@ -446,7 +452,7 @@ agentic release rollback /path/to/project/.agentic/cache/framework-lock-backups/
   --project /path/to/project
 ```
 
-`build`は入力directoryを変更せず、既存の`release.yaml`を除いた全fileを列挙して署名済みmanifestを生成します。file順、tar metadata、mtime、uid、gid、modeを固定するため、同じ入力・base lock・署名鍵・取得元ID・鍵IDから同じtarと候補lockを生成します。出力済みfileは上書きしません。
+`build`は入力directoryを変更せず、既存の`release.yaml`を除いた全fileを列挙して署名済みmanifestを生成します。`--framework-catalog`を指定した場合は、Schema、namespace、言語、重複rule、fact kindを出力前に検証します。file順、tar metadata、mtime、uid、gid、modeを固定するため、同じ入力・base lock・署名鍵・取得元ID・鍵IDから同じtarと候補lockを生成します。出力済みfileは上書きしません。
 
 秘密鍵seedは固定名の環境変数`AGENTIC_RELEASE_SIGNING_KEY_HEX`からだけ読み、CLI引数、manifest、Framework lock、標準出力へ記録しません。`--expected-public-key`を指定すると、秘密鍵から導出した公開鍵が事前登録値と異なる場合は出力前に停止します。JSON receiptはRelease ID、manifestのartifact digest、tar全体のarchive digest、公開鍵、出力pathを返します。
 
@@ -583,7 +589,7 @@ sources:
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
 | `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
-| `schemas/catalog/v1/` | 標準Signal Domain Catalogの機械可読な固定形式 |
+| `schemas/catalog/v1/` | 標準Signal Domain CatalogとFramework Detection Catalogの機械可読な固定形式 |
 | `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report、Detector Benchmark／Repository Audit Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
@@ -614,7 +620,7 @@ sources:
 - 外部連携のE2Eは、Requests、HTTPX、Fetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientの8系統と、Amazon S3（Python・JavaScript）、Google Cloud Storage、Azure Blob Storageの4実装を同じ経路で検証します。Object Storageは`external-system-call`と`object-storage-write`の両方を生成し、JavaScript版S3の`send`は明示reviewで両方に分類した場合だけ通します。
 - Detector benchmarkは代表fixtureに加え、固定revisionのdjango-oscar、Prisma Examples、NATS Go、Godot Demo Projectsの選択sourceに対する品質回帰を測ります。`detector-audit`は外部clone全体のcoverageと候補分布を測り、review済みbaselineがrevision・全入力・Report digest・既知gapの変化を検出します。ただしRepository全件へ意味上の正解ラベルを付けたものではないため、全件の誤検知率とは呼びません。review済みsampleの拡大、動的dispatch、alias解析、実運用での誤検知率調査は今後のcorpus拡張対象です。
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
-- Signal Catalog Registryは組込み定義だけを読み込みます。外部Catalogの所有型とDetector・Rule Compilerへの注入境界はありますが、署名・namespace・merge・Framework lock固定が未実装なため、Framework ReleaseまたはProject fileからの追加はまだ受理しません。
+- Framework Detection Catalog v1は、Framework Release開発者が組込み候補へruleを追加するための形式です。現在の公式Release候補にはTypeORMの永続化APIを収録しています。PublisherはCatalogを検証して署名対象assetへ追加し、`project observe`はactive lockが固定した署名済みReleaseからだけ読み込みます。外部IDは`namespace/name`へ正規化し、重複するframework・言語・methodの組合せを拒否します。導入Project独自のCatalogは受理せず、候補をBindingへ自動昇格しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。
