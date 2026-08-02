@@ -13,7 +13,7 @@ use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
 use agentic_vnext_rust::detector_audit_baseline::check_repository_detector_audit_baseline;
 use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
 use agentic_vnext_rust::mcp_server::run_stdio_server;
-use agentic_vnext_rust::migration::{draft_migration, inspect_migration};
+use agentic_vnext_rust::migration::{draft_migration, inspect_migration, validate_migration_draft};
 use agentic_vnext_rust::project_runtime::LoadedProject;
 use agentic_vnext_rust::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
@@ -148,9 +148,13 @@ fn main() -> ExitCode {
             }
         };
         return match run_migration_command(&options) {
-            Ok(output) => {
-                print!("{output}");
-                ExitCode::SUCCESS
+            Ok(response) => {
+                print!("{}", response.output);
+                if response.success {
+                    ExitCode::SUCCESS
+                } else {
+                    ExitCode::FAILURE
+                }
             }
             Err(error) => {
                 eprintln!("{error}");
@@ -973,6 +977,7 @@ enum OutputFormat {
 struct MigrationCommand {
     operation: MigrationOperation,
     project_root: PathBuf,
+    draft_path: Option<PathBuf>,
     format: OutputFormat,
 }
 
@@ -980,21 +985,36 @@ struct MigrationCommand {
 enum MigrationOperation {
     Inspect,
     Draft,
+    ValidateDraft,
+}
+
+struct MigrationCommandResponse {
+    output: String,
+    success: bool,
 }
 
 fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, String> {
     let operation = match arguments.first().map(String::as_str) {
         Some("inspect") => MigrationOperation::Inspect,
         Some("draft") => MigrationOperation::Draft,
-        _ => return Err("migration requires the inspect or draft operation".to_owned()),
+        Some("validate-draft") => MigrationOperation::ValidateDraft,
+        _ => {
+            return Err(
+                "migration requires the inspect, draft, or validate-draft operation".to_owned(),
+            );
+        }
     };
     let mut project_root = PathBuf::from(".");
+    let mut draft_path = None;
     let mut format = OutputFormat::Text;
     let mut index = 1;
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--project" => {
                 project_root = PathBuf::from(flag_value(arguments, &mut index, "--project")?);
+            }
+            "--draft" => {
+                draft_path = Some(PathBuf::from(flag_value(arguments, &mut index, "--draft")?));
             }
             "--format" => {
                 format = match flag_value(arguments, &mut index, "--format")? {
@@ -1007,34 +1027,65 @@ fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, Str
         }
         index += 1;
     }
+    if operation == MigrationOperation::ValidateDraft && draft_path.is_none() {
+        return Err("migration validate-draft requires --draft <path>".to_owned());
+    }
+    if operation != MigrationOperation::ValidateDraft && draft_path.is_some() {
+        return Err("--draft is only valid with migration validate-draft".to_owned());
+    }
     Ok(MigrationCommand {
         operation,
         project_root,
+        draft_path,
         format,
     })
 }
 
-fn run_migration_command(options: &MigrationCommand) -> Result<String, String> {
+fn run_migration_command(options: &MigrationCommand) -> Result<MigrationCommandResponse, String> {
     match options.operation {
         MigrationOperation::Inspect => {
             let report =
                 inspect_migration(&options.project_root).map_err(|error| error.to_string())?;
-            match options.format {
-                OutputFormat::Text => Ok(report.render_text()),
+            let output = match options.format {
+                OutputFormat::Text => report.render_text(),
                 OutputFormat::Json => serde_json::to_string_pretty(&report)
                     .map(|value| value + "\n")
-                    .map_err(|error| error.to_string()),
-            }
+                    .map_err(|error| error.to_string())?,
+            };
+            Ok(MigrationCommandResponse {
+                output,
+                success: true,
+            })
         }
         MigrationOperation::Draft => {
             let report =
                 draft_migration(&options.project_root).map_err(|error| error.to_string())?;
-            match options.format {
-                OutputFormat::Text => Ok(report.render_text()),
+            let output = match options.format {
+                OutputFormat::Text => report.render_text(),
                 OutputFormat::Json => serde_json::to_string_pretty(&report)
                     .map(|value| value + "\n")
-                    .map_err(|error| error.to_string()),
-            }
+                    .map_err(|error| error.to_string())?,
+            };
+            Ok(MigrationCommandResponse {
+                output,
+                success: true,
+            })
+        }
+        MigrationOperation::ValidateDraft => {
+            let draft_path = options
+                .draft_path
+                .as_ref()
+                .ok_or_else(|| "migration validate-draft requires --draft <path>".to_owned())?;
+            let report = validate_migration_draft(&options.project_root, draft_path)
+                .map_err(|error| error.to_string())?;
+            let success = report.is_valid();
+            let output = match options.format {
+                OutputFormat::Text => report.render_text(),
+                OutputFormat::Json => serde_json::to_string_pretty(&report)
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string())?,
+            };
+            Ok(MigrationCommandResponse { output, success })
         }
     }
 }
@@ -1913,6 +1964,7 @@ usage:\n\
   agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   agentic project promote-bindings --draft <path> [--project <root>]\n\
   agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
+  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
@@ -1935,7 +1987,9 @@ fn mcp_usage() {
 }
 
 fn migration_usage() {
-    eprintln!("usage: agentic migration <inspect|draft> [--project <root>] [--format <text|json>]");
+    eprintln!(
+        "usage:\n  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]"
+    );
 }
 
 fn binary_usage() {

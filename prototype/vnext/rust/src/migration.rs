@@ -4,7 +4,7 @@
 //! reviewable work plan. It never writes Project files or decides whether
 //! legacy semantics are valid.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
@@ -14,7 +14,8 @@ use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 pub const MIGRATION_INSPECTION_SCHEMA_VERSION: &str = "1";
-pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "2";
+pub const MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -76,7 +77,8 @@ impl MigrationInspectionReport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MigrationDraftReport {
     pub schema_version: String,
     pub kind: String,
@@ -121,7 +123,8 @@ impl MigrationDraftReport {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MigrationDraftAction {
     pub id: String,
     pub classification: String,
@@ -132,6 +135,56 @@ pub struct MigrationDraftAction {
     pub requires_human_review: bool,
     pub instruction: String,
     pub completion_checks: Vec<String>,
+    pub review: Option<MigrationActionReview>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MigrationActionReview {
+    pub decision: String,
+    pub reviewer: String,
+    pub rationale: String,
+    pub evidence_refs: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationDraftValidationReport {
+    pub schema_version: String,
+    pub status: String,
+    pub source_revision: Option<String>,
+    pub issues: Vec<MigrationDraftValidationIssue>,
+    pub next: String,
+}
+
+impl MigrationDraftValidationReport {
+    pub fn render_text(&self) -> String {
+        let mut output = format!(
+            "Migration draft validation: {}\nsource revision: {}\n",
+            self.status,
+            self.source_revision.as_deref().unwrap_or("-")
+        );
+        for issue in &self.issues {
+            output.push_str(&format!(
+                "- {} {}: {}\n",
+                issue.category,
+                issue.action_id.as_deref().unwrap_or("-"),
+                issue.message
+            ));
+        }
+        output.push_str(&format!("Next: {}\n", self.next));
+        output
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.status == "valid"
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct MigrationDraftValidationIssue {
+    pub category: String,
+    pub action_id: Option<String>,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -178,8 +231,14 @@ pub struct MigrationFinding {
 pub fn inspect_migration(
     project_root: impl AsRef<Path>,
 ) -> Result<MigrationInspectionReport, MigrationError> {
+    inspect_migration_ignoring(project_root.as_ref(), None)
+}
+
+fn inspect_migration_ignoring(
+    project_root: &Path,
+    ignored_worktree_path: Option<&Path>,
+) -> Result<MigrationInspectionReport, MigrationError> {
     let root = project_root
-        .as_ref()
         .canonicalize()
         .map_err(|error| migration_error(format!("cannot resolve project root: {error}")))?;
     if !root.is_dir() {
@@ -187,10 +246,28 @@ pub fn inspect_migration(
     }
     assert_git_top_level(&root)?;
     let revision = git(&root, &["rev-parse", "HEAD"])?;
-    let status = git(
-        &root,
-        &["status", "--porcelain=v1", "--untracked-files=all"],
-    )?;
+    let ignored_pathspec = ignored_worktree_path
+        .and_then(|path| path.canonicalize().ok())
+        .and_then(|path| path.strip_prefix(&root).ok().map(Path::to_path_buf))
+        .map(|path| format!(":(exclude){}", path.to_string_lossy().replace('\\', "/")));
+    let status = if let Some(pathspec) = ignored_pathspec.as_deref() {
+        git(
+            &root,
+            &[
+                "status",
+                "--porcelain=v1",
+                "--untracked-files=all",
+                "--",
+                ".",
+                pathspec,
+            ],
+        )?
+    } else {
+        git(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"],
+        )?
+    };
     let working_tree_clean = status.is_empty();
     let tracked = git(&root, &["ls-files"])?
         .lines()
@@ -470,6 +547,12 @@ pub fn draft_migration(
     project_root: impl AsRef<Path>,
 ) -> Result<MigrationDraftReport, MigrationError> {
     let inspection = inspect_migration(project_root)?;
+    draft_from_inspection(inspection)
+}
+
+fn draft_from_inspection(
+    inspection: MigrationInspectionReport,
+) -> Result<MigrationDraftReport, MigrationError> {
     match inspection.readiness.as_str() {
         "blocked" => {
             return Err(migration_error(
@@ -504,6 +587,236 @@ pub fn draft_migration(
         next: "Review and complete every action against this source revision. Generate candidate files only after the semantic mappings and signed Framework Release have been selected. No files were changed."
             .to_owned(),
     })
+}
+
+pub fn validate_migration_draft(
+    project_root: impl AsRef<Path>,
+    draft_path: impl AsRef<Path>,
+) -> Result<MigrationDraftValidationReport, MigrationError> {
+    let root = project_root
+        .as_ref()
+        .canonicalize()
+        .map_err(|error| migration_error(format!("cannot resolve project root: {error}")))?;
+    let draft_path = resolve_draft_path(&root, draft_path.as_ref())?;
+    let text = fs::read_to_string(&draft_path)
+        .map_err(|error| migration_error(format!("cannot read migration draft: {error}")))?;
+    let value: Value = match serde_yaml::from_str(&text) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(validation_report(
+                "invalid",
+                None,
+                vec![validation_issue(
+                    "invalid-draft",
+                    None,
+                    &format!("Migration Draft is not valid JSON or YAML: {error}"),
+                )],
+            ));
+        }
+    };
+    let actual: MigrationDraftReport = match serde_json::from_value(value) {
+        Ok(draft) => draft,
+        Err(error) => {
+            return Ok(validation_report(
+                "invalid",
+                None,
+                vec![validation_issue(
+                    "invalid-draft",
+                    None,
+                    &format!("Migration Draft does not match schema version 2: {error}"),
+                )],
+            ));
+        }
+    };
+    if actual.source_revision.len() != 40
+        || !actual
+            .source_revision
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Ok(validation_report(
+            "invalid",
+            None,
+            vec![validation_issue(
+                "invalid-source-revision",
+                None,
+                "source_revision must be a 40-character lowercase Git object ID.",
+            )],
+        ));
+    }
+
+    let inspection = inspect_migration_ignoring(&root, Some(&draft_path))?;
+    if inspection.readiness != "review-required" {
+        let message = match inspection.readiness.as_str() {
+            "already-vnext" => "The Project already uses vNext; migration is no longer required.",
+            _ => {
+                "The current Project state is blocked; resolve `migration inspect` findings before validating the Draft."
+            }
+        };
+        return Ok(validation_report(
+            "blocked",
+            Some(actual.source_revision),
+            vec![validation_issue("project-state", None, message)],
+        ));
+    }
+    let expected = draft_from_inspection(inspection)?;
+    let mut issues = Vec::new();
+    if actual.source_revision != expected.source_revision {
+        issues.push(validation_issue(
+            "stale-revision",
+            None,
+            "Migration Draft source_revision does not match the current Git HEAD.",
+        ));
+    }
+
+    let mut immutable_actual = actual.clone();
+    immutable_actual.source_revision = expected.source_revision.clone();
+    for action in &mut immutable_actual.actions {
+        action.review = None;
+    }
+    if immutable_actual != expected {
+        issues.push(validation_issue(
+            "modified-draft",
+            None,
+            "Generated Migration Draft fields were changed; regenerate the Draft and edit only action.review values.",
+        ));
+    }
+
+    for action in &actual.actions {
+        validate_action_review(action, &mut issues);
+    }
+    issues.sort();
+    let status = if issues.is_empty() {
+        "valid"
+    } else {
+        "invalid"
+    };
+    Ok(validation_report(
+        status,
+        Some(actual.source_revision),
+        issues,
+    ))
+}
+
+fn validate_action_review(
+    action: &MigrationDraftAction,
+    issues: &mut Vec<MigrationDraftValidationIssue>,
+) {
+    if !action.requires_human_review {
+        if action.review.is_some() {
+            issues.push(validation_issue(
+                "unexpected-review",
+                Some(&action.id),
+                "This mechanical action does not accept a human review record.",
+            ));
+        }
+        return;
+    }
+    let Some(review) = &action.review else {
+        issues.push(validation_issue(
+            "missing-review",
+            Some(&action.id),
+            "A human review record is required.",
+        ));
+        return;
+    };
+    let allowed = match action.id.as_str() {
+        "decisions" | "change-workflow" => &["proceed", "retire", "preserve-history"][..],
+        "legacy-policies" | "contracts" | "evidence" => &["proceed", "retire"][..],
+        "repository-observation" | "framework-release" => &["proceed"][..],
+        _ => &[][..],
+    };
+    if !allowed.contains(&review.decision.as_str()) {
+        issues.push(validation_issue(
+            "invalid-decision",
+            Some(&action.id),
+            "The review decision is not allowed for this migration action.",
+        ));
+    }
+    if review.reviewer.trim().is_empty() {
+        issues.push(validation_issue(
+            "invalid-reviewer",
+            Some(&action.id),
+            "reviewer must not be empty.",
+        ));
+    }
+    if review.rationale.trim().is_empty() {
+        issues.push(validation_issue(
+            "invalid-rationale",
+            Some(&action.id),
+            "rationale must not be empty.",
+        ));
+    }
+    let evidence = review
+        .evidence_refs
+        .iter()
+        .map(|reference| reference.trim())
+        .collect::<BTreeSet<_>>();
+    if evidence.is_empty() || evidence.contains("") || evidence.len() != review.evidence_refs.len()
+    {
+        issues.push(validation_issue(
+            "invalid-evidence-refs",
+            Some(&action.id),
+            "evidence_refs must contain unique non-empty references.",
+        ));
+    }
+}
+
+fn resolve_draft_path(root: &Path, path: &Path) -> Result<PathBuf, MigrationError> {
+    let path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        let relative = path
+            .to_str()
+            .ok_or_else(|| migration_error("migration draft path is not valid UTF-8"))?;
+        safe_repository_path(root, relative)?
+    };
+    let metadata = fs::symlink_metadata(&path)
+        .map_err(|error| migration_error(format!("cannot inspect migration draft: {error}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(migration_error(
+            "migration draft must be a regular file, not a symlink",
+        ));
+    }
+    path.canonicalize()
+        .map_err(|error| migration_error(format!("cannot resolve migration draft: {error}")))
+}
+
+fn validation_report(
+    status: &str,
+    source_revision: Option<String>,
+    issues: Vec<MigrationDraftValidationIssue>,
+) -> MigrationDraftValidationReport {
+    let next = match status {
+        "valid" => {
+            "Use this reviewed Draft as the sole input to migration candidate generation. No files were changed."
+        }
+        "blocked" => {
+            "Resolve the Project-state blocker, run migration inspect again, and regenerate the Draft. No files were changed."
+        }
+        _ => {
+            "Resolve every issue without changing generated fields, then run migration validate-draft again. No files were changed."
+        }
+    };
+    MigrationDraftValidationReport {
+        schema_version: MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION.to_owned(),
+        status: status.to_owned(),
+        source_revision,
+        issues,
+        next: next.to_owned(),
+    }
+}
+
+fn validation_issue(
+    category: &str,
+    action_id: Option<&str>,
+    message: &str,
+) -> MigrationDraftValidationIssue {
+    MigrationDraftValidationIssue {
+        category: category.to_owned(),
+        action_id: action_id.map(str::to_owned),
+        message: message.to_owned(),
+    }
 }
 
 fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, MigrationError> {
@@ -594,6 +907,7 @@ fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, 
         requires_human_review,
         instruction: instruction.to_owned(),
         completion_checks: checks.iter().map(|check| (*check).to_owned()).collect(),
+        review: None,
     })
 }
 

@@ -162,6 +162,7 @@ fn migration_draft_describes_reviewed_actions_without_writing() {
     assert_success(&output);
     let draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     validate_output_schema(&draft, "migration-draft.schema.json");
+    assert_eq!(draft["schema_version"], "2");
     assert_eq!(draft["kind"], "migration-draft");
     assert_eq!(draft["source_revision"], revision);
     assert_eq!(draft["status"], "review-required");
@@ -175,6 +176,7 @@ fn migration_draft_describes_reviewed_actions_without_writing() {
         action["id"] == "contracts"
             && action["operation"] == "transform-after-review"
             && action["requires_human_review"] == true
+            && action["review"].is_null()
     }));
     assert!(actions.iter().any(|action| {
         action["id"] == "framework-release" && action["operation"] == "install-from-release"
@@ -215,6 +217,184 @@ fn migration_draft_requires_a_clean_migratable_current_project() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("project already uses vNext"));
     let _ = fs::remove_dir_all(dirty);
+}
+
+#[test]
+fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft() {
+    let root = legacy_migration_project("migration-validate-draft");
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    complete_migration_reviews(&mut draft);
+    validate_output_schema(&draft, "migration-draft.schema.json");
+    let draft_path = root.join(".agentic/migration-draft.json");
+    fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
+    let before = git_output(
+        &root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
+    assert!(before.contains(".agentic/migration-draft.json"));
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-draft",
+            "--draft",
+            ".agentic/migration-draft.json",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&report, "migration-draft-validation-report.schema.json");
+    assert_eq!(report["status"], "valid");
+    assert!(report["issues"].as_array().unwrap().is_empty());
+    assert_eq!(
+        git_output(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        ),
+        before
+    );
+
+    fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
+    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-draft",
+            "--draft",
+            ".agentic/migration-draft.json",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!blocked.status.success());
+    let report: Value = serde_json::from_slice(&blocked.stdout).unwrap();
+    validate_output_schema(&report, "migration-draft-validation-report.schema.json");
+    assert_eq!(report["status"], "blocked");
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes() {
+    let root = legacy_migration_project("migration-invalid-draft");
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    let draft_path = root.join("migration-draft.json");
+    fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
+    let incomplete = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-draft",
+            "--draft",
+            "migration-draft.json",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!incomplete.status.success());
+    let report: Value = serde_json::from_slice(&incomplete.stdout).unwrap();
+    validate_output_schema(&report, "migration-draft-validation-report.schema.json");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "missing-review")
+    );
+
+    complete_migration_reviews(&mut draft);
+    draft["actions"][0]["instruction"] = json!("tampered");
+    fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
+    let tampered = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-draft",
+            "--draft",
+            "migration-draft.json",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!tampered.status.success());
+    let report: Value = serde_json::from_slice(&tampered.stdout).unwrap();
+    validate_output_schema(&report, "migration-draft-validation-report.schema.json");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "modified-draft")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_validate_draft_rejects_a_stale_source_revision() {
+    let root = legacy_migration_project("migration-stale-draft");
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
+    complete_migration_reviews(&mut draft);
+    fs::write(
+        root.join("migration-draft.json"),
+        serde_json::to_vec_pretty(&draft).unwrap(),
+    )
+    .unwrap();
+    fs::write(root.join("new-source.py"), "orders.insert(order)\n").unwrap();
+    run_git(&root, &["add", "new-source.py"]);
+    run_git(&root, &["commit", "--quiet", "-m", "advance source"]);
+
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-draft",
+            "--draft",
+            "migration-draft.json",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let report: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&report, "migration-draft-validation-report.schema.json");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "stale-revision")
+    );
+    let _ = fs::remove_dir_all(root);
 }
 
 #[test]
@@ -3878,6 +4058,22 @@ fn legacy_migration_project(label: &str) -> PathBuf {
     run_git(&root, &["add", "."]);
     run_git(&root, &["commit", "--quiet", "-m", "legacy project"]);
     root
+}
+
+fn complete_migration_reviews(draft: &mut Value) {
+    for action in draft["actions"].as_array_mut().unwrap() {
+        if action["requires_human_review"] == true {
+            action["review"] = json!({
+                "decision": "proceed",
+                "reviewer": "migration-reviewer",
+                "rationale": format!(
+                    "Reviewed migration action {} against the current Project.",
+                    action["id"].as_str().unwrap()
+                ),
+                "evidence_refs": ["decision:migration-review"]
+            });
+        }
+    }
 }
 
 struct TestProject {

@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftを生成するread-only経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftの生成とレビュー検証を行うread-only経路まで接続しています。
 
 ## 検証できること
 
@@ -270,7 +270,7 @@ agentic migration draft \
   --format json
 ```
 
-Migration Draftは、移行対象ごとに元のpath、移行先、処理区分、人のreviewが必要か、完了確認を示す作業票です。現行configやContractの意味を自動変換せず、次の処理区分を使います。
+Migration Draft v2は、移行対象ごとに元のpath、移行先、処理区分、人のreviewが必要か、完了確認を示す作業票です。現行configやContractの意味を自動変換せず、次の処理区分を使います。
 
 - `inventory-only`: 移行入力を列挙するだけで、fileを変換しない
 - `replace-after-review`: 現行の意味をreviewし、vNextの別形式へ置き換える
@@ -279,6 +279,26 @@ Migration Draftは、移行対象ごとに元のpath、移行先、処理区分�
 - `install-from-release`: review済みの署名済みFramework Releaseから導入する
 
 診断結果が`blocked`の場合は、指摘を解消して`migration inspect`をやり直します。`already-vnext`の場合はDraftを生成しません。Draft生成もProject file、Git index、commitを変更しません。JSON形式は`schemas/outputs/v1/migration-draft.schema.json`に従います。
+
+生成直後の各`action.review`は`null`です。人が元のContractやDecisionなどを確認し、`requires_human_review: true`のactionだけに次の項目を記入します。CLIは意味を推測して補完しません。
+
+- `decision`: `proceed`、`retire`、またはDecision・Change workflowで使える`preserve-history`
+- `reviewer`: レビュー担当者を識別できる値
+- `rationale`: 判断理由
+- `evidence_refs`: 判断根拠をたどれる一意な参照
+
+記入後は、生成済みフィールドとsource revisionを変更していないことを検証します。
+
+```sh
+agentic migration validate-draft \
+  --project /path/to/current-project \
+  --draft .agentic/migration-draft.json \
+  --format text
+```
+
+検証結果は`valid`、`invalid`、`blocked`のいずれかです。`valid`になるには、必要なreviewがすべてそろい、生成時とGitのHEADが一致し、Draft以外のworktreeがcleanでなければなりません。DraftをRepository内へ保存した場合、指定したDraft fileだけはdirty判定から除外します。それ以外の変更は除外しません。検証もfileを変更せず、JSON形式は`schemas/outputs/v1/migration-draft-validation-report.schema.json`に従います。
+
+`valid`なDraftだけを、次段階の候補file生成へ渡します。候補file生成と既存Projectへの適用はまだ実装していません。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
