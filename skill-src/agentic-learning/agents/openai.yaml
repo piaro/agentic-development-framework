@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agentic Learning"
-  short_description: "Promote incidents into durable development controls"
-  default_prompt: "Use $agentic-learning to convert this incident into durable contracts, tests, probes, or rules."

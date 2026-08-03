@@ -33,8 +33,7 @@ assert_file "$NEW_TARGET/contracts/_templates/feature.yaml"
 assert_file "$NEW_TARGET/.agentic/bin/agentic"
 assert_file "$NEW_TARGET/.agentic/schemas/contract-assessment.schema.json"
 assert_file "$NEW_TARGET/.agentic/schemas/contract-challenge.schema.json"
-assert_file "$NEW_TARGET/.agents/skills/agentic-change/SKILL.md"
-assert_file "$NEW_TARGET/.agents/skills/agentic-contract/SKILL.md"
+assert_file "$NEW_TARGET/.agents/skills/agentic-analyst/SKILL.md"
 assert_file "$NEW_TARGET/.agents/skills/agentic-builder/SKILL.md"
 assert_file "$NEW_TARGET/.agents/skills/agentic-challenger/SKILL.md"
 assert_not_exists "$NEW_TARGET/contracts/data/invariants.yaml"
@@ -64,9 +63,9 @@ BLOCK_COUNT=$(grep -c '<!-- agentic-development:start -->' "$ADOPT_TARGET/AGENTS
   exit 1
 }
 
-printf 'old skill\n' > "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
+printf 'old skill\n' > "$ADOPT_TARGET/.agents/skills/agentic-analyst/SKILL.md"
 "$KIT_ROOT/bin/agentic-init" --mode adopt --level standard --target "$ADOPT_TARGET" --non-interactive >/dev/null
-grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
+grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-analyst/SKILL.md"
 printf '\n# user-setting\n' >> "$ADOPT_TARGET/.agentic/config.yaml"
 mkdir -p "$ADOPT_TARGET/.agentic/changes/legacy-change"
 cat > "$ADOPT_TARGET/.agentic/changes/legacy-change/contract-assessment.yaml" <<'EOF'
@@ -75,9 +74,9 @@ change: legacy-change
 legacy-user-content: keep-me
 EOF
 "$KIT_ROOT/bin/agentic-init" --target "$ADOPT_TARGET" --non-interactive --upgrade --dry-run >/dev/null
-grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"
+grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-analyst/SKILL.md"
 "$KIT_ROOT/bin/agentic-init" --target "$ADOPT_TARGET" --non-interactive --upgrade >/dev/null
-if grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-development/SKILL.md"; then
+if grep -q '^old skill$' "$ADOPT_TARGET/.agents/skills/agentic-analyst/SKILL.md"; then
   printf 'managed skill was not upgraded\n' >&2
   exit 1
 fi

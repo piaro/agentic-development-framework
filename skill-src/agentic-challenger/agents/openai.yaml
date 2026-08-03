@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentic Challenger"
-  short_description: "Challenge contracts, state sequences, and evidence"
-  default_prompt: "Use $agentic-challenger in the phase appropriate to the change state: challenge request, authority, decisions, and proposed contracts before resolution, or challenge the resolved lock, diff, stateful behavior, and evidence after implementation."
+  short_description: "Try to falsify a change before and after implementation"
+  default_prompt: "Use $agentic-challenger to work the next Challenger action for this change, in the phase its state indicates, from an independent context."

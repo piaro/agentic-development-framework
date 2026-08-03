@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentic Builder"
-  short_description: "Implement changes from locked resolved contracts"
-  default_prompt: "Use $agentic-builder to implement this ready change from its resolved contracts."
+  short_description: "Implement a cleared change and record its evidence"
+  default_prompt: "Use $agentic-builder to work the next Builder action for this change."

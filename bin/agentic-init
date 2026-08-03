@@ -349,4 +349,4 @@ fi
 
 printf '\nAgentic Development Kit installation complete.\n'
 printf 'mode=%s level=%s target=%s\n' "$MODE" "$LEVEL" "$TARGET"
-printf 'Next: ask an agent to use $agentic-development and complete docs/agentic/adoption-report.md\n'
+printf 'Next: ask an agent to use $agentic-analyst and complete docs/agentic/adoption-report.md\n'

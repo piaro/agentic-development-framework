@@ -1,25 +1,66 @@
 ---
 name: agentic-builder
-description: Implement a repository change only after Contract Readiness succeeds. Use when a change has status ready and a fresh resolved-contract lock, and implementation must follow governing domain, capability, architecture, data-invariant, operation, and feature contracts without weakening validation conditions.
+description: Implement a change the control plane has cleared for building, and record the evidence that each governing contract clause is met. Use when `agentic next` issues an action whose role is Builder, or when a change is in ready-to-build or needs-evidence. Do not use it to decide what the change should do - that is settled before the build starts.
 ---
 
 # Agentic Builder
 
-## Preconditions
+The control plane only issues an `implement-change` action once every requirement that
+had to be settled before building is settled. Your job is to build what was decided,
+not to decide anything further.
 
-1. Read `.agentic/changes/<id>/change.yaml` and `.agentic/resolved/<id>.lock.yaml`.
-2. Run `.agentic/bin/agentic change ready <id>`. Stop if it fails.
-3. Read every contract in the lock and the referenced implementation examples. Use accepted Decisions only for rationale.
+## Get the assigned work
 
-## Build
+Through MCP, call `agentic_next` with the change id. Without MCP, run
+`agentic next <change-id>`. Stop if `role` is not `Builder`.
 
-- Implement the smallest change satisfying the resolved contracts.
-- If implementation exposes a missing specification, new entity, interface, protocol, lifecycle rule, external effect, or other unauthorized decision, stop and return the change to `$agentic-contract`. Do not use implementation convenience or a Challenger finding as authority.
-- Preserve Data Invariants after every transaction boundary and define convergence for derived or external stores.
-- Implement Operation Contract semantics for duplicate, retry, concurrency, cancellation, timeout, partial failure, and deletion.
-- Add evidence mapped to contract and clause ids.
-- For `security-evidence-recorded`, include executable allow/deny authorization probes or sensitive-data access-control and disclosure probes, as applicable to the issued Context. Do not substitute a prose claim for execution evidence.
-- Do not change a governing contract, Feature Contract, or validation condition to make implementation pass. Reopen Contract Assessment instead.
-- If the actual diff touches undeclared entities, operations, interfaces, or paths, update the change and invalidate the lock before continuing.
+The action's `context` holds the change, the contracts that govern it, the decisions
+behind them, and the affected code. Read every contract in that context before writing
+code. Use decisions for rationale only - the contract states the rule you must meet.
 
-After relevant tests and probes pass, set the change to `challenging` and hand the lock, raw diff, Mutation Graph, and evidence to an independent `$agentic-challenger`. Do not provide a persuasive implementation summary as its primary input.
+## `implement-change`
+
+Implement against the contracts in the context. While you build:
+
+- Do not weaken a validation condition, widen an interface, or relax an invariant to
+  make the implementation easier.
+- Do not add behavior no contract asks for.
+- Keep to the architecture and dependency rules the context carries.
+
+Submit a `summary` of what you implemented.
+
+### When implementation uncovers a decision
+
+Stop building. Do not resolve it yourself and do not encode a guess in the code.
+Report it so the change can return to analysis, where a decision request carries the
+options and their impact to the person who may decide. A specification settled inside
+an implementation is invisible to everyone who reviews the change later.
+
+This is the most common way the control plane gets bypassed. Resist it.
+
+## `record-evidence`
+
+Show that each requirement instance in the action actually holds. For each one, call
+`agentic_add_evidence` with what you observed, then submit an `outcomes` entry:
+
+- `instance_key` and `definition_digest` copied from the action verbatim
+- `status`: `satisfied`, `unsatisfied`, or `inconclusive`
+- `summary`: what the evidence shows
+- `basis_refs`: the tests, probes, and artifacts you actually ran or read
+
+Evidence is traceable to a contract clause or it is not evidence. A mock does not
+demonstrate that a platform behaves as assumed, and a passing test that never exercised
+the path proves nothing about it. Where you could not establish the requirement, report
+`inconclusive` and say what would settle it. Reporting `satisfied` because the change
+looks correct defeats the whole mechanism.
+
+Every residual risk needs someone who accepts it and a date by which it is revisited.
+
+## Submit and continue
+
+Call `agentic_submit` with the action id, the context digest from the action, and the
+payload. The control plane validates it and returns the next action - usually a
+challenge run from a context independent of yours.
+
+If submission is rejected as stale, the inputs moved under you. Call `agentic_next`
+again and work from the fresh action rather than retrying the old payload.

@@ -28,33 +28,33 @@ Challengerは不足・矛盾・反例を指摘できますが、新しいプロ�
 Issue・依頼・既存Docs
         │
         ▼
-Change作成・影響範囲の復元                 $agentic-change
+   agentic change init
         │
         ▼
-Contract Assessment・authority確認        $agentic-contract
-        │
-        ├─ 未決定 ─▶ Decision Request ─▶ 人の判断 ─┐
-        │                                           │
-        ◀───────────────────────────────────────────┘
-        ▼
-実装前Challenge                            $agentic-challenger
-        │
-        ▼
-Contract resolve・readiness gate           CLI
+┌─▶ agentic next ─── 次にやること1件を返す
+│       │
+│       ├─ Analyst   ─▶ 検出候補の確認、影響範囲と操作境界の確定、Contract記入
+│       │                 └─ 未決定 ─▶ 人の判断 ─▶ Decision・Contractへ記録
+│       ├─ Builder   ─▶ 実装、Contract条項に対応する証拠の記録
+│       └─ Challenger ─▶ 実装前・実装後の反証（独立した文脈）
+│       │
+└───────┴─ agentic submit ─── 結果を検証・保存し、再評価する
         │
         ▼
-実装                                       $agentic-builder
-        │
-        ▼
-実装後Challenge・Evidence確認              $agentic-challenger / CLI
-        │
-        ▼
-完了 ── 障害・再発知識 ─▶ Contract等へ昇格 $agentic-learning
+     完了判定
 ```
 
-基本のSkill実行順は、`$agentic-change` → `$agentic-contract` → 実装前`$agentic-challenger` → `$agentic-builder` → 実装後`$agentic-challenger`です。`$agentic-learning`は障害や横断的な学びが発生したときに実行します。
+エージェントがSkillの実行順を覚えるのではなく、`agentic next`が変更の状態から次の1件を決めます。エージェントはそれを実行して結果を提出し、また次を受け取ります。
 
-R1以上、またはAssessmentにdecisionがある変更では実装前Challengeが必須です。R2 / R3では、実装前・実装後ともBuilderから独立したcontextのChallengerを使います。decisionのないR0では、実装前Challengeを省略できます。
+役割ごとに使うSkillは3つです。
+
+| 役割 | Skill | 担当する作業 |
+|---|---|---|
+| Analyst | `$agentic-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contract記入、人への判断依頼、回答の記録 |
+| Builder | `$agentic-builder` | 実装と証拠の記録 |
+| Challenger | `$agentic-challenger` | 実装前と実装後の反証 |
+
+実装後の反証は、実装した文脈から独立した文脈で行います。同じ文脈での見直しを反証として記録しません。
 
 各段階は次のartifactを受け渡します。
 
@@ -181,18 +181,19 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 
 ### 基本フロー: 通常の機能変更
 
-1. `$agentic-change`がIssueとRepositoryを調査し、成果、非対象、影響するContext、Entity、Capability、Operation、Interface、Path、Riskを記録する。
-2. `agentic contract candidates <id>`が単一軸一致するContract候補を列挙する。
-3. `$agentic-contract`が候補を意味的に評価し、適用、除外理由、decision、authority、gap、Platform未知をAssessmentへ記録する。
-4. Feature Contractへ今回の成果、失敗・完了の意味、上位Contractとの差分、証拠要件を記録する。resolve対象となるFeatureと上位Contractは、必要なauthorityと合意を得て`accepted`にする。
-5. `$agentic-challenger`が実装前にIssue、authority、decision、Featureと上位Contractを独立に反証する。
-6. `agentic contract resolve <id>`でaccepted Contract、authority、Challenge、除外判断をhash付きlockへ固定する。
-7. `agentic change ready <id>`がlockの鮮度、未解決事項、Contract coverage、Mutation競合を確認する。
-8. `$agentic-builder`がresolved lockに従って実装する。新しい仕様判断が見つかった場合は実装を続けずAssessmentへ戻す。
-9. `$agentic-challenger`が実装後にraw diff、Mutation Graph、Operation Contract、テスト、probeを使って反証する。
-10. `agentic evidence check <id>`でContract clauseに対応する証拠と残存リスクを確認する。
+1. `agentic change init <id>`で変更を作る。
+2. `agentic next <id>`が次にやること1件を返す。以降はこれを繰り返す。
+3. Analystが、検出された候補を実際のコードと突き合わせて採用または除外し、影響するデータと操作境界を確定する。必要な規範が無ければContractへ記入する。
+4. 既存の権限ある根拠で決められない判断が出たら、選択肢、影響、推奨、必要な決定者を添えて人へ戻す。人が答えたら、理由をDecisionへ、現在の規範をContractへ記録する。
+5. Challengerが実装前に、依頼、権限、判断、提案されたContractを反証する。
+6. 実装前に必要な項目がすべて満たされると、Builderへ実装が割り当てられる。
+7. Builderが実装し、Contract条項に対応する証拠を記録する。実装中に新しい仕様判断が出たら、実装を止めて分析へ戻す。
+8. Challengerが実装後に、変更差分、データ不変条件、テスト、証拠を使って独立に反証する。
+9. すべて満たされると完了できる状態になる。
 
-候補一致は意味上の適用を自動確定しません。Project、Featureの明示参照、Operation/APIの厳密一致は必須契約とし、それ以外の候補はエージェントが内容を評価します。
+判定の理由は`agentic explain <id>`で確認できます。
+
+検出された候補の一致は、意味上の適用を自動確定しません。名前が似ているという理由で採用せず、実際のコードを読んで判断します。
 
 ### ユースケース: 仕様判断が足りない
 
@@ -235,7 +236,7 @@ System以上またはR2以上の変更では、create / update / delete / retry�
 
 ### ユースケース: 障害や反復する不具合から学ぶ
 
-`$agentic-learning`が、発生条件、破られたInvariant、見逃した境界、検知できなかった理由を分析します。再発防止の知識は、影響範囲に応じて上位Contract、Operation Contract、共通test、Platform probe、runtime checkerへ昇格します。
+発生条件、破られたInvariant、見逃した境界、検知できなかった理由を分析します。再発防止の知識は、影響範囲に応じて上位Contract、Operation Contract、共通test、Platform probe、runtime checkerへ昇格します。この分析は専用のSkillではなく、通常の変更として扱います。
 
 incident findingだけで新しい仕様を決めることはせず、プロダクト判断が必要ならDecision Requestへ戻します。
 

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agentic Development"
-  short_description: "新規・既存プロジェクトへエージェント開発基盤を導入"
-  default_prompt: "Use $agentic-development to bootstrap or adopt an agent-native development system for this project."
