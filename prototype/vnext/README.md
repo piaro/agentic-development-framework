@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftの生成とレビュー検証を行うread-only経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成する経路まで接続しています。
 
 ## 検証できること
 
@@ -298,7 +298,25 @@ agentic migration validate-draft \
 
 検証結果は`valid`、`invalid`、`blocked`のいずれかです。`valid`になるには、必要なreviewがすべてそろい、生成時とGitのHEADが一致し、Draft以外のworktreeがcleanでなければなりません。DraftをRepository内へ保存した場合、指定したDraft fileだけはdirty判定から除外します。それ以外の変更は除外しません。検証もfileを変更せず、JSON形式は`schemas/outputs/v1/migration-draft-validation-report.schema.json`に従います。
 
-`valid`なDraftだけを、次段階の候補file生成へ渡します。候補file生成と既存Projectへの適用はまだ実装していません。
+`valid`なDraftから、既存Projectとは別のdirectoryへ候補Bundleを生成できます。出力先は`.agentic/migration-candidates/<name>`配下に限定され、既存のfileやdirectoryがある場合は上書きしません。
+
+```sh
+agentic migration generate-candidate \
+  --project /path/to/current-project \
+  --draft .agentic/migration-draft.json \
+  --output .agentic/migration-candidates/review-1 \
+  --format text
+```
+
+候補Bundleには次の3 fileを生成します。
+
+- `.agentic/config.yaml`: vNextの標準pathを使う設定候補
+- `migration-draft.json`: 検証済みDraftの正規化した写し
+- `migration-manifest.yaml`: source revision、Draft digest、生成fileのdigest、未完了作業
+
+Migration DraftだけではContractやDecisionの具体的な変換内容、Detector出力、署名済みFramework Releaseを確定できません。これらを自動生成せず、`proceed`と判断された項目をManifestの`pending_actions`へ残します。`preserve-history`も履歴保存が終わるまで未完了です。`retire`は生成対象にしません。そのため、生成直後の候補は常に`incomplete`であり、vNext Projectとして適用できるとは扱いません。
+
+Manifestは`schemas/outputs/v1/migration-candidate-manifest.schema.json`に従います。候補生成では、指定した新規directoryと不足している親directoryだけを作成します。現行の`.agentic/config.yaml`、Contract、Decision、Git index、commitは変更しません。候補の完全性検証と既存Projectへの適用はまだ実装していません。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
@@ -653,7 +671,7 @@ sources:
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
 | `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
-| `rust/src/migration.rs` | 現行CLI Projectを変更せず、移行対象・意味review・混在状態を診断し、Migration Draftを生成 |
+| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証と隔離候補の生成を行う |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |

@@ -1,21 +1,24 @@
 //! Read-only inspection of a current CLI project before vNext migration.
 //!
 //! This module inventories mechanically observable state and prepares a
-//! reviewable work plan. It never writes Project files or decides whether
-//! legacy semantics are valid.
+//! reviewable work plan. It never overwrites active Project files or decides
+//! whether legacy semantics are valid; candidate generation writes only to a
+//! new reserved directory.
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs;
-use std::io::ErrorKind;
+use std::fs::{self, OpenOptions};
+use std::io::{ErrorKind, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 pub const MIGRATION_INSPECTION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "2";
 pub const MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_CANDIDATE_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -185,6 +188,58 @@ pub struct MigrationDraftValidationIssue {
     pub category: String,
     pub action_id: Option<String>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationCandidateManifest {
+    pub schema_version: String,
+    pub kind: String,
+    pub status: String,
+    pub source_revision: String,
+    pub draft_digest: String,
+    pub output_root: String,
+    pub generated_files: Vec<MigrationCandidateFile>,
+    pub pending_actions: Vec<MigrationPendingAction>,
+    pub next: String,
+}
+
+impl MigrationCandidateManifest {
+    pub fn render_text(&self) -> String {
+        let mut output = format!(
+            "Migration candidate: {}\noutput: {}\nsource revision: {}\ndraft digest: {}\n",
+            self.status, self.output_root, self.source_revision, self.draft_digest
+        );
+        output.push_str("generated files:\n");
+        for file in &self.generated_files {
+            output.push_str(&format!("- {} {}\n", file.path, file.digest));
+        }
+        output.push_str("pending actions:\n");
+        for action in &self.pending_actions {
+            output.push_str(&format!(
+                "- {}: decision={} targets={} — {}\n",
+                action.id,
+                action.decision,
+                display_paths(&action.target_paths),
+                action.instruction
+            ));
+        }
+        output.push_str(&format!("Next: {}\n", self.next));
+        output
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationCandidateFile {
+    pub path: String,
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationPendingAction {
+    pub id: String,
+    pub decision: String,
+    pub target_paths: Vec<String>,
+    pub instruction: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -696,6 +751,197 @@ pub fn validate_migration_draft(
         Some(actual.source_revision),
         issues,
     ))
+}
+
+pub fn generate_migration_candidate(
+    project_root: impl AsRef<Path>,
+    draft_path: impl AsRef<Path>,
+    output_path: impl AsRef<Path>,
+) -> Result<MigrationCandidateManifest, MigrationError> {
+    let root = project_root
+        .as_ref()
+        .canonicalize()
+        .map_err(|error| migration_error(format!("cannot resolve project root: {error}")))?;
+    let draft_path = resolve_draft_path(&root, draft_path.as_ref())?;
+    let (output_root, output_relative) = resolve_candidate_output(&root, output_path.as_ref())?;
+    let validation = validate_migration_draft(&root, &draft_path)?;
+    if !validation.is_valid() {
+        return Err(migration_error(format!(
+            "migration candidate requires a valid reviewed Draft; validation status was {}",
+            validation.status
+        )));
+    }
+    let draft_text = fs::read_to_string(&draft_path)
+        .map_err(|error| migration_error(format!("cannot read migration draft: {error}")))?;
+    let draft_value: Value = serde_yaml::from_str(&draft_text)
+        .map_err(|error| migration_error(format!("cannot parse migration draft: {error}")))?;
+    let draft: MigrationDraftReport = serde_json::from_value(draft_value)
+        .map_err(|error| migration_error(format!("cannot load migration draft: {error}")))?;
+    let canonical_value = serde_json::to_value(&draft)
+        .map_err(|error| migration_error(format!("cannot serialize migration draft: {error}")))?;
+    let draft_digest = crate::canonical_digest(&canonical_value)
+        .map_err(|error| migration_error(format!("cannot digest migration draft: {error}")))?;
+
+    let config_bytes = concat!(
+        "schema_version: \"1\"\n",
+        "project_sources:\n",
+        "  contracts: contracts\n",
+        "  decisions: decisions\n",
+        "repository_observation: .agentic/repository-observation.yaml\n"
+    )
+    .as_bytes()
+    .to_vec();
+    let mut draft_bytes = serde_json::to_vec_pretty(&draft)
+        .map_err(|error| migration_error(format!("cannot serialize migration draft: {error}")))?;
+    draft_bytes.push(b'\n');
+    let generated_files = vec![
+        MigrationCandidateFile {
+            path: ".agentic/config.yaml".to_owned(),
+            digest: byte_digest(&config_bytes),
+        },
+        MigrationCandidateFile {
+            path: "migration-draft.json".to_owned(),
+            digest: byte_digest(&draft_bytes),
+        },
+    ];
+    let pending_actions = draft
+        .actions
+        .iter()
+        .filter_map(|action| {
+            let review = action.review.as_ref()?;
+            match review.decision.as_str() {
+                "proceed" => Some(MigrationPendingAction {
+                    id: action.id.clone(),
+                    decision: review.decision.clone(),
+                    target_paths: action.target_paths.clone(),
+                    instruction: action.instruction.clone(),
+                }),
+                "preserve-history" => Some(MigrationPendingAction {
+                    id: action.id.clone(),
+                    decision: review.decision.clone(),
+                    target_paths: Vec::new(),
+                    instruction: "Preserve the reviewed legacy material as non-active history without creating authoritative vNext Records."
+                        .to_owned(),
+                }),
+                _ => None,
+            }
+        })
+        .collect::<Vec<_>>();
+    let manifest = MigrationCandidateManifest {
+        schema_version: MIGRATION_CANDIDATE_SCHEMA_VERSION.to_owned(),
+        kind: "migration-candidate".to_owned(),
+        status: "incomplete".to_owned(),
+        source_revision: draft.source_revision.clone(),
+        draft_digest,
+        output_root: output_relative,
+        generated_files,
+        pending_actions,
+        next: "Complete every pending action inside this isolated candidate, then validate the candidate before any explicit application. Existing Project files were not changed."
+            .to_owned(),
+    };
+    write_candidate_bundle(&output_root, &config_bytes, &draft_bytes, &manifest)?;
+    Ok(manifest)
+}
+
+fn resolve_candidate_output(
+    root: &Path,
+    relative: &Path,
+) -> Result<(PathBuf, String), MigrationError> {
+    if relative.is_absolute() {
+        return Err(migration_error(
+            "migration candidate output must be repository-relative",
+        ));
+    }
+    let parts = relative
+        .components()
+        .map(|component| match component {
+            Component::Normal(part) => part.to_str().map(str::to_owned),
+            _ => None,
+        })
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| migration_error("migration candidate output contains an unsafe path"))?;
+    if parts.len() < 3 || parts[0] != ".agentic" || parts[1] != "migration-candidates" {
+        return Err(migration_error(
+            "migration candidate output must be under .agentic/migration-candidates/<name>",
+        ));
+    }
+    if parts.iter().any(|part| {
+        part.is_empty()
+            || !part
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+    }) {
+        return Err(migration_error(
+            "migration candidate output components must use letters, digits, dot, underscore, or hyphen",
+        ));
+    }
+    let relative = parts.join("/");
+    let output = safe_repository_path(root, &relative)?;
+    match fs::symlink_metadata(&output) {
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Ok(_) => {
+            return Err(migration_error(format!(
+                "refusing to overwrite existing migration candidate: {relative}"
+            )));
+        }
+        Err(error) => {
+            return Err(migration_error(format!(
+                "cannot inspect migration candidate output: {error}"
+            )));
+        }
+    }
+    Ok((output, relative))
+}
+
+fn write_candidate_bundle(
+    output_root: &Path,
+    config_bytes: &[u8],
+    draft_bytes: &[u8],
+    manifest: &MigrationCandidateManifest,
+) -> Result<(), MigrationError> {
+    let parent = output_root
+        .parent()
+        .ok_or_else(|| migration_error("migration candidate output has no parent"))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        migration_error(format!("cannot create migration candidate parent: {error}"))
+    })?;
+    fs::create_dir(output_root).map_err(|error| {
+        migration_error(format!("cannot create migration candidate output: {error}"))
+    })?;
+    let result = (|| {
+        write_candidate_file(&output_root.join(".agentic/config.yaml"), config_bytes)?;
+        write_candidate_file(&output_root.join("migration-draft.json"), draft_bytes)?;
+        let manifest_bytes = serde_yaml::to_string(manifest)
+            .map_err(|error| migration_error(format!("cannot serialize manifest: {error}")))?;
+        write_candidate_file(
+            &output_root.join("migration-manifest.yaml"),
+            manifest_bytes.as_bytes(),
+        )
+    })();
+    if result.is_err() {
+        let _ = fs::remove_dir_all(output_root);
+    }
+    result
+}
+
+fn write_candidate_file(path: &Path, bytes: &[u8]) -> Result<(), MigrationError> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| {
+            migration_error(format!("cannot create candidate directory: {error}"))
+        })?;
+    }
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|error| migration_error(format!("cannot create candidate file: {error}")))?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|error| migration_error(format!("cannot write candidate file: {error}")))
+}
+
+fn byte_digest(bytes: &[u8]) -> String {
+    format!("sha256:{:x}", Sha256::digest(bytes))
 }
 
 fn validate_action_review(

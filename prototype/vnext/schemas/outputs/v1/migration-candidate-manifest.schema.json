@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/migration-candidate-manifest.schema.json",
+  "title": "Migration Candidate Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "status",
+    "source_revision",
+    "draft_digest",
+    "output_root",
+    "generated_files",
+    "pending_actions",
+    "next"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "migration-candidate"},
+    "status": {"const": "incomplete"},
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "draft_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "output_root": {
+      "type": "string",
+      "pattern": "^\\.agentic/migration-candidates/[A-Za-z0-9._/-]+$"
+    },
+    "generated_files": {
+      "type": "array",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "digest"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "pending_actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "decision", "target_paths", "instruction"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "decision": {
+            "enum": ["proceed", "preserve-history"]
+          },
+          "target_paths": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {"type": "string", "minLength": 1}
+          },
+          "instruction": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "next": {"type": "string", "minLength": 1}
+  }
+}

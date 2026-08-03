@@ -398,6 +398,180 @@ fn migration_validate_draft_rejects_a_stale_source_revision() {
 }
 
 #[test]
+fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
+    let root = legacy_migration_project("migration-candidate");
+    let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&draft_output);
+    let mut draft: Value = serde_json::from_slice(&draft_output.stdout).unwrap();
+    complete_migration_reviews(&mut draft);
+    draft["actions"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|action| action["id"] == "decisions")
+        .unwrap()["review"]["decision"] = json!("preserve-history");
+    fs::write(
+        root.join("migration-draft.json"),
+        serde_json::to_vec_pretty(&draft).unwrap(),
+    )
+    .unwrap();
+
+    let output_relative = ".agentic/migration-candidates/review-1";
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&output);
+    let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
+    validate_output_schema(&manifest, "migration-candidate-manifest.schema.json");
+    assert_eq!(manifest["status"], "incomplete");
+    assert_eq!(manifest["output_root"], output_relative);
+    assert!(
+        manifest["pending_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["id"] == "contracts")
+    );
+    assert!(
+        manifest["pending_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action["id"] == "framework-release")
+    );
+    assert!(
+        manifest["pending_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| {
+                action["id"] == "decisions"
+                    && action["decision"] == "preserve-history"
+                    && action["target_paths"].as_array().unwrap().is_empty()
+            })
+    );
+
+    let candidate = root.join(output_relative);
+    let stored_manifest = read_yaml(&candidate.join("migration-manifest.yaml"));
+    assert_eq!(stored_manifest, manifest);
+    let config = read_yaml(&candidate.join(".agentic/config.yaml"));
+    assert_eq!(config["schema_version"], "1");
+    assert_eq!(config["project_sources"]["contracts"], "contracts");
+    let stored_draft = read_yaml(&candidate.join("migration-draft.json"));
+    assert_eq!(stored_draft, draft);
+    for file in manifest["generated_files"].as_array().unwrap() {
+        let bytes = fs::read(candidate.join(file["path"].as_str().unwrap())).unwrap();
+        assert_eq!(
+            file["digest"],
+            format!("sha256:{:x}", Sha256::digest(bytes))
+        );
+    }
+    assert!(!candidate.join(".agentic/framework.lock").exists());
+    assert!(!candidate.join("contracts").exists());
+    assert_eq!(
+        fs::read(root.join(".agentic/config.yaml")).unwrap(),
+        legacy_config
+    );
+
+    let manifest_before = fs::read(candidate.join("migration-manifest.yaml")).unwrap();
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            output_relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!repeated.status.success());
+    assert!(String::from_utf8_lossy(&repeated.stderr).contains("refusing to overwrite"));
+    assert_eq!(
+        fs::read(candidate.join("migration-manifest.yaml")).unwrap(),
+        manifest_before
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
+    let root = legacy_migration_project("migration-candidate-invalid");
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&draft_output);
+    let draft: Value = serde_json::from_slice(&draft_output.stdout).unwrap();
+    fs::write(
+        root.join("migration-draft.json"),
+        serde_json::to_vec_pretty(&draft).unwrap(),
+    )
+    .unwrap();
+
+    let unsafe_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            "migration-candidate",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!unsafe_output.status.success());
+    assert!(
+        String::from_utf8_lossy(&unsafe_output.stderr)
+            .contains("must be under .agentic/migration-candidates")
+    );
+    assert!(!root.join("migration-candidate").exists());
+
+    let output_relative = ".agentic/migration-candidates/unreviewed";
+    let unreviewed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            output_relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!unreviewed.status.success());
+    assert!(
+        String::from_utf8_lossy(&unreviewed.stderr).contains("requires a valid reviewed Draft")
+    );
+    assert!(!root.join(output_relative).exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     let json_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args(["catalog", "signal-domains", "--format", "json"])

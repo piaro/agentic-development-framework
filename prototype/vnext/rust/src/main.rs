@@ -13,7 +13,9 @@ use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
 use agentic_vnext_rust::detector_audit_baseline::check_repository_detector_audit_baseline;
 use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
 use agentic_vnext_rust::mcp_server::run_stdio_server;
-use agentic_vnext_rust::migration::{draft_migration, inspect_migration, validate_migration_draft};
+use agentic_vnext_rust::migration::{
+    draft_migration, generate_migration_candidate, inspect_migration, validate_migration_draft,
+};
 use agentic_vnext_rust::project_runtime::LoadedProject;
 use agentic_vnext_rust::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
@@ -978,6 +980,7 @@ struct MigrationCommand {
     operation: MigrationOperation,
     project_root: PathBuf,
     draft_path: Option<PathBuf>,
+    output_path: Option<PathBuf>,
     format: OutputFormat,
 }
 
@@ -986,6 +989,7 @@ enum MigrationOperation {
     Inspect,
     Draft,
     ValidateDraft,
+    GenerateCandidate,
 }
 
 struct MigrationCommandResponse {
@@ -998,14 +1002,17 @@ fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, Str
         Some("inspect") => MigrationOperation::Inspect,
         Some("draft") => MigrationOperation::Draft,
         Some("validate-draft") => MigrationOperation::ValidateDraft,
+        Some("generate-candidate") => MigrationOperation::GenerateCandidate,
         _ => {
             return Err(
-                "migration requires the inspect, draft, or validate-draft operation".to_owned(),
+                "migration requires inspect, draft, validate-draft, or generate-candidate"
+                    .to_owned(),
             );
         }
     };
     let mut project_root = PathBuf::from(".");
     let mut draft_path = None;
+    let mut output_path = None;
     let mut format = OutputFormat::Text;
     let mut index = 1;
     while index < arguments.len() {
@@ -1015,6 +1022,11 @@ fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, Str
             }
             "--draft" => {
                 draft_path = Some(PathBuf::from(flag_value(arguments, &mut index, "--draft")?));
+            }
+            "--output" => {
+                output_path = Some(PathBuf::from(flag_value(
+                    arguments, &mut index, "--output",
+                )?));
             }
             "--format" => {
                 format = match flag_value(arguments, &mut index, "--format")? {
@@ -1027,16 +1039,34 @@ fn parse_migration_command(arguments: &[String]) -> Result<MigrationCommand, Str
         }
         index += 1;
     }
-    if operation == MigrationOperation::ValidateDraft && draft_path.is_none() {
-        return Err("migration validate-draft requires --draft <path>".to_owned());
+    if matches!(
+        operation,
+        MigrationOperation::ValidateDraft | MigrationOperation::GenerateCandidate
+    ) && draft_path.is_none()
+    {
+        return Err(format!(
+            "migration {} requires --draft <path>",
+            arguments[0]
+        ));
     }
-    if operation != MigrationOperation::ValidateDraft && draft_path.is_some() {
-        return Err("--draft is only valid with migration validate-draft".to_owned());
+    if matches!(
+        operation,
+        MigrationOperation::Inspect | MigrationOperation::Draft
+    ) && draft_path.is_some()
+    {
+        return Err("--draft is only valid with validate-draft or generate-candidate".to_owned());
+    }
+    if operation == MigrationOperation::GenerateCandidate && output_path.is_none() {
+        return Err("migration generate-candidate requires --output <path>".to_owned());
+    }
+    if operation != MigrationOperation::GenerateCandidate && output_path.is_some() {
+        return Err("--output is only valid with migration generate-candidate".to_owned());
     }
     Ok(MigrationCommand {
         operation,
         project_root,
         draft_path,
+        output_path,
         format,
     })
 }
@@ -1086,6 +1116,28 @@ fn run_migration_command(options: &MigrationCommand) -> Result<MigrationCommandR
                     .map_err(|error| error.to_string())?,
             };
             Ok(MigrationCommandResponse { output, success })
+        }
+        MigrationOperation::GenerateCandidate => {
+            let draft_path = options
+                .draft_path
+                .as_ref()
+                .ok_or_else(|| "migration generate-candidate requires --draft <path>".to_owned())?;
+            let output_path = options.output_path.as_ref().ok_or_else(|| {
+                "migration generate-candidate requires --output <path>".to_owned()
+            })?;
+            let manifest =
+                generate_migration_candidate(&options.project_root, draft_path, output_path)
+                    .map_err(|error| error.to_string())?;
+            let output = match options.format {
+                OutputFormat::Text => manifest.render_text(),
+                OutputFormat::Json => serde_json::to_string_pretty(&manifest)
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string())?,
+            };
+            Ok(MigrationCommandResponse {
+                output,
+                success: true,
+            })
         }
     }
 }
@@ -1965,6 +2017,7 @@ usage:\n\
   agentic project promote-bindings --draft <path> [--project <root>]\n\
   agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
   agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n\
+  agentic migration generate-candidate --draft <path> --output <path> [--project <root>] [--format <text|json>]\n\
   agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
@@ -1988,7 +2041,7 @@ fn mcp_usage() {
 
 fn migration_usage() {
     eprintln!(
-        "usage:\n  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]"
+        "usage:\n  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n  agentic migration generate-candidate --draft <path> --output .agentic/migration-candidates/<name> [--project <root>] [--format <text|json>]"
     );
 }
 
