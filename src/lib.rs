@@ -321,12 +321,7 @@ pub fn verify_schema_suite(
         .ok_or_else(|| GoldenError::Mismatch("schema-validation case is missing".to_owned()))?;
     let case_path = resolve_inside(&root, &entry.path)?;
     let case_set: SchemaCaseSet = read_json(&case_path)?;
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -409,12 +404,7 @@ pub fn verify_rule_compilation_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -596,12 +586,7 @@ pub fn verify_kernel_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -801,12 +786,7 @@ pub fn verify_project_snapshot_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -927,12 +907,7 @@ pub fn verify_framework_lock_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -1034,12 +1009,7 @@ pub fn verify_result_submission_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -1177,12 +1147,7 @@ pub fn verify_application_suite(
     let scenario_path = resolve_inside(&root, &scenario_entry.path)?;
     let scenario: Value = read_json(&scenario_path)?;
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(
         &root,
         initial["schema_root"].as_str().ok_or_else(|| {
@@ -1314,12 +1279,7 @@ pub fn verify_filesystem_project_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -1757,12 +1717,7 @@ pub fn verify_persistent_application_suite(
         )));
     }
 
-    let workspace_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let schema_root = resolve_relative_within(&root, &case_set.schema_root, &workspace_root)?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -1965,16 +1920,11 @@ pub fn verify_explain_suite(
         )));
     }
 
-    let vnext_root = root
-        .parent()
-        .and_then(Path::parent)
-        .ok_or_else(|| GoldenError::InvalidPath("golden root has no vNext root".to_owned()))?
-        .canonicalize()
-        .map_err(|error| GoldenError::Io(error.to_string()))?;
+    let workspace_root = workspace_root_for(&root)?;
     let report_schema: Value = read_json(&resolve_relative_within(
         &root,
         &case_set.schema_path,
-        &vnext_root,
+        &workspace_root,
     )?)?;
     let base: Value = read_json(&resolve_inside(&root, &case_set.base_case)?)?;
     let scenario: Value = read_json(&resolve_inside(&root, &case_set.scenario_case)?)?;
@@ -1983,7 +1933,7 @@ pub fn verify_explain_suite(
         base["schema_root"]
             .as_str()
             .ok_or_else(|| GoldenError::Mismatch("Explain Schema root is missing".to_owned()))?,
-        &vnext_root,
+        &workspace_root,
     )?;
     let registry = schema::SchemaRegistry::load(schema_root)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -2528,6 +2478,19 @@ fn resolve_inside(root: &Path, relative: &str) -> Result<PathBuf, GoldenError> {
     Ok(candidate)
 }
 
+/// Repository root holding both the golden suite and the shared assets it
+/// refers to. Golden suites live at `<repository>/testdata/golden/<version>`,
+/// so the root is three levels above the suite.
+fn workspace_root_for(root: impl AsRef<Path>) -> Result<PathBuf, GoldenError> {
+    root.as_ref()
+        .parent()
+        .and_then(Path::parent)
+        .and_then(Path::parent)
+        .ok_or_else(|| GoldenError::InvalidPath("golden root has no workspace".to_owned()))?
+        .canonicalize()
+        .map_err(|error| GoldenError::Io(error.to_string()))
+}
+
 fn resolve_relative_within(
     base: &Path,
     relative: &str,
@@ -2545,7 +2508,7 @@ fn resolve_relative_within(
         .map_err(|error| GoldenError::Io(format!("cannot resolve shared asset: {error}")))?;
     if !candidate.starts_with(allowed_root) {
         return Err(GoldenError::InvalidPath(
-            "shared asset path escapes vNext root".to_owned(),
+            "shared asset path escapes the repository root".to_owned(),
         ));
     }
     Ok(candidate)

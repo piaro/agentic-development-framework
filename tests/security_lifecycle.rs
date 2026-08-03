@@ -1,7 +1,7 @@
-use agentic_vnext_rust::application::{ApplicationResponse, InMemoryApplication};
-use agentic_vnext_rust::git_repository::GitRepositoryAdapter;
-use agentic_vnext_rust::schema::SchemaRegistry;
-use agentic_vnext_rust::submission::ResultSubmission;
+use agentic::application::{ApplicationResponse, InMemoryApplication};
+use agentic::git_repository::GitRepositoryAdapter;
+use agentic::schema::SchemaRegistry;
+use agentic::submission::ResultSubmission;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
@@ -11,12 +11,13 @@ use std::process::{Command, Output};
 #[test]
 fn security_bindings_drive_the_reviewed_lifecycle() {
     let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let fixture_root = manifest_root.join("../fixtures/security-lifecycle");
+    let fixture_root = manifest_root.join("testdata/fixtures/security-lifecycle");
     let scenario = read_yaml(fixture_root.join("scenario.yaml"));
     let mut project = read_yaml(fixture_root.join("project.yaml"));
-    let rules = read_yaml(manifest_root.join("../fixtures/db-sqs/rules.yaml"));
-    let framework_lock = read_yaml(manifest_root.join("../fixtures/db-sqs/framework-lock.yaml"));
-    let schemas = SchemaRegistry::load(manifest_root.join("../schemas/v1")).unwrap();
+    let rules = read_yaml(manifest_root.join("testdata/fixtures/db-sqs/rules.yaml"));
+    let framework_lock =
+        read_yaml(manifest_root.join("testdata/fixtures/db-sqs/framework-lock.yaml"));
+    let schemas = SchemaRegistry::load(manifest_root.join("schemas/v1")).unwrap();
     let repository = TestRepository::new(&fixture_root);
 
     let pre_build_observation = repository.observe();

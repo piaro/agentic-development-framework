@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "explain_report_schema_version": "1",
-  "schema_path": "../../schemas/outputs/v1/explain-report.schema.json",
+  "schema_path": "../../../schemas/outputs/v1/explain-report.schema.json",
   "base_case": "application-initial.json",
   "scenario_case": "application-lifecycle.json",
   "checkpoints": [

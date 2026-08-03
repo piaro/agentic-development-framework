@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn rejects_unknown_change() {
         let registry =
-            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1"))
+            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1"))
                 .unwrap();
         let error = build_project_snapshot(&json!({"changes": []}), "change.missing", &registry)
             .unwrap_err();

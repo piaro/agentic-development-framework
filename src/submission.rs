@@ -406,7 +406,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn registry() -> SchemaRegistry {
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1");
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1");
         SchemaRegistry::load(root).unwrap()
     }
 

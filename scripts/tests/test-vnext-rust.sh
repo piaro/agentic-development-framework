@@ -3,8 +3,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-RUST_ROOT=$KIT_ROOT/prototype/vnext/rust
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+RUST_ROOT=$KIT_ROOT
 
 if ! command -v cargo >/dev/null 2>&1; then
   echo "cargo is required for the vNext Rust prototype" >&2
@@ -23,13 +23,13 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- benchmark "$KIT_ROOT/prototype/vnext/benchmarks/major-frameworks-v1" \
+  -- benchmark "$KIT_ROOT/testdata/benchmarks/major-frameworks-v1" \
   --format text
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- benchmark "$KIT_ROOT/prototype/vnext/benchmarks/real-projects-v1" \
+  -- benchmark "$KIT_ROOT/testdata/benchmarks/real-projects-v1" \
   --format text
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
@@ -47,68 +47,68 @@ cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-canonicalization "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-canonicalization "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-schema "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-schema "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-rules "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-rules "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-detection "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-detection "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-kernel "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-kernel "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-context "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-context "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-project "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-project "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-lock "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-lock "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-submission "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-submission "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-application "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-application "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-store "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-store "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-persistent "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-persistent "$KIT_ROOT/testdata/golden/v1"
 cargo run \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --locked \
   --quiet \
-  -- verify-explain "$KIT_ROOT/prototype/vnext/golden/v1"
+  -- verify-explain "$KIT_ROOT/testdata/golden/v1"
 
-sh "$KIT_ROOT/tests/test-vnext-release-ci.sh"
-sh "$KIT_ROOT/tests/test-vnext-release-publication.sh"
-sh "$KIT_ROOT/tests/test-vnext-bootstrap.sh"
+sh "$KIT_ROOT/scripts/tests/test-vnext-release-ci.sh"
+sh "$KIT_ROOT/scripts/tests/test-vnext-release-publication.sh"
+sh "$KIT_ROOT/scripts/tests/test-vnext-bootstrap.sh"

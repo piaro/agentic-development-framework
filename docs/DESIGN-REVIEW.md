@@ -3,7 +3,9 @@
 > 状態: レビュー結果
 >
 > レビュー日: 2026-07-29
-> 対象: `FRAMEWORK-REVIEW.md` 全体、`prototype/vnext/` のPython・Rust実装、共有golden fixture、`tests/test-vnext-*`
+> 対象: `FRAMEWORK-REVIEW.md` 全体、Rust実装と当時併存していたPython実装、共有golden fixture、`scripts/tests/test-vnext-*`
+>
+> レビュー当時、Rust実装は`prototype/vnext/rust/`、Python実装は`prototype/vnext/agentic_vnext/`にあった。現在はRust実装をRepository直下へ移し、Python実装を`legacy/`へ移している。
 >
 > この文書はレビュー結果であり、確定した設計変更ではない。対応方針は別途決定する。
 
@@ -307,7 +309,7 @@ Context不足、再現率、説明可能性、更新作業量等は原因分析�
 
 この層で最も重い。
 
-検出処理が出す候補の同一性は、検出根拠となったコードのhashを含めて計算している。`prototype/vnext/agentic_vnext/detection.py:35-53`を参照。一方で 13.8 と 14.6 の11番は、実装後にコード差分から候補を再検出し、未確認の候補があればAnalystへ戻すと定めている。
+検出処理が出す候補の同一性は、検出根拠となったコードのhashを含めて計算している。`legacy/agentic_vnext/detection.py:35-53`を参照。一方で 13.8 と 14.6 の11番は、実装後にコード差分から候補を再検出し、未確認の候補があればAnalystへ戻すと定めている。
 
 Builderが実装したファイルは必ずhashが変わるため、そのファイルを根拠にしていた候補は毎回「新しい未確認候補」になる。Builderは必ず対象ファイルを編集するので、この経路は常に発動する。
 
@@ -346,9 +348,9 @@ state=ready-to-merge
 
 実装後へ移るテストとgolden fixtureは、いずれも工程名と版番号だけを変え、コードのhashを1つも変えていない。
 
-- `tests/test-vnext-prototype.py:904`
-- `tests/test-vnext-prototype.py:1144`
-- `prototype/vnext/golden/v1/application-lifecycle.json`の9番目の操作
+- `scripts/tests/test-vnext-prototype.py:904`
+- `scripts/tests/test-vnext-prototype.py:1144`
+- `testdata/golden/v1/application-lifecycle.json`の9番目の操作
 
 つまり「Builderが何も書かなかった場合のbuild」だけを検証している。14.9 の7番、新しい候補がなければEvidenceへ進むという分岐は、現実の入力では通らない可能性が高い。
 

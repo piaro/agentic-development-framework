@@ -3,7 +3,7 @@
 set -eu
 
 TEST_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$TEST_DIR/.." && pwd)
+KIT_ROOT=$(CDPATH= cd -- "$TEST_DIR/../.." && pwd)
 TMP_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-development-kit.XXXXXX")
 
 cleanup() {
@@ -92,7 +92,7 @@ mkdir -p "$LEGACY_TARGET"
 sed -i.bak 's/kit_version: "3.0.0"/kit_version: "2.1.0"/' "$LEGACY_TARGET/.agentic/installation.yaml"
 rm "$LEGACY_TARGET/.agentic/installation.yaml.bak"
 mkdir -p "$LEGACY_TARGET/contracts/features"
-cp "$KIT_ROOT/tests/fixtures/upgrade-v2.1/legacy-feature.yaml" "$LEGACY_TARGET/contracts/features/legacy-feature.yaml"
+cp "$KIT_ROOT/scripts/tests/fixtures/upgrade-v2.1/legacy-feature.yaml" "$LEGACY_TARGET/contracts/features/legacy-feature.yaml"
 
 "$KIT_ROOT/bin/agentic-init" --target "$LEGACY_TARGET" --non-interactive --upgrade >/dev/null
 "$LEGACY_TARGET/.agentic/bin/agentic" --version | grep -q '^agentic 3.0.0$'
@@ -369,7 +369,7 @@ if "$CLI_TARGET/.agentic/bin/agentic" --root "$CLI_TARGET" change ready update-w
   exit 1
 fi
 
-sh "$KIT_ROOT/tests/test-authority.sh"
-sh "$KIT_ROOT/tests/test-vnext.sh"
+sh "$KIT_ROOT/scripts/tests/test-authority.sh"
+sh "$KIT_ROOT/scripts/tests/test-vnext.sh"
 
 printf 'all tests passed\n'

@@ -56,7 +56,7 @@ Rust版へ実装済みです。本書は引き続きTool契約と信頼境界の
 Agent / MCP Host
        │ MCP over stdio
        ▼
-agentic-vnext-rust mcp --project <root>
+agentic mcp --project <root>
        │
        ▼
 McpProjectSession
@@ -81,7 +81,7 @@ McpProjectSession
 追加する起動形式は次のとおりです。
 
 ```sh
-agentic-vnext-rust mcp \
+agentic mcp \
   --project /path/to/project \
   [--release /path/to/offline-release]
 ```
@@ -447,13 +447,13 @@ write CLIはMCP v1の必須範囲に含めません。one-shot CLIでは発行�
 想定する主な変更は次のとおりです。
 
 ```text
-prototype/vnext/rust/src/
+src/
 ├── application.rs             # submit_issuedとAction output検証
 ├── project_application.rs     # Tool callごとのProject再読込み
 ├── mcp_server.rs              # RMCP Tool routerとstdio transport
 └── main.rs                    # mcp subcommand
 
-prototype/vnext/schemas/mcp/v1/
+schemas/mcp/v1/
 ├── next-input.schema.json
 ├── next-output.schema.json
 ├── submit-input.schema.json

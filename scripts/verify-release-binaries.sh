@@ -19,11 +19,11 @@ if [ "${AGENTIC_RELEASE_REQUIRE_ATTESTATIONS:-0}" = "1" ]; then
   GH_CLI=${AGENTIC_GH_CLI:-gh}
   SIGNER_WORKFLOW=$REPOSITORY/.github/workflows/vnext-release.yml
   for binary in \
-    agentic-vnext-rust-aarch64-apple-darwin \
-    agentic-vnext-rust-aarch64-unknown-linux-gnu \
-    agentic-vnext-rust-x86_64-apple-darwin \
-    agentic-vnext-rust-x86_64-pc-windows-msvc.exe \
-    agentic-vnext-rust-x86_64-unknown-linux-gnu
+    agentic-aarch64-apple-darwin \
+    agentic-aarch64-unknown-linux-gnu \
+    agentic-x86_64-apple-darwin \
+    agentic-x86_64-pc-windows-msvc.exe \
+    agentic-x86_64-unknown-linux-gnu
   do
     "$GH_CLI" attestation verify "$BINARY_DIR/$binary" \
       --repo "$REPOSITORY" \

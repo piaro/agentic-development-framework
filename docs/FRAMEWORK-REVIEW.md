@@ -2120,7 +2120,7 @@ Builderは`ready-to-build`で発行されたContextを使い、Repository更新�
 
 ### 14.11 shadow実装の現状
 
-現行CLIへ接続しない実験実装を`prototype/vnext/`に置く。実行方法と各ファイルの責務は`prototype/vnext/README.md`を正本とする。この実装は、本文の用語とI/Oが実際に接続できるかを調べるためのものであり、Frameworkの公開APIや保存形式ではない。
+Rust実装をRepository直下に置く。実行方法と各ファイルの責務は`docs/implementation.md`を正本とする。この実装は、本文の用語とI/Oが実際に接続できるかを調べるためのものであり、Frameworkの公開APIや保存形式ではない。
 
 2026-07-29時点で、DB更新＋SQS送信fixtureを使い、次を自動テストしている。
 
@@ -2215,7 +2215,7 @@ vNextの実装言語はRustへ一本化する。Python prototypeは既存fixture
 
 これにより、二つの実装の同期を設計上の制約にせず、最終利用者へPythonを要求しない。
 
-2026-07-29時点では、`prototype/vnext/rust/`にcanonicalization、Schema、Project Snapshot Builder、Rule Compiler、typed fact Detector、Signal Catalog、Thin Kernel、Context Compiler、Framework lock、Result submit、ProjectStore interface、InMemory／Filesystem Application lifecycle、Explain Reportを実装している。既存の共有`golden/v1/manifest.json`はprotocol互換の回帰fixtureとしてRust版から検証する。
+2026-07-29時点では、``にcanonicalization、Schema、Project Snapshot Builder、Rule Compiler、typed fact Detector、Signal Catalog、Thin Kernel、Context Compiler、Framework lock、Result submit、ProjectStore interface、InMemory／Filesystem Application lifecycle、Explain Reportを実装している。既存の共有`golden/v1/manifest.json`はprotocol互換の回帰fixtureとしてRust版から検証する。
 
 - Unicodeをescapeしないcanonical JSON
 - object keyの決定的な並び順
@@ -2261,69 +2261,56 @@ CLIは次の開発者向けcommandを持つ。
 
 ```sh
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-canonicalization prototype/vnext/golden/v1
+  -- verify-canonicalization testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-schema prototype/vnext/golden/v1
+  -- verify-schema testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-rules prototype/vnext/golden/v1
+  -- verify-rules testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-detection prototype/vnext/golden/v1
+  -- verify-detection testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-kernel prototype/vnext/golden/v1
+  -- verify-kernel testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-context prototype/vnext/golden/v1
+  -- verify-context testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-project prototype/vnext/golden/v1
+  -- verify-project testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-lock prototype/vnext/golden/v1
+  -- verify-lock testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-submission prototype/vnext/golden/v1
+  -- verify-submission testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-application prototype/vnext/golden/v1
+  -- verify-application testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-store prototype/vnext/golden/v1
+  -- verify-store testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-persistent prototype/vnext/golden/v1
+  -- verify-persistent testdata/golden/v1
 
 cargo run \
-  --manifest-path prototype/vnext/rust/Cargo.toml \
   --locked \
-  -- verify-explain prototype/vnext/golden/v1
+  -- verify-explain testdata/golden/v1
 ```
 
 依存crateは`Cargo.lock`で固定する。`target/`は再生成可能なbuild outputなのでGit管理しない。Rust toolchainはPrototypeへ貢献し、sourceからtest・buildする開発者にだけ必要であり、将来のKit利用者にはRelease CIが生成したバイナリを配布する。
@@ -2971,7 +2958,7 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 | `distribution-trust.json` | 初回導入で使う公開鍵、許可source、鍵status。binaryとは別にArtifact Attestationを検証する |
 | `publish-receipt.json` | Publisherが生成したartifact・archive digestと公開鍵 |
 | `SHA256SUMS` | 5種類のnative binaryのSHA-256一覧 |
-| `agentic-vnext-rust-<target>[.exe]` | 対象OS・CPU上でnative buildしたRust CLI |
+| `agentic-<target>[.exe]` | 対象OS・CPU上でnative buildしたRust CLI |
 | `<binary>.build.json` | binaryのtarget、source revision、Rust version、size、digest |
 | `publication-record.json` | 公開workflowが生成した候補run、source revision、tag、各公開asset digestの来歴 |
 
@@ -2985,11 +2972,11 @@ Publication Recordは公開操作の追跡情報であり、署名済みmanifest
 
 | runner | Rust target | 公開file |
 |---|---|---|
-| `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `agentic-vnext-rust-x86_64-unknown-linux-gnu` |
-| `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `agentic-vnext-rust-aarch64-unknown-linux-gnu` |
-| `macos-15-intel` | `x86_64-apple-darwin` | `agentic-vnext-rust-x86_64-apple-darwin` |
-| `macos-15` | `aarch64-apple-darwin` | `agentic-vnext-rust-aarch64-apple-darwin` |
-| `windows-2025` | `x86_64-pc-windows-msvc` | `agentic-vnext-rust-x86_64-pc-windows-msvc.exe` |
+| `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `agentic-x86_64-unknown-linux-gnu` |
+| `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `agentic-aarch64-unknown-linux-gnu` |
+| `macos-15-intel` | `x86_64-apple-darwin` | `agentic-x86_64-apple-darwin` |
+| `macos-15` | `aarch64-apple-darwin` | `agentic-aarch64-apple-darwin` |
+| `windows-2025` | `x86_64-pc-windows-msvc` | `agentic-x86_64-pc-windows-msvc.exe` |
 
 `build-release-binary.sh`は`rustc -vV`のhost tripleが期待targetと完全一致しない場合に停止する。これはrunner labelの変更や誤設定によって、file名と実binaryのarchitectureが食い違うことを防ぐ。cross compileではなく各対象OS・CPUのGitHub-hosted runnerでnative buildする。
 
@@ -3009,7 +2996,7 @@ Artifact Attestationは公開RepositoryではSigstore Public Good Instanceと透
 
 通常利用者はRustやPythonを導入せず、公開済みnative binaryを実行する。初回導入のPOSIX `sh`・PowerShell scriptは、Release tagを利用者から明示的に受け取り、現在のOS・CPUに対応する次の8 assetを一時directoryへ取得する。
 
-- `agentic-vnext-rust-<target>[.exe]`
+- `agentic-<target>[.exe]`
 - `<binary>.build.json`
 - `SHA256SUMS`
 - `publication-record.json`
@@ -3076,7 +3063,7 @@ Generated ContextをGit管理Recordや判定に使うderived cacheへ保存し�
 
 v1はlocal stdioだけを対象とする。remote MCPは認証、利用者identity、Project authorizationを
 別途定義するまで公開しない。Tool契約、session管理、競合、error、test、段階的な実装順は
-`prototype/vnext/MCP-DESIGN.md`を実装設計の正本とする。
+`docs/MCP-DESIGN.md`を実装設計の正本とする。
 
 2026-07-30時点で、Rust binaryの`mcp` subcommand、8つのtyped Tool、session内のexact
 Action key管理、callごとのProject再読込み、Resultの冪等retry、Decision／Contractの

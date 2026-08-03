@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "result_submission_protocol_version": "1",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "base_case": "application-initial.json",
   "scenario_case": "application-lifecycle.json",
   "step_index": 0,

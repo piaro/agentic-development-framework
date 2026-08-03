@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "filesystem_project_protocol_version": "3",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "base_case": "application-initial.json",
   "result_case": "result-submission.json",
   "scenario_case": "application-lifecycle.json",

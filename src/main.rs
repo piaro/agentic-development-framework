@@ -1,33 +1,31 @@
-use agentic_vnext_rust::binary_install::{
+use agentic::binary_install::{
     BinaryInstallReceipt, binary_install_status, install_binary_candidate, rollback_binary_install,
 };
-use agentic_vnext_rust::binding_draft_validation::{
+use agentic::binding_draft_validation::{
     BindingDraftValidationReport, analysis_roots as draft_analysis_roots,
 };
-use agentic_vnext_rust::cli_output::{next_response_value, render_next_text};
-use agentic_vnext_rust::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
-use agentic_vnext_rust::delivery::{
+use agentic::cli_output::{next_response_value, render_next_text};
+use agentic::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
+use agentic::delivery::{
     install_release, read_framework_lock, rollback_framework_lock, switch_framework_lock,
 };
-use agentic_vnext_rust::detector_audit::run_repository_detector_audit;
-use agentic_vnext_rust::detector_audit_baseline::check_repository_detector_audit_baseline;
-use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
-use agentic_vnext_rust::mcp_server::run_stdio_server;
-use agentic_vnext_rust::migration::{
+use agentic::detector_audit::run_repository_detector_audit;
+use agentic::detector_audit_baseline::check_repository_detector_audit_baseline;
+use agentic::detector_benchmark::run_detector_benchmark;
+use agentic::mcp_server::run_stdio_server;
+use agentic::migration::{
     apply_migration_candidate, draft_migration, generate_migration_candidate, inspect_migration,
     validate_migration_candidate, validate_migration_draft,
 };
-use agentic_vnext_rust::project_runtime::LoadedProject;
-use agentic_vnext_rust::project_setup::{
+use agentic::project_runtime::LoadedProject;
+use agentic::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
     observation_draft, promote_observation_draft, read_observation_draft, write_observation_draft,
 };
-use agentic_vnext_rust::release_publisher::{
-    PublishOptions, publish_release, signing_seed_from_environment,
-};
-use agentic_vnext_rust::remote_delivery::{fetch_release, install_release_archive};
-use agentic_vnext_rust::signal_catalog::SignalCatalogRegistry;
-use agentic_vnext_rust::{
+use agentic::release_publisher::{PublishOptions, publish_release, signing_seed_from_environment};
+use agentic::remote_delivery::{fetch_release, install_release_archive};
+use agentic::signal_catalog::SignalCatalogRegistry;
+use agentic::{
     verify_application_suite, verify_canonicalization_suite, verify_context_suite,
     verify_detection_suite, verify_explain_suite, verify_filesystem_project_suite,
     verify_framework_lock_suite, verify_kernel_suite, verify_persistent_application_suite,

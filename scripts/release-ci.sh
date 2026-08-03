@@ -3,12 +3,12 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
-RUST_ROOT=$KIT_ROOT/prototype/vnext/rust
-SOURCE_RULES=$KIT_ROOT/prototype/vnext/fixtures/db-sqs/rules.yaml
-SOURCE_SCHEMAS=$KIT_ROOT/prototype/vnext/schemas/v1
-SOURCE_FRAMEWORK_CATALOG=$KIT_ROOT/prototype/vnext/fixtures/framework-catalog/framework-catalog.yaml
-BASE_LOCK=$KIT_ROOT/prototype/vnext/fixtures/db-sqs/framework-lock.yaml
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+RUST_ROOT=$KIT_ROOT
+SOURCE_RULES=$KIT_ROOT/testdata/fixtures/db-sqs/rules.yaml
+SOURCE_SCHEMAS=$KIT_ROOT/schemas/v1
+SOURCE_FRAMEWORK_CATALOG=$KIT_ROOT/testdata/fixtures/framework-catalog/framework-catalog.yaml
+BASE_LOCK=$KIT_ROOT/testdata/fixtures/db-sqs/framework-lock.yaml
 OUTPUT_DIR=${AGENTIC_RELEASE_OUTPUT_DIR:-"$KIT_ROOT/dist/vnext"}
 SOURCE_ID=${AGENTIC_RELEASE_SOURCE_ID:-remote:official}
 SIGNER_KEY_ID=${AGENTIC_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
@@ -42,7 +42,7 @@ cargo build \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --release \
   --locked
-BINARY=$RUST_ROOT/target/release/agentic-vnext-rust
+BINARY=$RUST_ROOT/target/release/agentic
 
 build_release() {
   destination=$1

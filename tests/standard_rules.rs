@@ -1,17 +1,16 @@
-use agentic_vnext_rust::framework_lock::validate_framework_lock;
-use agentic_vnext_rust::rules::{Assurance, compile_rule_index};
-use agentic_vnext_rust::schema::SchemaRegistry;
+use agentic::framework_lock::validate_framework_lock;
+use agentic::rules::{Assurance, compile_rule_index};
+use agentic::schema::SchemaRegistry;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
 
 #[test]
 fn standard_evidence_requirements_are_evidence_backed() {
-    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures");
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/fixtures");
     let rules = read_yaml(fixture_root.join("db-sqs/rules.yaml"));
     let schemas =
-        SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1"))
-            .unwrap();
+        SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1")).unwrap();
     let index = compile_rule_index(&rules, &schemas).unwrap();
 
     for requirement_id in [

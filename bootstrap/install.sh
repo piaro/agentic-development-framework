@@ -99,7 +99,7 @@ case "$(uname -s):$(uname -m)" in
     exit 1
     ;;
 esac
-BINARY=agentic-vnext-rust-$TARGET
+BINARY=agentic-$TARGET
 BUILD_RECORD=$BINARY.build.json
 
 SOURCE_REVISION=$("$GH_CLI" release view "$RELEASE_TAG" \

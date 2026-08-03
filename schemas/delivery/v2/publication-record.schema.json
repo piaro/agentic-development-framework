@@ -91,59 +91,59 @@
       "additionalProperties": false,
       "required": [
         "SHA256SUMS",
-        "agentic-vnext-rust-aarch64-apple-darwin",
-        "agentic-vnext-rust-aarch64-apple-darwin.build.json",
-        "agentic-vnext-rust-aarch64-unknown-linux-gnu",
-        "agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json",
-        "agentic-vnext-rust-x86_64-apple-darwin",
-        "agentic-vnext-rust-x86_64-apple-darwin.build.json",
-        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe",
-        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json",
-        "agentic-vnext-rust-x86_64-unknown-linux-gnu",
-        "agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json"
+        "agentic-aarch64-apple-darwin",
+        "agentic-aarch64-apple-darwin.build.json",
+        "agentic-aarch64-unknown-linux-gnu",
+        "agentic-aarch64-unknown-linux-gnu.build.json",
+        "agentic-x86_64-apple-darwin",
+        "agentic-x86_64-apple-darwin.build.json",
+        "agentic-x86_64-pc-windows-msvc.exe",
+        "agentic-x86_64-pc-windows-msvc.exe.build.json",
+        "agentic-x86_64-unknown-linux-gnu",
+        "agentic-x86_64-unknown-linux-gnu.build.json"
       ],
       "properties": {
         "SHA256SUMS": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-aarch64-apple-darwin": {
+        "agentic-aarch64-apple-darwin": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-aarch64-apple-darwin.build.json": {
+        "agentic-aarch64-apple-darwin.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-aarch64-unknown-linux-gnu": {
+        "agentic-aarch64-unknown-linux-gnu": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json": {
+        "agentic-aarch64-unknown-linux-gnu.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-apple-darwin": {
+        "agentic-x86_64-apple-darwin": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-apple-darwin.build.json": {
+        "agentic-x86_64-apple-darwin.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe": {
+        "agentic-x86_64-pc-windows-msvc.exe": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json": {
+        "agentic-x86_64-pc-windows-msvc.exe.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-unknown-linux-gnu": {
+        "agentic-x86_64-unknown-linux-gnu": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json": {
+        "agentic-x86_64-unknown-linux-gnu.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         }

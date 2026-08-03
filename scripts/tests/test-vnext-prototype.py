@@ -12,8 +12,8 @@ import unittest
 
 import yaml
 
-KIT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(KIT_ROOT / "prototype" / "vnext"))
+KIT_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(KIT_ROOT / "legacy"))
 
 from agentic_vnext import (  # noqa: E402
     Application,
@@ -34,9 +34,9 @@ from agentic_vnext import (  # noqa: E402
 from agentic_vnext.model import canonical_digest  # noqa: E402
 
 
-FIXTURE = KIT_ROOT / "prototype" / "vnext" / "fixtures" / "db-sqs"
-CLI_FIXTURE = KIT_ROOT / "prototype" / "vnext" / "fixtures" / "cli-project"
-GOLDEN = KIT_ROOT / "prototype" / "vnext" / "golden" / "v1"
+FIXTURE = KIT_ROOT / "testdata" / "fixtures" / "db-sqs"
+CLI_FIXTURE = KIT_ROOT / "testdata" / "fixtures" / "cli-project"
+GOLDEN = KIT_ROOT / "testdata" / "golden" / "v1"
 CHANGE_ID = "change.place-order"
 
 

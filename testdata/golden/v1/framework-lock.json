@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "framework_lock_schema_version": "1",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "base_case": "application-initial.json",
   "expected_digest": "sha256:f46a33f0a5bf94262e7989ba99af8d0dd6d1fcce511624d4e6824629805b519e",
   "invalid_cases": [

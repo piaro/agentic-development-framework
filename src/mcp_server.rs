@@ -328,7 +328,7 @@ impl AgenticMcpServer {
 
 #[tool_handler(
     router = self.tool_router,
-    name = "agentic-vnext-rust",
+    name = "agentic",
     version = "0.1.0",
     instructions = "Use agentic_next before write tools. Submit only Results for Actions issued by this server session."
 )]

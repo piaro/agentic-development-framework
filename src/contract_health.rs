@@ -433,8 +433,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn registry() -> SchemaRegistry {
-        SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1"))
-            .unwrap()
+        SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1")).unwrap()
     }
 
     fn project_with_evidence(evidence_outcome: &str, result_status: &str) -> Value {

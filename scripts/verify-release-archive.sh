@@ -8,9 +8,9 @@ if [ "$#" -ne 2 ]; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 CALLER_ROOT=$(pwd)
-BINARY=${AGENTIC_RELEASE_CI_BINARY:-"$KIT_ROOT/prototype/vnext/rust/target/release/agentic-vnext-rust"}
+BINARY=${AGENTIC_RELEASE_CI_BINARY:-"$KIT_ROOT/target/release/agentic"}
 PUBLIC_KEY=${AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX:?AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX is required}
 SOURCE_ID=${AGENTIC_RELEASE_SOURCE_ID:-remote:official}
 SIGNER_KEY_ID=${AGENTIC_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}

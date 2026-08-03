@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "snapshot_protocol_version": "1",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "base_case": "application-initial.json",
   "unrelated_records": {
     "contracts": [

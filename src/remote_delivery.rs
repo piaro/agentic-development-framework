@@ -224,7 +224,7 @@ fn download_archive(url: &str) -> Result<Vec<u8>, RemoteDeliveryError> {
         .timeout_recv_body(Some(Duration::from_secs(30)))
         // A redirect could silently change the reviewed source host or scheme.
         .max_redirects(0)
-        .user_agent("agentic-vnext-rust/0.1")
+        .user_agent("agentic/0.1")
         .build()
         .into();
     let mut response = agent

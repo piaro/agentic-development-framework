@@ -1260,7 +1260,7 @@ mod tests {
             .first()
             .unwrap();
         let schema_registry =
-            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1"))
+            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1"))
                 .unwrap();
         let submission = ResultSubmission {
             change_id: snapshot.change_id.clone(),

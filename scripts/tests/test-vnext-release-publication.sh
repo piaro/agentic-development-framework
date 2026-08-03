@@ -3,12 +3,12 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-RELEASE_CI=$KIT_ROOT/prototype/vnext/scripts/release-ci.sh
-VERIFY_CANDIDATE=$KIT_ROOT/prototype/vnext/scripts/verify-release-candidate.sh
-PUBLISH=$KIT_ROOT/prototype/vnext/scripts/publish-github-release.sh
-INSPECT=$KIT_ROOT/prototype/vnext/scripts/inspect-candidate-run.sh
-FAKE_GH=$KIT_ROOT/tests/fixtures/fake-gh-release.py
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+RELEASE_CI=$KIT_ROOT/scripts/release-ci.sh
+VERIFY_CANDIDATE=$KIT_ROOT/scripts/verify-release-candidate.sh
+PUBLISH=$KIT_ROOT/scripts/publish-github-release.sh
+INSPECT=$KIT_ROOT/scripts/inspect-candidate-run.sh
+FAKE_GH=$KIT_ROOT/scripts/tests/fixtures/fake-gh-release.py
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-publication-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"
@@ -23,7 +23,7 @@ SOURCE_REVISION=1111111111111111111111111111111111111111
 RELEASE_TAG=framework-prototype-vnext-dev
 CANDIDATE=$TEST_ROOT/candidate
 BINARIES=$TEST_ROOT/binaries
-BINARY=$KIT_ROOT/prototype/vnext/rust/target/release/agentic-vnext-rust
+BINARY=$KIT_ROOT/target/release/agentic
 
 AGENTIC_RELEASE_SIGNING_KEY_HEX=$SEED \
   AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
@@ -51,7 +51,7 @@ targets = (
 checksums = []
 for target in targets:
     suffix = ".exe" if target.endswith("-windows-msvc") else ""
-    name = f"agentic-vnext-rust-{target}{suffix}"
+    name = f"agentic-{target}{suffix}"
     path = root / name
     path.write_bytes(f"test binary for {target}\n".encode())
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -71,13 +71,13 @@ for target in targets:
 (root / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
 PY
 
-python3 "$KIT_ROOT/prototype/vnext/scripts/verify-release-binaries.py" \
+python3 "$KIT_ROOT/scripts/verify-release-binaries.py" \
   "$BINARIES" "$SOURCE_REVISION" >/dev/null
 
 TAMPERED_BINARIES=$TEST_ROOT/tampered-binaries
 cp -R "$BINARIES" "$TAMPERED_BINARIES"
-printf 'tampered' >>"$TAMPERED_BINARIES/agentic-vnext-rust-aarch64-apple-darwin"
-if python3 "$KIT_ROOT/prototype/vnext/scripts/verify-release-binaries.py" \
+printf 'tampered' >>"$TAMPERED_BINARIES/agentic-aarch64-apple-darwin"
+if python3 "$KIT_ROOT/scripts/verify-release-binaries.py" \
   "$TAMPERED_BINARIES" "$SOURCE_REVISION" >/dev/null 2>&1; then
   echo "Binary verifier accepted bytes that differ from the Build Record" >&2
   exit 1
@@ -86,15 +86,15 @@ fi
 NATIVE_TARGET=$(rustc -vV | sed -n 's/^host: //p')
 NATIVE_OUTPUT=$TEST_ROOT/native-binary
 GITHUB_SHA=$SOURCE_REVISION \
-  sh "$KIT_ROOT/prototype/vnext/scripts/build-release-binary.sh" \
+  sh "$KIT_ROOT/scripts/build-release-binary.sh" \
   "$NATIVE_TARGET" "$NATIVE_OUTPUT" >/dev/null
 case "$NATIVE_TARGET" in
   *-windows-msvc) NATIVE_SUFFIX=.exe ;;
   *) NATIVE_SUFFIX= ;;
 esac
-test -s "$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX"
-test -s "$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX.build.json"
-"$NATIVE_OUTPUT/agentic-vnext-rust-$NATIVE_TARGET$NATIVE_SUFFIX" --version |
+test -s "$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX"
+test -s "$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX.build.json"
+"$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX" --version |
   grep -q "$SOURCE_REVISION"
 
 verify_candidate() {
@@ -213,7 +213,7 @@ test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/distribution-trust.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publish-receipt.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publication-record.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/SHA256SUMS"
-test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/agentic-vnext-rust-x86_64-unknown-linux-gnu"
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/agentic-x86_64-unknown-linux-gnu"
 
 if publish_with_state "$PUBLISHED_STATE" >/dev/null 2>&1; then
   echo "Publication unexpectedly reused an existing Release tag" >&2
@@ -229,7 +229,7 @@ fi
 test "$(cat "$TAMPERED_STATE/releases/$RELEASE_TAG/state")" = "draft"
 
 FAILED_ATTESTATION_STATE=$TEST_ROOT/failed-attestation-state
-if FAKE_GH_FAIL_ATTESTATION=agentic-vnext-rust-x86_64-unknown-linux-gnu \
+if FAKE_GH_FAIL_ATTESTATION=agentic-x86_64-unknown-linux-gnu \
   publish_with_state "$FAILED_ATTESTATION_STATE" >/dev/null 2>&1; then
   echo "Publication accepted a binary without valid provenance" >&2
   exit 1

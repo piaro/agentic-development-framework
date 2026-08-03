@@ -38,7 +38,7 @@ if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
 }
 
 $target = 'x86_64-pc-windows-msvc'
-$binary = "agentic-vnext-rust-$target.exe"
+$binary = "agentic-$target.exe"
 $buildRecord = "$binary.build.json"
 $sourceRevision = (& $GitHubCli release view $Tag `
     --repo $Repository `

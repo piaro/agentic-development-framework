@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "compiler_version": "1",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "schema_bundle_digest": "sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888",
   "cases": [
     {

@@ -1,5 +1,5 @@
-use agentic_vnext_rust::schema::validate_json_document;
-use agentic_vnext_rust::{canonical_digest, canonical_json};
+use agentic::schema::validate_json_document;
+use agentic::{canonical_digest, canonical_json};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -13,7 +13,7 @@ use std::thread;
 
 #[test]
 fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
-    let help = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let help = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .arg("--help")
         .output()
         .unwrap();
@@ -21,7 +21,7 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
     assert!(help.stderr.is_empty());
     assert!(String::from_utf8_lossy(&help.stdout).contains("agentic project init"));
 
-    let version = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let version = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .arg("--version")
         .output()
         .unwrap();
@@ -32,7 +32,7 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
     let root = temporary_test_root("uninitialized");
     fs::create_dir_all(&root).unwrap();
     run_git(&root, &["init", "--quiet"]);
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["next", "change.example", "--project"])
         .arg(&root)
         .output()
@@ -52,7 +52,7 @@ fn migration_inspect_reports_current_project_without_writing() {
         &["status", "--porcelain=v1", "--untracked-files=all"],
     );
     assert!(before.is_empty());
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "inspect", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -110,7 +110,7 @@ fn migration_inspect_distinguishes_vnext_and_mixed_projects() {
     .unwrap();
     run_git(&mixed, &["add", ".agentic/framework.lock"]);
     run_git(&mixed, &["commit", "--quiet", "-m", "add mixed marker"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "inspect", "--format", "json", "--project"])
         .arg(&mixed)
         .output()
@@ -137,7 +137,7 @@ fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
         "not part of the fixed revision\n",
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "inspect", "--format", "text", "--project"])
         .arg(&root)
         .output()
@@ -154,7 +154,7 @@ fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
 fn migration_draft_describes_reviewed_actions_without_writing() {
     let root = legacy_migration_project("migration-draft");
     let revision = git_output(&root, &["rev-parse", "HEAD"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -201,7 +201,7 @@ fn migration_draft_describes_reviewed_actions_without_writing() {
 fn migration_draft_requires_a_clean_migratable_current_project() {
     let dirty = legacy_migration_project("migration-draft-dirty");
     fs::write(dirty.join("untracked.txt"), "dirty\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--project"])
         .arg(&dirty)
         .output()
@@ -222,7 +222,7 @@ fn migration_draft_requires_a_clean_migratable_current_project() {
 #[test]
 fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft() {
     let root = legacy_migration_project("migration-validate-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -239,7 +239,7 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
     );
     assert!(before.contains(".agentic/migration-draft.json"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-draft",
@@ -266,7 +266,7 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
     );
 
     fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
-    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-draft",
@@ -289,7 +289,7 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
 #[test]
 fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes() {
     let root = legacy_migration_project("migration-invalid-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -298,7 +298,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
     let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     let draft_path = root.join("migration-draft.json");
     fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
-    let incomplete = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let incomplete = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-draft",
@@ -325,7 +325,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
     complete_migration_reviews(&mut draft);
     draft["actions"][0]["instruction"] = json!("tampered");
     fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
-    let tampered = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let tampered = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-draft",
@@ -354,7 +354,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
 #[test]
 fn migration_validate_draft_rejects_a_stale_source_revision() {
     let root = legacy_migration_project("migration-stale-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -371,7 +371,7 @@ fn migration_validate_draft_rejects_a_stale_source_revision() {
     run_git(&root, &["add", "new-source.py"]);
     run_git(&root, &["commit", "--quiet", "-m", "advance source"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-draft",
@@ -401,7 +401,7 @@ fn migration_validate_draft_rejects_a_stale_source_revision() {
 fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     let root = legacy_migration_project("migration-candidate");
     let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -422,7 +422,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     .unwrap();
 
     let output_relative = ".agentic/migration-candidates/review-1";
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -492,7 +492,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         legacy_config
     );
 
-    let validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -557,7 +557,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         &completion,
     );
 
-    let completed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let completed = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -591,7 +591,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         b"tampered contract candidate\n",
     )
     .unwrap();
-    let tampered_completion = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let tampered_completion = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -618,7 +618,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::write(candidate.join("contracts/migrated.yaml"), reviewed_contract).unwrap();
 
     fs::write(candidate.join("unclaimed.txt"), "not reviewed\n").unwrap();
-    let unclaimed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let unclaimed = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -645,7 +645,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::remove_file(candidate.join("unclaimed.txt")).unwrap();
 
     fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
-    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -665,7 +665,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::remove_file(root.join("unrelated.txt")).unwrap();
 
     let manifest_before = fs::read(candidate.join("migration-manifest.yaml")).unwrap();
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -690,7 +690,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         "schema_version: tampered\n",
     )
     .unwrap();
-    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -720,7 +720,8 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
 #[test]
 fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     let root = legacy_migration_project("migration-candidate-activation");
-    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/cli-project");
+    let fixture_root =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/fixtures/cli-project");
     copy_tree(&fixture_root.join("src"), &root.join("src"));
     run_git(&root, &["add", "src"]);
     run_git(
@@ -732,7 +733,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
             "add representative project source",
         ],
     );
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -747,7 +748,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     .unwrap();
 
     let output_relative = ".agentic/migration-candidates/activation-ready";
-    let generated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let generated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -925,7 +926,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
 
     let source_revision = git_output(&root, &["rev-parse", "HEAD"]);
     let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
-    let applied = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let applied = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "apply-candidate",
@@ -983,7 +984,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     assert_eq!(git_output(&root, &["rev-parse", "HEAD"]), source_revision);
     assert!(git_output(&root, &["diff", "--cached", "--name-only"]).is_empty());
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "apply-candidate",
@@ -999,7 +1000,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     assert!(!candidate.join("migration-apply.lock").exists());
 
     run_git(&root, &["add", "."]);
-    let staged_validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let staged_validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "validate-bindings",
@@ -1027,7 +1028,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         )
         .is_empty()
     );
-    let clean_validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let clean_validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "validate-bindings",
@@ -1043,7 +1044,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     let validation: Value = serde_json::from_slice(&clean_validation.stdout).unwrap();
     assert_eq!(validation["status"], "valid");
 
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "next",
             "change.place-order",
@@ -1065,7 +1066,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
 #[test]
 fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project() {
     let root = legacy_migration_project("migration-apply-incomplete");
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -1079,7 +1080,7 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
     )
     .unwrap();
     let candidate_relative = ".agentic/migration-candidates/incomplete";
-    let generated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let generated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -1099,7 +1100,7 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
         &root,
         &["status", "--porcelain=v1", "--untracked-files=all"],
     );
-    let applied = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let applied = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "apply-candidate",
@@ -1140,7 +1141,7 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
 #[test]
 fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     let root = legacy_migration_project("migration-candidate-invalid");
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -1153,7 +1154,7 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     )
     .unwrap();
 
-    let unsafe_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let unsafe_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -1174,7 +1175,7 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     assert!(!root.join("migration-candidate").exists());
 
     let output_relative = ".agentic/migration-candidates/unreviewed";
-    let unreviewed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let unreviewed = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "generate-candidate",
@@ -1197,7 +1198,7 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
 
 #[test]
 fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
-    let json_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let json_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["catalog", "signal-domains", "--format", "json"])
         .output()
         .unwrap();
@@ -1249,12 +1250,12 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     let mut body = catalog.as_object().unwrap().clone();
     let digest = body.remove("digest").unwrap();
     assert_eq!(digest, canonical_digest(&Value::Object(body)).unwrap());
-    let golden_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../golden/v1/signal-domain-catalog.json");
+    let golden_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("testdata/golden/v1/signal-domain-catalog.json");
     let golden: Value = serde_json::from_slice(&fs::read(golden_path).unwrap()).unwrap();
     assert_eq!(catalog, golden);
 
-    let text_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let text_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["catalog", "signal-domains"])
         .output()
         .unwrap();
@@ -1268,7 +1269,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     assert!(text.contains("authorization_change -> authorization-control-change"));
     assert!(text.contains("sensitive_data_access -> sensitive-data-access"));
 
-    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["catalog", "unknown"])
         .output()
         .unwrap();
@@ -1321,7 +1322,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
         &root,
         &["commit", "--quiet", "--allow-empty", "-m", "initial"],
     );
-    let initialized = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let initialized = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["project", "init", "--project"])
         .arg(&root)
         .arg("--candidate-dir")
@@ -1346,7 +1347,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
             .is_file()
     );
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["project", "init", "--project"])
         .arg(&root)
         .arg("--candidate-dir")
@@ -1356,7 +1357,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     assert!(!repeated.status.success());
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("would overwrite"));
 
-    let change = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let change = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "change",
             "init",
@@ -1385,7 +1386,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     );
     run_git(&root, &["commit", "--quiet", "-m", "initialize agentic"]);
 
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["next", "change.example", "--require-clean", "--project"])
         .arg(&root)
         .output()
@@ -1465,7 +1466,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     .unwrap();
     fs::write(root.join("src/native.cpp"), "void save() {}\n").unwrap();
     run_git(&root, &["init", "--quiet"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -1650,7 +1651,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     .unwrap();
     run_git(&root, &["init", "--quiet"]);
     let relative = ".agentic/drafts/repository-observation.yaml";
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -1676,7 +1677,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert_eq!(draft["kind"], "repository-observation-draft");
     assert!(draft["binding_artifacts"][0]["bindings"]["symbols"]["save"]["logical_ref"].is_null());
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -1693,7 +1694,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("refusing to overwrite"));
     assert_eq!(fs::read(&draft_path).unwrap(), original);
 
-    let escaped = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let escaped = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -1709,7 +1710,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert!(!escaped.status.success());
     assert!(String::from_utf8_lossy(&escaped.stderr).contains("must stay in the repository"));
 
-    let git_internal = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let git_internal = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -1804,7 +1805,7 @@ fn project_observe_refuses_a_symlinked_draft_output() {
     symlink(&outside, root.join(".agentic/draft.yaml")).unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2186,7 +2187,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
     .unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2352,7 +2353,7 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2501,7 +2502,7 @@ fn project_observe_suggests_eight_major_http_clients_without_approving_them() {
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2568,7 +2569,7 @@ fn project_observe_suggests_three_object_storage_families_without_approving_them
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2630,7 +2631,7 @@ fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind
 #[test]
 fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
     let project = TestProject::new();
-    let observe = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let observe = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "project",
             "observe",
@@ -2905,7 +2906,7 @@ fn project_commands_refuse_symlinked_project_paths() {
     symlink(&outside, root.join(".agentic")).unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let change = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let change = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "change",
             "init",
@@ -3076,7 +3077,7 @@ fn contract_health_gate_rejects_invalid_or_untracked_policy() {
 #[test]
 fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     let project = TestProject::new();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["mcp", "--project"])
         .arg(&project.root)
         .stdin(Stdio::piped())
@@ -3937,7 +3938,7 @@ fn signals_for_binding(output: &Value, binding: &str, logical_ref: &str) -> Vec<
 
 fn run_framework_e2e(case_id: &str, expected_frameworks: &[&str]) -> Value {
     let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let corpus_root = manifest_root.join("../benchmarks/major-frameworks-v1/projects");
+    let corpus_root = manifest_root.join("testdata/benchmarks/major-frameworks-v1/projects");
     let project = TestProject::new();
     copy_tree(&corpus_root.join(case_id), &project.root);
     run_git(&project.root, &["add", "-A"]);
@@ -4503,25 +4504,25 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
         },
         "binary_asset_digests": {
             "SHA256SUMS": format!("sha256:{}", "8".repeat(64)),
-            "agentic-vnext-rust-aarch64-apple-darwin":
+            "agentic-aarch64-apple-darwin":
                 format!("sha256:{}", "9".repeat(64)),
-            "agentic-vnext-rust-aarch64-apple-darwin.build.json":
+            "agentic-aarch64-apple-darwin.build.json":
                 format!("sha256:{}", "a".repeat(64)),
-            "agentic-vnext-rust-aarch64-unknown-linux-gnu":
+            "agentic-aarch64-unknown-linux-gnu":
                 format!("sha256:{}", "b".repeat(64)),
-            "agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json":
+            "agentic-aarch64-unknown-linux-gnu.build.json":
                 format!("sha256:{}", "c".repeat(64)),
-            "agentic-vnext-rust-x86_64-apple-darwin":
+            "agentic-x86_64-apple-darwin":
                 format!("sha256:{}", "d".repeat(64)),
-            "agentic-vnext-rust-x86_64-apple-darwin.build.json":
+            "agentic-x86_64-apple-darwin.build.json":
                 format!("sha256:{}", "e".repeat(64)),
-            "agentic-vnext-rust-x86_64-pc-windows-msvc.exe":
+            "agentic-x86_64-pc-windows-msvc.exe":
                 format!("sha256:{}", "f".repeat(64)),
-            "agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json":
+            "agentic-x86_64-pc-windows-msvc.exe.build.json":
                 format!("sha256:{}", "1".repeat(64)),
-            "agentic-vnext-rust-x86_64-unknown-linux-gnu":
+            "agentic-x86_64-unknown-linux-gnu":
                 format!("sha256:{}", "2".repeat(64)),
-            "agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json":
+            "agentic-x86_64-unknown-linux-gnu.build.json":
                 format!("sha256:{}", "3".repeat(64)),
         },
     });
@@ -4548,7 +4549,7 @@ fn distribution_trust_schema_pins_the_release_key_and_source_policy() {
 fn binary_build_record_schema_pins_target_revision_and_digest() {
     let record = json!({
         "schema_version": "1",
-        "binary_name": "agentic-vnext-rust-x86_64-unknown-linux-gnu",
+        "binary_name": "agentic-x86_64-unknown-linux-gnu",
         "target": "x86_64-unknown-linux-gnu",
         "source_revision": "1".repeat(40),
         "sha256": format!("sha256:{}", "2".repeat(64)),
@@ -4923,7 +4924,7 @@ fn write_migration_completion(
 }
 
 fn validate_migration_candidate_cli(root: &Path, candidate: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args([
             "migration",
             "validate-candidate",
@@ -4956,18 +4957,18 @@ impl TestProject {
         if root.exists() {
             fs::remove_dir_all(&root).unwrap();
         }
-        copy_tree(&manifest_root.join("../fixtures/cli-project"), &root);
+        copy_tree(&manifest_root.join("testdata/fixtures/cli-project"), &root);
         let release_root = root
             .join(".agentic/cache/releases")
             .join("prototype-vnext-dev");
         fs::create_dir_all(&release_root).unwrap();
         fs::copy(
-            manifest_root.join("../fixtures/db-sqs/rules.yaml"),
+            manifest_root.join("testdata/fixtures/db-sqs/rules.yaml"),
             release_root.join("rules.yaml"),
         )
         .unwrap();
         fs::copy(
-            manifest_root.join("../fixtures/framework-catalog/framework-catalog.yaml"),
+            manifest_root.join("testdata/fixtures/framework-catalog/framework-catalog.yaml"),
             release_root.join("framework-catalog.yaml"),
         )
         .unwrap();
@@ -4976,7 +4977,7 @@ impl TestProject {
             "framework-catalog.schema.json",
         );
         copy_tree(
-            &manifest_root.join("../schemas/v1"),
+            &manifest_root.join("schemas/v1"),
             &release_root.join("schemas/v1"),
         );
         let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
@@ -5024,7 +5025,7 @@ impl TestProject {
     }
 
     fn run(&self, arguments: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic"));
         command.args(arguments);
         command
             .arg("--project")
@@ -5035,7 +5036,7 @@ impl TestProject {
     }
 
     fn run_with_env(&self, arguments: &[&str], variable: &str, value: &str) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic"));
         command.args(arguments);
         command
             .arg("--project")
@@ -5299,7 +5300,7 @@ fn encode_hex(bytes: &[u8]) -> String {
 
 fn validate_output_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/outputs/v1")
+        .join("schemas/outputs/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();
@@ -5307,7 +5308,7 @@ fn validate_output_schema(value: &Value, filename: &str) {
 
 fn validate_ci_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/ci/v1")
+        .join("schemas/ci/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();
@@ -5315,7 +5316,7 @@ fn validate_ci_schema(value: &Value, filename: &str) {
 
 fn validate_catalog_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/catalog/v1")
+        .join("schemas/catalog/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();
@@ -5323,7 +5324,7 @@ fn validate_catalog_schema(value: &Value, filename: &str) {
 
 fn validate_delivery_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/delivery/v2")
+        .join("schemas/delivery/v2")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();
@@ -5331,7 +5332,7 @@ fn validate_delivery_schema(value: &Value, filename: &str) {
 
 fn validate_mcp_schema(value: &Value, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas/mcp/v1")
+        .join("schemas/mcp/v1")
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();

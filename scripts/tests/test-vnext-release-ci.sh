@@ -3,8 +3,8 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-RELEASE_CI=$KIT_ROOT/prototype/vnext/scripts/release-ci.sh
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+RELEASE_CI=$KIT_ROOT/scripts/release-ci.sh
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-ci-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"

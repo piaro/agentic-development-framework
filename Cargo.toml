@@ -1,8 +1,22 @@
 [package]
-name = "agentic-vnext-rust"
+name = "agentic-development-kit"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.89"
+license = "MIT OR Apache-2.0"
+description = "Control plane that connects specifications, decisions, implementation, and evidence in a repository worked on by AI agents"
+repository = "https://github.com/piaro/agentic-development-kit"
+readme = "README.md"
+# Distribution happens through signed native binaries, not crates.io.
 publish = false
+
+[lib]
+name = "agentic"
+path = "src/lib.rs"
+
+[[bin]]
+name = "agentic"
+path = "src/main.rs"
 
 [dependencies]
 ed25519-dalek = "2.2"

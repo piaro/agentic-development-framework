@@ -153,16 +153,16 @@ PY
   "$CANDIDATE_DIR/distribution-trust.json" \
   "$CANDIDATE_DIR/publish-receipt.json" \
   "$BINARY_DIR/SHA256SUMS" \
-  "$BINARY_DIR/agentic-vnext-rust-aarch64-apple-darwin" \
-  "$BINARY_DIR/agentic-vnext-rust-aarch64-apple-darwin.build.json" \
-  "$BINARY_DIR/agentic-vnext-rust-aarch64-unknown-linux-gnu" \
-  "$BINARY_DIR/agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-apple-darwin" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-apple-darwin.build.json" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-pc-windows-msvc.exe" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-unknown-linux-gnu" \
-  "$BINARY_DIR/agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json" \
+  "$BINARY_DIR/agentic-aarch64-apple-darwin" \
+  "$BINARY_DIR/agentic-aarch64-apple-darwin.build.json" \
+  "$BINARY_DIR/agentic-aarch64-unknown-linux-gnu" \
+  "$BINARY_DIR/agentic-aarch64-unknown-linux-gnu.build.json" \
+  "$BINARY_DIR/agentic-x86_64-apple-darwin" \
+  "$BINARY_DIR/agentic-x86_64-apple-darwin.build.json" \
+  "$BINARY_DIR/agentic-x86_64-pc-windows-msvc.exe" \
+  "$BINARY_DIR/agentic-x86_64-pc-windows-msvc.exe.build.json" \
+  "$BINARY_DIR/agentic-x86_64-unknown-linux-gnu" \
+  "$BINARY_DIR/agentic-x86_64-unknown-linux-gnu.build.json" \
   "$PUBLICATION_RECORD" \
   --repo "$REPOSITORY" \
   --target "$SOURCE_REVISION" \
@@ -181,16 +181,16 @@ mkdir -p "$DOWNLOADED"
   --pattern distribution-trust.json \
   --pattern publish-receipt.json \
   --pattern SHA256SUMS \
-  --pattern agentic-vnext-rust-aarch64-apple-darwin \
-  --pattern agentic-vnext-rust-aarch64-apple-darwin.build.json \
-  --pattern agentic-vnext-rust-aarch64-unknown-linux-gnu \
-  --pattern agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json \
-  --pattern agentic-vnext-rust-x86_64-apple-darwin \
-  --pattern agentic-vnext-rust-x86_64-apple-darwin.build.json \
-  --pattern agentic-vnext-rust-x86_64-pc-windows-msvc.exe \
-  --pattern agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json \
-  --pattern agentic-vnext-rust-x86_64-unknown-linux-gnu \
-  --pattern agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json \
+  --pattern agentic-aarch64-apple-darwin \
+  --pattern agentic-aarch64-apple-darwin.build.json \
+  --pattern agentic-aarch64-unknown-linux-gnu \
+  --pattern agentic-aarch64-unknown-linux-gnu.build.json \
+  --pattern agentic-x86_64-apple-darwin \
+  --pattern agentic-x86_64-apple-darwin.build.json \
+  --pattern agentic-x86_64-pc-windows-msvc.exe \
+  --pattern agentic-x86_64-pc-windows-msvc.exe.build.json \
+  --pattern agentic-x86_64-unknown-linux-gnu \
+  --pattern agentic-x86_64-unknown-linux-gnu.build.json \
   --pattern publication-record.json
 
 cmp "$CANDIDATE_DIR/framework-release.tar" "$DOWNLOADED/framework-release.tar"
@@ -200,16 +200,16 @@ cmp "$CANDIDATE_DIR/publish-receipt.json" "$DOWNLOADED/publish-receipt.json"
 cmp "$PUBLICATION_RECORD" "$DOWNLOADED/publication-record.json"
 for asset in \
   SHA256SUMS \
-  agentic-vnext-rust-aarch64-apple-darwin \
-  agentic-vnext-rust-aarch64-apple-darwin.build.json \
-  agentic-vnext-rust-aarch64-unknown-linux-gnu \
-  agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json \
-  agentic-vnext-rust-x86_64-apple-darwin \
-  agentic-vnext-rust-x86_64-apple-darwin.build.json \
-  agentic-vnext-rust-x86_64-pc-windows-msvc.exe \
-  agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json \
-  agentic-vnext-rust-x86_64-unknown-linux-gnu \
-  agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json
+  agentic-aarch64-apple-darwin \
+  agentic-aarch64-apple-darwin.build.json \
+  agentic-aarch64-unknown-linux-gnu \
+  agentic-aarch64-unknown-linux-gnu.build.json \
+  agentic-x86_64-apple-darwin \
+  agentic-x86_64-apple-darwin.build.json \
+  agentic-x86_64-pc-windows-msvc.exe \
+  agentic-x86_64-pc-windows-msvc.exe.build.json \
+  agentic-x86_64-unknown-linux-gnu \
+  agentic-x86_64-unknown-linux-gnu.build.json
 do
   cmp "$BINARY_DIR/$asset" "$DOWNLOADED/$asset"
 done
@@ -225,16 +225,16 @@ DOWNLOADED_BINARIES=$WORK_ROOT/downloaded-binaries
 mkdir -p "$DOWNLOADED_BINARIES"
 for asset in \
   SHA256SUMS \
-  agentic-vnext-rust-aarch64-apple-darwin \
-  agentic-vnext-rust-aarch64-apple-darwin.build.json \
-  agentic-vnext-rust-aarch64-unknown-linux-gnu \
-  agentic-vnext-rust-aarch64-unknown-linux-gnu.build.json \
-  agentic-vnext-rust-x86_64-apple-darwin \
-  agentic-vnext-rust-x86_64-apple-darwin.build.json \
-  agentic-vnext-rust-x86_64-pc-windows-msvc.exe \
-  agentic-vnext-rust-x86_64-pc-windows-msvc.exe.build.json \
-  agentic-vnext-rust-x86_64-unknown-linux-gnu \
-  agentic-vnext-rust-x86_64-unknown-linux-gnu.build.json
+  agentic-aarch64-apple-darwin \
+  agentic-aarch64-apple-darwin.build.json \
+  agentic-aarch64-unknown-linux-gnu \
+  agentic-aarch64-unknown-linux-gnu.build.json \
+  agentic-x86_64-apple-darwin \
+  agentic-x86_64-apple-darwin.build.json \
+  agentic-x86_64-pc-windows-msvc.exe \
+  agentic-x86_64-pc-windows-msvc.exe.build.json \
+  agentic-x86_64-unknown-linux-gnu \
+  agentic-x86_64-unknown-linux-gnu.build.json
 do
   cp "$DOWNLOADED/$asset" "$DOWNLOADED_BINARIES/$asset"
 done

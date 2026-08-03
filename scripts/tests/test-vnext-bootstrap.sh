@@ -3,10 +3,10 @@
 set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
-BOOTSTRAP=$KIT_ROOT/prototype/vnext/bootstrap/install.sh
-FAKE_GH=$KIT_ROOT/tests/fixtures/fake-gh-release.py
-RUST_BINARY=$KIT_ROOT/prototype/vnext/rust/target/debug/agentic-vnext-rust
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
+BOOTSTRAP=$KIT_ROOT/bootstrap/install.sh
+FAKE_GH=$KIT_ROOT/scripts/tests/fixtures/fake-gh-release.py
+RUST_BINARY=$KIT_ROOT/target/debug/agentic
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-bootstrap-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"
@@ -23,7 +23,7 @@ case "$(uname -s):$(uname -m)" in
     exit 1
     ;;
 esac
-BINARY=agentic-vnext-rust-$TARGET
+BINARY=agentic-$TARGET
 REPOSITORY=example/agentic-development-kit
 STATE=$TEST_ROOT/github
 INSTALL_ROOT=$TEST_ROOT/installed

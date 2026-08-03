@@ -1,4 +1,4 @@
-use agentic_vnext_rust::binary_install::{
+use agentic::binary_install::{
     binary_install_status, current_platform_target, install_binary_candidate,
     published_binary_name, rollback_binary_install,
 };
@@ -275,7 +275,7 @@ impl BinaryFixture {
         let target = current_platform_target().unwrap();
         let binary_name = published_binary_name(target);
         let binary = candidate.join(&binary_name);
-        fs::copy(env!("CARGO_BIN_EXE_agentic-vnext-rust"), &binary).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_agentic"), &binary).unwrap();
         let binary_digest = digest(&binary);
         let build_name = format!("{binary_name}.build.json");
         let build = json!({
@@ -396,7 +396,7 @@ fn fake_digest(character: char) -> String {
 }
 
 fn run_cli(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(arguments)
         .output()
         .unwrap()

@@ -789,7 +789,7 @@ mod tests {
             digest: String::new(),
         };
         let schema_registry =
-            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../schemas/v1"))
+            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1"))
                 .unwrap();
         schema_registry
             .validate("contract", &snapshot.contracts[0])

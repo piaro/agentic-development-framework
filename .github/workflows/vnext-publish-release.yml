@@ -48,7 +48,7 @@ jobs:
       - name: Validate candidate workflow identity
         id: candidate
         run: |
-          source_revision=$(sh prototype/vnext/scripts/inspect-candidate-run.sh \
+          source_revision=$(sh scripts/inspect-candidate-run.sh \
             "${{ inputs.candidate_run_id }}")
           echo "source_revision=$source_revision" >> "$GITHUB_OUTPUT"
 
@@ -63,7 +63,7 @@ jobs:
           rustup default 1.89.0
 
       - name: Build candidate verifier
-        run: cargo build --manifest-path prototype/vnext/rust/Cargo.toml --release --locked
+        run: cargo build --manifest-path Cargo.toml --release --locked
 
       - name: Download the named candidate Artifact
         uses: actions/download-artifact@v5
@@ -85,11 +85,11 @@ jobs:
 
       - name: Revalidate candidate before approval
         env:
-          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/prototype/vnext/rust/target/release/agentic-vnext-rust
+          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/target/release/agentic
           AGENTIC_RELEASE_SOURCE_REVISION: ${{ steps.candidate.outputs.source_revision }}
         run: |
-          sh prototype/vnext/scripts/verify-release-candidate.sh candidate
-          sh prototype/vnext/scripts/verify-release-binaries.sh \
+          sh scripts/verify-release-candidate.sh candidate
+          sh scripts/verify-release-binaries.sh \
             binaries \
             "${{ steps.candidate.outputs.source_revision }}"
 
@@ -124,7 +124,7 @@ jobs:
           rustup default 1.89.0
 
       - name: Build publication verifier
-        run: cargo build --manifest-path prototype/vnext/rust/Cargo.toml --release --locked
+        run: cargo build --manifest-path Cargo.toml --release --locked
 
       - name: Download candidate again after approval
         uses: actions/download-artifact@v5
@@ -146,9 +146,9 @@ jobs:
 
       - name: Publish draft, verify uploaded bytes, then make public
         env:
-          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/prototype/vnext/rust/target/release/agentic-vnext-rust
+          AGENTIC_RELEASE_CI_BINARY: ${{ github.workspace }}/target/release/agentic
         run: |
-          sh prototype/vnext/scripts/publish-github-release.sh \
+          sh scripts/publish-github-release.sh \
             candidate \
             binaries \
             "${{ inputs.release_tag }}" \

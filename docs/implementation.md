@@ -185,11 +185,11 @@ jobs:
 
 ```sh
 agentic benchmark \
-  prototype/vnext/benchmarks/major-frameworks-v1 \
+  testdata/benchmarks/major-frameworks-v1 \
   --format text
 
 agentic benchmark \
-  prototype/vnext/benchmarks/real-projects-v1 \
+  testdata/benchmarks/real-projects-v1 \
   --format text
 ```
 
@@ -205,7 +205,7 @@ corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Report
 agentic detector-audit /path/to/repository --format text --require-clean
 
 agentic detector-audit-check /path/to/repository \
-  --baseline prototype/vnext/benchmarks/repository-audits-v1/django-oscar.yaml \
+  --baseline testdata/benchmarks/repository-audits-v1/django-oscar.yaml \
   --format text
 ```
 
@@ -230,7 +230,7 @@ Prisma Examplesの1件は、同一の`const db`初期化が未完了の式の途
 
 ## 実行
 
-Repository rootで実行します。正準実装と受入テストはRust版です。`agentic_vnext/`のPython実装は過去の設計探索用参照であり、新しい設計の実装・同等性確認の対象にはしません。
+Repository rootで実行します。正準実装と受入テストはRust版です。`legacy/agentic_vnext/`のPython実装は過去の設計探索用参照であり、新しい設計の実装・同等性確認の対象にはしません。
 
 ### 現行Projectの移行診断
 
@@ -508,55 +508,55 @@ agentic mcp --project .
 MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`agentic_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`agentic_next`を再実行してください。
 
 ```sh
-sh tests/test-vnext.sh
+sh scripts/tests/test-vnext.sh
 ```
 
 Rust互換実装はContributor向けに別途実行します。通常のKit利用者へRust
 toolchainを要求するものではありません。
 
 ```sh
-sh tests/test-vnext-rust.sh
+sh scripts/tests/test-vnext-rust.sh
 ```
 
 Rust CLIの個別確認は次のとおりです。
 
 ```sh
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-canonicalization prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-schema prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-rules prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-detection prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-kernel prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-context prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-project prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-lock prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-submission prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-application prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-store prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-persistent prototype/vnext/golden/v1
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
-  verify-explain prototype/vnext/golden/v1
+cargo run --locked -- \
+  verify-canonicalization testdata/golden/v1
+cargo run --locked -- \
+  verify-schema testdata/golden/v1
+cargo run --locked -- \
+  verify-rules testdata/golden/v1
+cargo run --locked -- \
+  verify-detection testdata/golden/v1
+cargo run --locked -- \
+  verify-kernel testdata/golden/v1
+cargo run --locked -- \
+  verify-context testdata/golden/v1
+cargo run --locked -- \
+  verify-project testdata/golden/v1
+cargo run --locked -- \
+  verify-lock testdata/golden/v1
+cargo run --locked -- \
+  verify-submission testdata/golden/v1
+cargo run --locked -- \
+  verify-application testdata/golden/v1
+cargo run --locked -- \
+  verify-store testdata/golden/v1
+cargo run --locked -- \
+  verify-persistent testdata/golden/v1
+cargo run --locked -- \
+  verify-explain testdata/golden/v1
 ```
 
 実際の導入Projectに対しては、Framework lockの`framework_release`に対応するReleaseを`.agentic/cache/releases/<release-id>/`から自動解決します。
 
 ```sh
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
+cargo run --locked -- \
   next change.example \
   --project /path/to/project
 
-cargo run --manifest-path prototype/vnext/rust/Cargo.toml --locked -- \
+cargo run --locked -- \
   explain change.example \
   --project /path/to/project \
   --format json
@@ -626,7 +626,7 @@ AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
 AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=<64-character-ed25519-public-key> \
 AGENTIC_RELEASE_SOURCE_ID=remote:official \
 AGENTIC_RELEASE_SIGNER_KEY_ID=framework.release.2026 \
-sh prototype/vnext/scripts/release-ci.sh
+sh scripts/release-ci.sh
 ```
 
 このscriptは同じ入力を独立に二度buildしてtarと候補lockをbyte単位で比較し、それぞれを`release install-archive`で再検証します。その後に最終成果物を`dist/vnext/`へ作り、同じ検査をもう一度通します。`.github/workflows/vnext-release.yml`は手動起動だけを許可し、秘密鍵をRepository secret、対応する公開鍵をRepository variableから読み、検証済みFramework候補を14日間のCI Artifactとして保存します。外部Releaseへの公開や導入先lockの更新は行いません。
@@ -655,8 +655,8 @@ candidate-framework.lock
 distribution-trust.json
 publish-receipt.json
 SHA256SUMS
-agentic-vnext-rust-<target>[.exe]
-agentic-vnext-rust-<target>[.exe].build.json
+agentic-<target>[.exe]
+agentic-<target>[.exe].build.json
 publication-record.json
 ```
 
@@ -665,7 +665,7 @@ publication-record.json
 利用者はchecksumに加え、GitHub CLIでbinaryのprovenanceを検証できます。
 
 ```sh
-gh attestation verify agentic-vnext-rust-x86_64-unknown-linux-gnu \
+gh attestation verify agentic-x86_64-unknown-linux-gnu \
   --repo <owner>/<repository> \
   --signer-workflow <owner>/<repository>/.github/workflows/vnext-release.yml
 ```
@@ -673,7 +673,7 @@ gh attestation verify agentic-vnext-rust-x86_64-unknown-linux-gnu \
 公開済みbinaryの初回導入は、Release tagを明示してbootstrapを実行します。POSIX環境では次のとおりです。
 
 ```sh
-sh prototype/vnext/bootstrap/install.sh \
+sh bootstrap/install.sh \
   --repo <owner>/<repository> \
   --tag framework-<release-id> \
   --install-root "$HOME/.local/share/agentic"
@@ -722,33 +722,33 @@ sources:
 
 | ファイル | 役割 |
 |---|---|
-| `rust/src/source_detection.rs` | 対応・inventory対象言語の登録、共通parse・正規化・分類・整列処理、言語横断conformanceを定義 |
-| `rust/src/framework_detection.rs` | 主要ORM・メッセージングAPIのproject/source根拠から、非authoritativeなframework method Binding候補を生成 |
-| `rust/src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
-| `rust/src/java_detection.rs` | Java構文からmethod・constructor・呼出先・物理resourceを観測 |
-| `rust/src/kotlin_detection.rs` | Kotlin構文からfunction・navigation call・物理resourceを観測 |
-| `rust/src/go_detection.rs` | Go構文からfunction・method・selector call・物理resourceを観測 |
-| `rust/src/rust_detection.rs` | Rust構文からfunction・field call・物理resourceを観測 |
-| `rust/src/ruby_detection.rs` | Ruby構文からmethod・singleton method・明示的receiver call・物理resourceを観測 |
-| `rust/src/php_detection.rs` | PHP構文からfunction・method・member/nullsafe/static call・物理resourceを観測 |
-| `rust/src/csharp_detection.rs` | C#構文からmethod・constructor・通常/null条件呼出し・物理resourceを観測 |
-| `rust/src/swift_detection.rs` | Swift構文からfunction・initializer・navigation call・物理resourceを観測 |
-| `rust/src/scala_detection.rs` | Scala 2/3構文からfunction・extension・通常/infix/postfix call・物理resourceを観測 |
-| `rust/src/c_detection.rs` | C構文からfunction・free function call・struct function pointer call・物理resourceを観測 |
-| `rust/src/gdscript_detection.rs` | Godot GDScript構文からscript class・inner class・function・property accessor・lambda・attribute call・Signal発火・物理resourceを観測 |
-| `rust/src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
-| `rust/src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
-| `rust/src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
-| `rust/src/binding_draft_validation.rs` | review済みObservation Draftの完全性・authority・source freshnessを正式反映前に検証 |
-| `rust/src/detector_benchmark.rs` | review済みcorpusに対するDetector・framework候補のprecision／recallと閾値判定を生成 |
-| `rust/src/detector_audit_baseline.rs` | 固定Repositoryの全入力・監査Report・既知gapをreview済みbaselineと比較 |
-| `rust/src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
-| `rust/src/signal_catalog.rs` | 標準Signal Domain、Signal、binding、typed repository factからの変換と、全Consumer共通の検証済みRegistryを提供 |
-| `rust/src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
-| `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
-| `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
-| `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
-| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証・明示適用を行う |
+| `src/source_detection.rs` | 対応・inventory対象言語の登録、共通parse・正規化・分類・整列処理、言語横断conformanceを定義 |
+| `src/framework_detection.rs` | 主要ORM・メッセージングAPIのproject/source根拠から、非authoritativeなframework method Binding候補を生成 |
+| `src/python_detection.rs` | Python構文から関数・呼出先・物理resourceを機械的に観測 |
+| `src/java_detection.rs` | Java構文からmethod・constructor・呼出先・物理resourceを観測 |
+| `src/kotlin_detection.rs` | Kotlin構文からfunction・navigation call・物理resourceを観測 |
+| `src/go_detection.rs` | Go構文からfunction・method・selector call・物理resourceを観測 |
+| `src/rust_detection.rs` | Rust構文からfunction・field call・物理resourceを観測 |
+| `src/ruby_detection.rs` | Ruby構文からmethod・singleton method・明示的receiver call・物理resourceを観測 |
+| `src/php_detection.rs` | PHP構文からfunction・method・member/nullsafe/static call・物理resourceを観測 |
+| `src/csharp_detection.rs` | C#構文からmethod・constructor・通常/null条件呼出し・物理resourceを観測 |
+| `src/swift_detection.rs` | Swift構文からfunction・initializer・navigation call・物理resourceを観測 |
+| `src/scala_detection.rs` | Scala 2/3構文からfunction・extension・通常/infix/postfix call・物理resourceを観測 |
+| `src/c_detection.rs` | C構文からfunction・free function call・struct function pointer call・物理resourceを観測 |
+| `src/gdscript_detection.rs` | Godot GDScript構文からscript class・inner class・function・property accessor・lambda・attribute call・Signal発火・物理resourceを観測 |
+| `src/script_detection.rs` | JavaScript・JSX・TypeScript・TSX構文から同じ物理情報を観測 |
+| `src/git_repository.rs` | Git解析対象の列挙、Binding Record適用、coverage生成 |
+| `src/binding_validation.rs` | Binding違反とcoverageによる検査不能を分けた検証reportを生成 |
+| `src/binding_draft_validation.rs` | review済みObservation Draftの完全性・authority・source freshnessを正式反映前に検証 |
+| `src/detector_benchmark.rs` | review済みcorpusに対するDetector・framework候補のprecision／recallと閾値判定を生成 |
+| `src/detector_audit_baseline.rs` | 固定Repositoryの全入力・監査Report・既知gapをreview済みbaselineと比較 |
+| `src/detection.rs` | 正規化したrepository factからSignal候補を生成 |
+| `src/signal_catalog.rs` | 標準Signal Domain、Signal、binding、typed repository factからの変換と、全Consumer共通の検証済みRegistryを提供 |
+| `src/rules.rs` | Requirement・Ruleの構造検査とRule Index生成 |
+| `src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
+| `src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
+| `src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
+| `src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証・明示適用を行う |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
@@ -757,14 +757,14 @@ sources:
 | `schemas/outputs/v1/` | CLI生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Migration Application、Contract Health Report／Gate Report、Detector Benchmark／Repository Audit Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
-| `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
-| `rust/` | build済みバイナリ移行を検証するRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
-| `agentic_vnext/application.py` | `next`と`submit`のModule呼出順を管理 |
-| `fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
-| `fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
-| `benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
-| `benchmarks/real-projects-v1/` | 固定revisionの4 OSS Repositoryから代表sourceを収録したoffline品質corpus |
-| `benchmarks/repository-audits-v1/` | 固定revisionの4 OSS Repository全体に対するreview済み監査digestと既知gap |
+| `testdata/golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
+| `src/`、`tests/` | 正準実装のRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
+| `legacy/agentic_vnext/` | 過去の設計探索に使ったPython実装。新しい設計の実装対象にはしない |
+| `testdata/fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
+| `testdata/fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
+| `testdata/benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
+| `testdata/benchmarks/real-projects-v1/` | 固定revisionの4 OSS Repositoryから代表sourceを収録したoffline品質corpus |
+| `testdata/benchmarks/repository-audits-v1/` | 固定revisionの4 OSS Repository全体に対するreview済み監査digestと既知gap |
 
 ## 現時点の制約
 

@@ -1,5 +1,5 @@
-use agentic_vnext_rust::detector_benchmark::run_detector_benchmark;
-use agentic_vnext_rust::schema::validate_json_document;
+use agentic::detector_benchmark::run_detector_benchmark;
+use agentic::schema::validate_json_document;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -82,7 +82,7 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
     let source = fs::read_to_string(&source_path).unwrap();
     fs::write(source_path, format!("{source}    audit.insert(order)\n")).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .arg("benchmark")
         .arg(&temporary)
         .args(["--format", "json"])
@@ -102,13 +102,13 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
 
 fn corpus_root(corpus: &str) -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../benchmarks")
+        .join("testdata/benchmarks")
         .join(corpus)
 }
 
 fn validate_schema(value: &Value, relative: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../schemas")
+        .join("schemas")
         .join(relative);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();

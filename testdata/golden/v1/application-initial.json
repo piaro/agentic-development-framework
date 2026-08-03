@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "case_id": "db-sqs.initial",
-  "schema_root": "../../schemas/v1",
+  "schema_root": "../../../schemas/v1",
   "change_id": "change.place-order",
   "input": {
     "project": {

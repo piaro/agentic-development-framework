@@ -19,7 +19,7 @@
     },
     "binary_name": {
       "type": "string",
-      "pattern": "^agentic-vnext-rust-[A-Za-z0-9._-]+(?:\\.exe)?$"
+      "pattern": "^agentic-[A-Za-z0-9._-]+(?:\\.exe)?$"
     },
     "target": {
       "enum": [

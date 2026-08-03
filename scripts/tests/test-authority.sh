@@ -3,7 +3,7 @@
 set -eu
 
 TEST_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$TEST_DIR/.." && pwd)
+KIT_ROOT=$(CDPATH= cd -- "$TEST_DIR/../.." && pwd)
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-authority.XXXXXX")
 
 cleanup() {
@@ -358,6 +358,6 @@ if "$CLI" --root "$TARGET" change ready "$CHANGE" >/dev/null 2>&1; then
   exit 1
 fi
 
-grep -q 'authority-missing' "$KIT_ROOT/tests/fixtures/authority/create-retry-gap/expected-contract-challenge.yaml"
+grep -q 'authority-missing' "$KIT_ROOT/scripts/tests/fixtures/authority/create-retry-gap/expected-contract-challenge.yaml"
 
 printf 'authority tests passed\n'

@@ -8,8 +8,8 @@ if [ "$#" -ne 2 ]; then
 fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../../.." && pwd)
-RUST_ROOT=$KIT_ROOT/prototype/vnext/rust
+KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+RUST_ROOT=$KIT_ROOT
 EXPECTED_TARGET=$1
 OUTPUT_DIR=$2
 SOURCE_REVISION=${GITHUB_SHA:?GITHUB_SHA is required}
@@ -47,12 +47,12 @@ AGENTIC_BUILD_SOURCE_REVISION=$SOURCE_REVISION cargo build \
 
 case "$EXPECTED_TARGET" in
   *-windows-msvc)
-    SOURCE_BINARY=$RUST_ROOT/target/release/agentic-vnext-rust.exe
-    BINARY_NAME=agentic-vnext-rust-$EXPECTED_TARGET.exe
+    SOURCE_BINARY=$RUST_ROOT/target/release/agentic.exe
+    BINARY_NAME=agentic-$EXPECTED_TARGET.exe
     ;;
   *)
-    SOURCE_BINARY=$RUST_ROOT/target/release/agentic-vnext-rust
-    BINARY_NAME=agentic-vnext-rust-$EXPECTED_TARGET
+    SOURCE_BINARY=$RUST_ROOT/target/release/agentic
+    BINARY_NAME=agentic-$EXPECTED_TARGET
     ;;
 esac
 if [ ! -f "$SOURCE_BINARY" ]; then

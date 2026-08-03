@@ -2,7 +2,7 @@
 
 AIエージェントを前提に、Repository内の仕様・判断・実装・検証を接続する開発コントロールプレーンです。
 
-次期構成の検討内容は`FRAMEWORK-REVIEW.md`、現行CLIの標準経路へ未接続の検証実装は`prototype/vnext/README.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackに加え、現行Projectを変更しない移行診断、Migration Draftのレビュー、隔離候補のCompletion Record・署名・Schema検証、検証済み候補の明示適用までを配布候補として検証しています。
+次期構成の検討内容は`docs/FRAMEWORK-REVIEW.md`、現行CLIの標準経路へ未接続の検証実装は`docs/implementation.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackに加え、現行Projectを変更しない移行診断、Migration Draftのレビュー、隔離候補のCompletion Record・署名・Schema検証、検証済み候補の明示適用までを配布候補として検証しています。
 
 ## 目的
 
@@ -403,13 +403,47 @@ CLIは意味判断を自動化しません。候補の採否、authorityが要�
 
 人へすべてのgapを丸投げするのではなく、エージェントは既存authorityから解決できるものを処理し、未決定の問いだけを選択肢、影響、推奨とともに提示します。
 
+## Repositoryの構成
+
+Rust実装がRepository直下にあります。
+
+| 場所 | 内容 |
+|---|---|
+| `Cargo.toml`、`src/`、`tests/` | 正準実装のRust crate。バイナリ名は`agentic` |
+| `schemas/` | 保存Recordと生成物の言語非依存Schema。Framework Releaseにも含まれる |
+| `skill-src/`、`templates/` | エージェント向けSkillと文書雛形 |
+| `scripts/` | リリース生成・検証・公開の補助script。`scripts/tests/`に一連の受入テスト |
+| `bootstrap/` | 配布バイナリの導入script |
+| `testdata/` | golden期待値、固定入力、Detector品質corpus |
+| `docs/` | 実装の正本`implementation.md`と設計記録 |
+| `bin/`、`legacy/` | 旧Python実装。Skillの書き直し後に削除する |
+
 ## Kit開発時のValidation
 
 Kit自体を変更した場合は次を実行します。
 
 ```sh
-sh -n bin/agentic-init
-python3 -m py_compile bin/agentic
-sh tests/test-init.sh
+cargo fmt --check
+cargo clippy --all-targets --locked -- -D warnings
+cargo test --locked
+sh scripts/tests/test-init.sh
 python3 /path/to/skill-creator/scripts/quick_validate.py skill-src/<skill-name>
 ```
+
+`scripts/tests/test-init.sh`は、旧Python実装の導入処理とRust実装の受入テストをまとめて実行します。
+
+## ライセンス
+
+MITライセンスとApache License 2.0の二本立てです。利用者はどちらかを選べます。全文は`LICENSE-MIT`と`LICENSE-APACHE`にあります。
+
+このKitへ意図的に送った貢献は、追加の条件なしに同じ二本立ての条件で利用されます。
+
+配布するバイナリは依存ライブラリを静的に含みます。依存ライブラリの表示義務を満たすため、リリース物には第三者ライセンス表記を同梱します。表記は次で生成します。
+
+```sh
+python3 scripts/collect-third-party-notices.py \
+  --lock Cargo.lock \
+  --output THIRD-PARTY-NOTICES.md
+```
+
+公開対象のプラットフォームごとに`cargo fetch --target <triple>`を先に実行してください。WindowsとWebAssembly向けのパッケージは、対象を指定して取得しないと手元に現れません。

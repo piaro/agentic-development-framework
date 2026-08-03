@@ -106,7 +106,7 @@ pub fn published_binary_name(target: &str) -> String {
     } else {
         ""
     };
-    format!("agentic-vnext-rust-{target}{suffix}")
+    format!("agentic-{target}{suffix}")
 }
 
 /// Verify the native binary and the complete project bootstrap candidate.
@@ -679,7 +679,7 @@ fn copy_new_file(source: &Path, target: &Path) -> Result<(), BinaryInstallError>
     if source
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with("agentic-vnext-rust-") && !name.ends_with(".json"))
+        .is_some_and(|name| name.starts_with("agentic-") && !name.ends_with(".json"))
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(target, fs::Permissions::from_mode(0o755))
