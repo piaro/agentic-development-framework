@@ -26,6 +26,7 @@ pub struct GitRepositoryAdapter {
     root: PathBuf,
     manifest_path: PathBuf,
     require_clean: bool,
+    require_tracked_manifest: bool,
     signal_registry: SignalCatalogRegistry,
 }
 
@@ -81,8 +82,22 @@ impl GitRepositoryAdapter {
             root,
             manifest_path,
             require_clean,
+            require_tracked_manifest: true,
             signal_registry,
         })
+    }
+
+    /// Load a digest-bound, reviewed migration Candidate manifest before it is
+    /// applied to the repository. Source artifacts remain required to be
+    /// tracked; only this explicit Observation path may be untracked.
+    pub fn with_reviewed_manifest(
+        root: &Path,
+        manifest_path: &str,
+        signal_registry: SignalCatalogRegistry,
+    ) -> Result<Self, GitRepositoryError> {
+        let mut adapter = Self::with_signal_registry(root, manifest_path, false, signal_registry)?;
+        adapter.require_tracked_manifest = false;
+        Ok(adapter)
     }
 
     pub fn observe(&self) -> Result<Value, GitRepositoryError> {
@@ -346,7 +361,9 @@ impl GitRepositoryAdapter {
 
     fn read_manifest(&self) -> Result<Map<String, Value>, GitRepositoryError> {
         let manifest_relative = self.relative_string(&self.manifest_path)?;
-        self.assert_tracked(&manifest_relative)?;
+        if self.require_tracked_manifest {
+            self.assert_tracked(&manifest_relative)?;
+        }
         let manifest_text = fs::read_to_string(&self.manifest_path)
             .map_err(|error| git_error(format!("{}: {error}", self.manifest_path.display())))?;
         let manifest: Value = serde_yaml::from_str(&manifest_text)

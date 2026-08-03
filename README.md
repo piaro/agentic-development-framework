@@ -2,7 +2,7 @@
 
 AIエージェントを前提に、Repository内の仕様・判断・実装・検証を接続する開発コントロールプレーンです。
 
-次期構成の検討内容は`FRAMEWORK-REVIEW.md`、現行CLIの標準経路へ未接続の検証実装は`prototype/vnext/README.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackに加え、現行Projectを変更しない移行診断、Migration Draftのレビュー検証、隔離された候補生成、成果物のCompletion Record検証までを配布候補として検証しています。
+次期構成の検討内容は`FRAMEWORK-REVIEW.md`、現行CLIの標準経路へ未接続の検証実装は`prototype/vnext/README.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackに加え、現行Projectを変更しない移行診断、Migration Draftのレビュー、隔離候補のCompletion Record・署名・Schema検証までを配布候補として検証しています。
 
 ## 目的
 

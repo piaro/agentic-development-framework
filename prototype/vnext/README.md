@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、成果物とCompletion Recordの整合性を検証する経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、Completion Record、Framework Release署名、vNext Schemaを検証する経路まで接続しています。
 
 ## 検証できること
 
@@ -351,9 +351,18 @@ artifacts:
     digest: sha256:<file bytesのSHA-256>
 ```
 
-検証時は、Recordのsource revisionとDraft digest、reviewの必須項目、Draftに固定された全completion check、成果物のpathとbyte digestを照合します。同じ成果物を複数actionから参照したり、生成済みManifestやDraftを成果物として申告したりすることはできません。Completion Recordに申告されていない候補fileも`invalid`です。`preserve-history`の成果物は`migration-history/<action-id>/`配下に限定されます。Framework Release cacheは次段階の署名・file inventory検証でまとめて確認するため、この申告対象には含めません。
+検証時は、Recordのsource revisionとDraft digest、reviewの必須項目、Draftに固定された全completion check、成果物のpathとbyte digestを照合します。同じ成果物を複数actionから参照したり、生成済みManifestやDraftを成果物として申告したりすることはできません。Completion Recordに申告されていない候補fileも`invalid`です。`proceed`の成果物はactionのtarget path内、`preserve-history`の成果物は`migration-history/<action-id>/`配下に限定されます。Framework Release cacheは署名済みfile inventoryとしてまとめて検証するため、Completion Recordへの列挙は不要です。
 
-有効なCompletion Recordが確認されたactionは`pending_actions`から外れます。ただし、すべてのRecordが揃っても、現段階では`pending_validations`に`candidate-schema-and-release`が残るため`incomplete`です。選択したFramework Releaseの署名と、候補RecordのvNext Schema検証を接続するまでは`valid`にしません。既存Projectへの適用もまだ実装していません。
+有効なCompletion Recordが確認されたactionは`pending_actions`から外れます。未完了のactionがある間は、`pending_validations`にも`candidate-schema-and-release`が表示されます。すべてのactionが完了すると、次の検証を実行します。
+
+1. Candidate configとFramework lockを読み込む
+2. Trust Storeの有効な鍵でFramework Releaseの署名、source、artifact digest、file inventoryを検証する
+3. `rules.yaml`が選択した署名済みReleaseのRule sourceと一致することを確認する
+4. Repository Observationを元Projectの固定revisionに対して再実行し、source coverageとBinding authorityを確認する
+5. Completion Recordが申告した有効Recordの一覧と、実際に読み込めるRecordの一覧を照合する
+6. Contract、Decision、Change、Evidence、Resultを選択したReleaseのvNext Schemaで検証する
+
+すべて成功すると結果は`valid`になり、commandは終了コード0を返します。署名改変、Schema違反、未承認のBinding authorityなどがあれば`invalid`です。`valid`は候補が明示的な適用reviewへ進めることを示しますが、既存Projectへの適用自体はまだ実装していません。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 

@@ -718,6 +718,195 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
 }
 
 #[test]
+fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
+    let root = legacy_migration_project("migration-candidate-activation");
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&draft_output);
+    let mut draft: Value = serde_json::from_slice(&draft_output.stdout).unwrap();
+    complete_migration_reviews(&mut draft);
+    fs::write(
+        root.join("migration-draft.json"),
+        serde_json::to_vec_pretty(&draft).unwrap(),
+    )
+    .unwrap();
+
+    let output_relative = ".agentic/migration-candidates/activation-ready";
+    let generated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&generated);
+    let manifest: Value = serde_json::from_slice(&generated.stdout).unwrap();
+    let candidate = root.join(output_relative);
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/cli-project");
+    let release_project = TestProject::new();
+
+    fs::copy(
+        release_project.root.join(".agentic/framework.lock"),
+        candidate.join(".agentic/framework.lock"),
+    )
+    .unwrap();
+    fs::copy(
+        release_project
+            .root
+            .join(".agentic/trusted-release-keys.yaml"),
+        candidate.join(".agentic/trusted-release-keys.yaml"),
+    )
+    .unwrap();
+    copy_tree(
+        &release_project.release_root,
+        &candidate
+            .join(".agentic/cache/releases")
+            .join("prototype-vnext-dev"),
+    );
+    fs::copy(
+        release_project.release_root.join("rules.yaml"),
+        candidate.join("rules.yaml"),
+    )
+    .unwrap();
+    copy_tree(
+        &fixture_root.join("contracts"),
+        &candidate.join("contracts"),
+    );
+    copy_tree(
+        &fixture_root.join("decisions"),
+        &candidate.join("decisions"),
+    );
+    copy_tree(
+        &fixture_root.join(".agentic/changes"),
+        &candidate.join(".agentic/changes"),
+    );
+    let evidence_relative = ".agentic/changes/change.place-order/evidence/evidence.migration.json";
+    fs::create_dir_all(candidate.join(".agentic/changes/change.place-order/evidence")).unwrap();
+    fs::write(
+        candidate.join(evidence_relative),
+        serde_json::to_vec_pretty(&json!({
+            "schema_version": "1",
+            "id": "evidence.migration",
+            "change_id": "change.place-order",
+            "requirement_instances": [],
+            "contract_clause_refs": [],
+            "git_revision": manifest["source_revision"],
+            "method": "reviewed migration",
+            "outcome": "passed",
+            "summary": "Legacy Evidence was reviewed for the migration Candidate."
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        candidate.join(".agentic/repository-observation.yaml"),
+        "schema_version: \"5\"\nphase: pre-build\nanalysis:\n  roots: [.]\nartifacts: []\n",
+    )
+    .unwrap();
+
+    let action_artifacts = BTreeMap::from([
+        ("legacy-policies", vec!["rules.yaml"]),
+        ("contracts", vec!["contracts/contract.order-lifecycle.yaml"]),
+        (
+            "decisions",
+            vec![
+                "decisions/decision.order-model.yaml",
+                "decisions/decision.repository-bindings.yaml",
+            ],
+        ),
+        (
+            "change-workflow",
+            vec![".agentic/changes/change.place-order/change.yaml"],
+        ),
+        ("evidence", vec![evidence_relative]),
+        (
+            "repository-observation",
+            vec![".agentic/repository-observation.yaml"],
+        ),
+        (
+            "framework-release",
+            vec![
+                ".agentic/framework.lock",
+                ".agentic/trusted-release-keys.yaml",
+            ],
+        ),
+    ]);
+    for (action_id, artifacts) in &action_artifacts {
+        write_migration_completion(&candidate, &manifest, &draft, action_id, artifacts);
+    }
+
+    let valid = validate_migration_candidate_cli(&root, output_relative);
+    assert_success(&valid);
+    let report: Value = serde_json::from_slice(&valid.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "valid");
+    assert!(report["issues"].as_array().unwrap().is_empty());
+    assert!(report["pending_actions"].as_array().unwrap().is_empty());
+    assert!(report["pending_validations"].as_array().unwrap().is_empty());
+
+    let contract_path = candidate.join("contracts/contract.order-lifecycle.yaml");
+    let valid_contract = fs::read(&contract_path).unwrap();
+    let mut invalid_contract = read_yaml(&contract_path);
+    invalid_contract["schema_version"] = Value::String("invalid".to_owned());
+    write_yaml(&contract_path, &invalid_contract);
+    write_migration_completion(
+        &candidate,
+        &manifest,
+        &draft,
+        "contracts",
+        &action_artifacts["contracts"],
+    );
+    let invalid_schema = validate_migration_candidate_cli(&root, output_relative);
+    assert!(!invalid_schema.status.success());
+    let report: Value = serde_json::from_slice(&invalid_schema.stdout).unwrap();
+    assert_eq!(report["status"], "invalid");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "invalid-candidate-records")
+    );
+
+    fs::write(&contract_path, valid_contract).unwrap();
+    write_migration_completion(
+        &candidate,
+        &manifest,
+        &draft,
+        "contracts",
+        &action_artifacts["contracts"],
+    );
+    let release_manifest =
+        candidate.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml");
+    let mut tampered_release = read_yaml(&release_manifest);
+    tampered_release["signature"] = Value::String(format!("ed25519:{}", "0".repeat(128)));
+    write_yaml(&release_manifest, &tampered_release);
+    let invalid_release = validate_migration_candidate_cli(&root, output_relative);
+    assert!(!invalid_release.status.success());
+    let report: Value = serde_json::from_slice(&invalid_release.stdout).unwrap();
+    assert_eq!(report["status"], "invalid");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "invalid-framework-release")
+    );
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     let root = legacy_migration_project("migration-candidate-invalid");
     let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
@@ -4452,6 +4641,70 @@ fn complete_migration_reviews(draft: &mut Value) {
             });
         }
     }
+}
+
+fn write_migration_completion(
+    candidate: &Path,
+    manifest: &Value,
+    draft: &Value,
+    action_id: &str,
+    artifacts: &[&str],
+) {
+    let completed_checks = draft["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["id"] == action_id)
+        .unwrap()["completion_checks"]
+        .clone();
+    let artifacts = artifacts
+        .iter()
+        .map(|relative| {
+            let bytes = fs::read(candidate.join(relative)).unwrap();
+            json!({
+                "path": relative,
+                "digest": format!("sha256:{:x}", Sha256::digest(bytes))
+            })
+        })
+        .collect::<Vec<_>>();
+    let completion = json!({
+        "schema_version": "1",
+        "kind": "migration-action-completion",
+        "action_id": action_id,
+        "source_revision": manifest["source_revision"],
+        "draft_digest": manifest["draft_digest"],
+        "review": {
+            "reviewer": "migration-reviewer",
+            "rationale": format!("Reviewed every {action_id} artifact and completion check."),
+            "evidence_refs": [format!("review:{action_id}")]
+        },
+        "completed_checks": completed_checks,
+        "artifacts": artifacts
+    });
+    validate_output_schema(&completion, "migration-action-completion.schema.json");
+    fs::create_dir_all(candidate.join("migration-completions")).unwrap();
+    write_yaml(
+        &candidate
+            .join("migration-completions")
+            .join(format!("{action_id}.yaml")),
+        &completion,
+    );
+}
+
+fn validate_migration_candidate_cli(root: &Path, candidate: &str) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            candidate,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(root)
+        .output()
+        .unwrap()
 }
 
 struct TestProject {

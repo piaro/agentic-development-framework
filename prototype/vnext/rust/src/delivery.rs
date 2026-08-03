@@ -78,6 +78,21 @@ pub fn resolve_verified_release(
     )
 }
 
+/// Verify a Release selected for a new Project activation. Unlike runtime
+/// resolution, retired signing keys are rejected.
+pub fn resolve_verified_release_for_activation(
+    project_root: &Path,
+    framework_lock: &Value,
+    explicit_root: Option<&Path>,
+) -> Result<VerifiedRelease, DeliveryError> {
+    resolve_verified_release_for(
+        project_root,
+        framework_lock,
+        explicit_root,
+        TrustUse::NewActivation,
+    )
+}
+
 fn resolve_verified_release_for(
     project_root: &Path,
     framework_lock: &Value,

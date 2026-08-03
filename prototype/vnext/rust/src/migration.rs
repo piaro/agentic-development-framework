@@ -5,6 +5,12 @@
 //! whether legacy semantics are valid; candidate generation writes only to a
 //! new reserved directory.
 
+use crate::binding_validation::BindingValidationReport;
+use crate::delivery::resolve_verified_release_for_activation;
+use crate::filesystem_project::{DocumentFormat, FileProjectStore};
+use crate::git_repository::GitRepositoryAdapter;
+use crate::project_config::load_project_config;
+use crate::signal_catalog::SignalCatalogRegistry;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -1180,7 +1186,7 @@ pub fn validate_migration_candidate(
     }
 
     verify_candidate_generated_files(&candidate_root, &manifest, &mut issues);
-    let mut claimed_artifacts = BTreeSet::new();
+    let mut claimed_artifacts = BTreeMap::new();
     let pending_actions = match draft.as_ref() {
         Some(draft) => validate_action_completions(
             &candidate_root,
@@ -1198,16 +1204,23 @@ pub fn validate_migration_candidate(
             .collect::<Vec<_>>(),
     };
     verify_unclaimed_candidate_files(&candidate_root, &claimed_artifacts, &mut issues);
+    if issues.is_empty() && pending_actions.is_empty() {
+        validate_candidate_activation(
+            &root,
+            &candidate_root,
+            &candidate_relative,
+            &manifest,
+            &claimed_artifacts,
+            &mut issues,
+        );
+    }
     issues.sort();
     let status = if !issues.is_empty() {
         "invalid"
     } else if !pending_actions.is_empty() {
         "incomplete"
     } else {
-        // Completion Records prove artifact integrity and reviewed intent. The
-        // signed Release and its Schemas must still validate the assembled
-        // Candidate before this branch may return `valid`.
-        "incomplete"
+        "valid"
     };
     Ok(candidate_validation_report(
         status,
@@ -1222,7 +1235,7 @@ fn validate_action_completions(
     candidate_root: &Path,
     manifest: &MigrationCandidateManifest,
     draft: &MigrationDraftReport,
-    claimed_artifacts: &mut BTreeSet<String>,
+    claimed_artifacts: &mut BTreeMap<String, String>,
     issues: &mut Vec<MigrationCandidateValidationIssue>,
 ) -> Vec<String> {
     let completion_root = candidate_root.join("migration-completions");
@@ -1298,7 +1311,7 @@ fn validate_action_completions(
 
 fn verify_unclaimed_candidate_files(
     candidate_root: &Path,
-    claimed_artifacts: &BTreeSet<String>,
+    claimed_artifacts: &BTreeMap<String, String>,
     issues: &mut Vec<MigrationCandidateValidationIssue>,
 ) {
     let mut files = Vec::new();
@@ -1310,7 +1323,7 @@ fn verify_unclaimed_candidate_files(
         {
             continue;
         }
-        if !claimed_artifacts.contains(&file) {
+        if !claimed_artifacts.contains_key(&file) {
             issues.push(candidate_validation_issue(
                 "unclaimed-candidate-file",
                 &file,
@@ -1572,7 +1585,7 @@ fn validate_completion_artifacts(
     completion: &MigrationActionCompletion,
     pending: &MigrationPendingAction,
     relative: &str,
-    claimed_artifacts: &mut BTreeSet<String>,
+    claimed_artifacts: &mut BTreeMap<String, String>,
     issues: &mut Vec<MigrationCandidateValidationIssue>,
 ) {
     if completion.artifacts.is_empty() {
@@ -1593,12 +1606,17 @@ fn validate_completion_artifacts(
             ));
             continue;
         }
-        if !claimed_artifacts.insert(artifact.path.clone()) {
+        if let Some(owner) = claimed_artifacts.get(&artifact.path) {
             issues.push(candidate_validation_issue(
                 "shared-completion-artifact",
                 &artifact.path,
-                "One artifact cannot complete more than one migration action.",
+                &format!(
+                    "One artifact cannot complete both {owner:?} and {:?}.",
+                    pending.id
+                ),
             ));
+        } else {
+            claimed_artifacts.insert(artifact.path.clone(), pending.id.clone());
         }
         if is_reserved_candidate_artifact(&artifact.path) {
             issues.push(candidate_validation_issue(
@@ -1656,6 +1674,19 @@ fn validate_completion_artifacts(
             ));
         }
     } else {
+        for artifact in &action_artifacts {
+            if !pending
+                .target_paths
+                .iter()
+                .any(|target| artifact_covers_target(artifact, target))
+            {
+                issues.push(candidate_validation_issue(
+                    "out-of-scope-completion-artifact",
+                    artifact,
+                    "A proceed artifact must stay within one of its action target paths.",
+                ));
+            }
+        }
         for target in &pending.target_paths {
             if !action_artifacts
                 .iter()
@@ -1712,6 +1743,255 @@ fn artifact_covers_target(artifact: &str, target: &str) -> bool {
             .any(|extension| part.ends_with(extension))
     });
     !target_is_file || artifact_parts.len() == target_parts.len()
+}
+
+fn validate_candidate_activation(
+    project_root: &Path,
+    candidate_root: &Path,
+    candidate_relative: &str,
+    manifest: &MigrationCandidateManifest,
+    claimed_artifacts: &BTreeMap<String, String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let config = match load_project_config(candidate_root) {
+        Ok(config) => config,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-candidate-config",
+                ".agentic/config.yaml",
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    let lock_path = candidate_root.join(".agentic/framework.lock");
+    let framework_lock = match read_yaml_value(&lock_path) {
+        Ok(value) => value,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-framework-lock",
+                ".agentic/framework.lock",
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    let release =
+        match resolve_verified_release_for_activation(candidate_root, &framework_lock, None) {
+            Ok(release) => release,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "invalid-framework-release",
+                    ".agentic/cache/releases",
+                    &error.to_string(),
+                ));
+                return;
+            }
+        };
+    validate_candidate_rules(candidate_root, &release.rule_source, issues);
+
+    let observation_relative = format!(
+        "{candidate_relative}/{}",
+        config.repository_observation.trim_start_matches("./")
+    );
+    let signal_registry = match SignalCatalogRegistry::built_in() {
+        Ok(registry) => registry,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-repository-observation",
+                &config.repository_observation,
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    let adapter = match GitRepositoryAdapter::with_reviewed_manifest(
+        project_root,
+        &observation_relative,
+        signal_registry,
+    ) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-repository-observation",
+                &config.repository_observation,
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    let repository = match adapter.observe() {
+        Ok(repository) => repository,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-repository-observation",
+                &config.repository_observation,
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    if repository["revision"].as_str() != Some(&manifest.source_revision) {
+        issues.push(candidate_validation_issue(
+            "repository-revision-mismatch",
+            &config.repository_observation,
+            "Repository Observation does not resolve to the Candidate source revision.",
+        ));
+    }
+    if repository["coverage"]["status"].as_str() != Some("complete") {
+        issues.push(candidate_validation_issue(
+            "incomplete-repository-coverage",
+            &config.repository_observation,
+            "Repository Observation has source coverage gaps.",
+        ));
+    }
+
+    let store = match FileProjectStore::open_with_options(
+        candidate_root,
+        repository.clone(),
+        &config.contract_root,
+        &config.decision_root,
+        DocumentFormat::Auto,
+        &release.schema_registry,
+    ) {
+        Ok(store) => store,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-candidate-records",
+                ".",
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    if let Err(error) = store.contract_health() {
+        issues.push(candidate_validation_issue(
+            "invalid-candidate-records",
+            ".",
+            &error.to_string(),
+        ));
+    }
+    let decisions = match store.decisions() {
+        Ok(decisions) => decisions,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-candidate-records",
+                &config.decision_root,
+                &error.to_string(),
+            ));
+            Vec::new()
+        }
+    };
+    match adapter.binding_authority_refs() {
+        Ok(authority_refs) => {
+            let report = BindingValidationReport::build(&repository, &decisions, &authority_refs);
+            if !report.is_valid() {
+                let reasons = report
+                    .issues
+                    .iter()
+                    .map(|issue| format!("{}: {}", issue.kind, issue.reason))
+                    .collect::<Vec<_>>()
+                    .join("; ");
+                issues.push(candidate_validation_issue(
+                    "invalid-candidate-bindings",
+                    &config.repository_observation,
+                    &reasons,
+                ));
+            }
+        }
+        Err(error) => issues.push(candidate_validation_issue(
+            "invalid-candidate-bindings",
+            &config.repository_observation,
+            &error.to_string(),
+        )),
+    }
+    validate_candidate_record_inventory(
+        candidate_root,
+        &store,
+        manifest,
+        claimed_artifacts,
+        issues,
+    );
+}
+
+fn validate_candidate_rules(
+    candidate_root: &Path,
+    signed_rule_source: &Value,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let path = candidate_root.join("rules.yaml");
+    if !path.exists() {
+        return;
+    }
+    match read_yaml_value(&path) {
+        Ok(candidate_rules) if candidate_rules == *signed_rule_source => {}
+        Ok(_) => issues.push(candidate_validation_issue(
+            "unsigned-candidate-rules",
+            "rules.yaml",
+            "Reviewed Candidate rules must exactly match the selected signed Framework Release rules.",
+        )),
+        Err(error) => issues.push(candidate_validation_issue(
+            "invalid-candidate-rules",
+            "rules.yaml",
+            &error.to_string(),
+        )),
+    }
+}
+
+fn validate_candidate_record_inventory(
+    candidate_root: &Path,
+    store: &FileProjectStore<'_>,
+    manifest: &MigrationCandidateManifest,
+    claimed_artifacts: &BTreeMap<String, String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let record_actions = ["contracts", "decisions", "change-workflow", "evidence"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let active_actions = manifest
+        .pending_actions
+        .iter()
+        .filter(|action| {
+            action.decision == "proceed" && record_actions.contains(action.id.as_str())
+        })
+        .map(|action| action.id.as_str())
+        .collect::<BTreeSet<_>>();
+    let expected = claimed_artifacts
+        .iter()
+        .filter(|(_, action_id)| active_actions.contains(action_id.as_str()))
+        .map(|(path, _)| path.clone())
+        .collect::<BTreeSet<_>>();
+    let actual = match store.all_record_paths() {
+        Ok(paths) => paths
+            .iter()
+            .map(|path| relative_display(candidate_root, path))
+            .collect::<BTreeSet<_>>(),
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-candidate-records",
+                ".",
+                &error.to_string(),
+            ));
+            return;
+        }
+    };
+    if actual != expected {
+        let missing = expected.difference(&actual).cloned().collect::<Vec<_>>();
+        let unreviewed = actual.difference(&expected).cloned().collect::<Vec<_>>();
+        issues.push(candidate_validation_issue(
+            "candidate-record-inventory-mismatch",
+            ".",
+            &format!(
+                "Reviewed Record files and Schema-loaded Record files differ; missing={missing:?}, unreviewed={unreviewed:?}."
+            ),
+        ));
+    }
+}
+
+fn read_yaml_value(path: &Path) -> Result<Value, MigrationError> {
+    let text = read_regular_utf8(path)?;
+    serde_yaml::from_str(&text)
+        .map_err(|error| migration_error(format!("cannot parse YAML: {error}")))
 }
 
 fn parse_candidate_draft(
