@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/migration-candidate-manifest.schema.json",
-  "title": "Migration Candidate Manifest v1",
+  "title": "Migration Candidate Manifest v2",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -10,13 +10,14 @@
     "status",
     "source_revision",
     "draft_digest",
+    "draft_source_path",
     "output_root",
     "generated_files",
     "pending_actions",
     "next"
   ],
   "properties": {
-    "schema_version": {"const": "1"},
+    "schema_version": {"const": "2"},
     "kind": {"const": "migration-candidate"},
     "status": {"const": "incomplete"},
     "source_revision": {
@@ -26,6 +27,12 @@
     "draft_digest": {
       "type": "string",
       "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "draft_source_path": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "minLength": 1}
+      ]
     },
     "output_root": {
       "type": "string",

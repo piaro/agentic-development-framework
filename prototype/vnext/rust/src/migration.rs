@@ -18,7 +18,8 @@ use std::process::Command;
 pub const MIGRATION_INSPECTION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "2";
 pub const MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION: &str = "1";
-pub const MIGRATION_CANDIDATE_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_CANDIDATE_SCHEMA_VERSION: &str = "2";
+pub const MIGRATION_CANDIDATE_VALIDATION_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -190,13 +191,15 @@ pub struct MigrationDraftValidationIssue {
     pub message: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MigrationCandidateManifest {
     pub schema_version: String,
     pub kind: String,
     pub status: String,
     pub source_revision: String,
     pub draft_digest: String,
+    pub draft_source_path: Option<String>,
     pub output_root: String,
     pub generated_files: Vec<MigrationCandidateFile>,
     pub pending_actions: Vec<MigrationPendingAction>,
@@ -228,18 +231,67 @@ impl MigrationCandidateManifest {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MigrationCandidateFile {
     pub path: String,
     pub digest: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MigrationPendingAction {
     pub id: String,
     pub decision: String,
     pub target_paths: Vec<String>,
     pub instruction: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationCandidateValidationReport {
+    pub schema_version: String,
+    pub status: String,
+    pub candidate_root: String,
+    pub source_revision: Option<String>,
+    pub issues: Vec<MigrationCandidateValidationIssue>,
+    pub pending_actions: Vec<String>,
+    pub next: String,
+}
+
+impl MigrationCandidateValidationReport {
+    pub fn render_text(&self) -> String {
+        let mut output = format!(
+            "Migration candidate validation: {}\ncandidate: {}\nsource revision: {}\n",
+            self.status,
+            self.candidate_root,
+            self.source_revision.as_deref().unwrap_or("-")
+        );
+        for issue in &self.issues {
+            output.push_str(&format!(
+                "- {} {}: {}\n",
+                issue.category, issue.path, issue.message
+            ));
+        }
+        if !self.pending_actions.is_empty() {
+            output.push_str(&format!(
+                "pending actions: {}\n",
+                self.pending_actions.join(",")
+            ));
+        }
+        output.push_str(&format!("Next: {}\n", self.next));
+        output
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.status == "valid"
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+pub struct MigrationCandidateValidationIssue {
+    pub category: String,
+    pub path: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -286,12 +338,12 @@ pub struct MigrationFinding {
 pub fn inspect_migration(
     project_root: impl AsRef<Path>,
 ) -> Result<MigrationInspectionReport, MigrationError> {
-    inspect_migration_ignoring(project_root.as_ref(), None)
+    inspect_migration_ignoring(project_root.as_ref(), &[])
 }
 
 fn inspect_migration_ignoring(
     project_root: &Path,
-    ignored_worktree_path: Option<&Path>,
+    ignored_worktree_paths: &[&Path],
 ) -> Result<MigrationInspectionReport, MigrationError> {
     let root = project_root
         .canonicalize()
@@ -301,28 +353,27 @@ fn inspect_migration_ignoring(
     }
     assert_git_top_level(&root)?;
     let revision = git(&root, &["rev-parse", "HEAD"])?;
-    let ignored_pathspec = ignored_worktree_path
-        .and_then(|path| path.canonicalize().ok())
-        .and_then(|path| path.strip_prefix(&root).ok().map(Path::to_path_buf))
-        .map(|path| format!(":(exclude){}", path.to_string_lossy().replace('\\', "/")));
-    let status = if let Some(pathspec) = ignored_pathspec.as_deref() {
-        git(
-            &root,
-            &[
-                "status",
-                "--porcelain=v1",
-                "--untracked-files=all",
-                "--",
-                ".",
-                pathspec,
-            ],
-        )?
-    } else {
-        git(
-            &root,
-            &["status", "--porcelain=v1", "--untracked-files=all"],
-        )?
-    };
+    let mut status_arguments = vec![
+        "status".to_owned(),
+        "--porcelain=v1".to_owned(),
+        "--untracked-files=all".to_owned(),
+    ];
+    let ignored_pathspecs = ignored_worktree_paths
+        .iter()
+        .filter_map(|path| path.canonicalize().ok())
+        .filter_map(|path| path.strip_prefix(&root).ok().map(Path::to_path_buf))
+        .map(|path| format!(":(exclude){}", path.to_string_lossy().replace('\\', "/")))
+        .collect::<Vec<_>>();
+    if !ignored_pathspecs.is_empty() {
+        status_arguments.push("--".to_owned());
+        status_arguments.push(".".to_owned());
+        status_arguments.extend(ignored_pathspecs);
+    }
+    let status_argument_refs = status_arguments
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    let status = git(&root, &status_argument_refs)?;
     let working_tree_clean = status.is_empty();
     let tracked = git(&root, &["ls-files"])?
         .lines()
@@ -700,7 +751,7 @@ pub fn validate_migration_draft(
         ));
     }
 
-    let inspection = inspect_migration_ignoring(&root, Some(&draft_path))?;
+    let inspection = inspect_migration_ignoring(&root, &[&draft_path])?;
     if inspection.readiness != "review-required" {
         let message = match inspection.readiness.as_str() {
             "already-vnext" => "The Project already uses vNext; migration is no longer required.",
@@ -781,27 +832,43 @@ pub fn generate_migration_candidate(
         .map_err(|error| migration_error(format!("cannot serialize migration draft: {error}")))?;
     let draft_digest = crate::canonical_digest(&canonical_value)
         .map_err(|error| migration_error(format!("cannot digest migration draft: {error}")))?;
+    let draft_source_path = draft_path
+        .strip_prefix(&root)
+        .ok()
+        .map(|path| path.to_string_lossy().replace('\\', "/"));
 
-    let config_bytes = concat!(
-        "schema_version: \"1\"\n",
-        "project_sources:\n",
-        "  contracts: contracts\n",
-        "  decisions: decisions\n",
-        "repository_observation: .agentic/repository-observation.yaml\n"
-    )
-    .as_bytes()
-    .to_vec();
+    let config_bytes = candidate_config_bytes();
     let mut draft_bytes = serde_json::to_vec_pretty(&draft)
         .map_err(|error| migration_error(format!("cannot serialize migration draft: {error}")))?;
     draft_bytes.push(b'\n');
+    let manifest = build_candidate_manifest(
+        &draft,
+        draft_digest,
+        draft_source_path,
+        output_relative,
+        &config_bytes,
+        &draft_bytes,
+    );
+    write_candidate_bundle(&output_root, &config_bytes, &draft_bytes, &manifest)?;
+    Ok(manifest)
+}
+
+fn build_candidate_manifest(
+    draft: &MigrationDraftReport,
+    draft_digest: String,
+    draft_source_path: Option<String>,
+    output_relative: String,
+    config_bytes: &[u8],
+    draft_bytes: &[u8],
+) -> MigrationCandidateManifest {
     let generated_files = vec![
         MigrationCandidateFile {
             path: ".agentic/config.yaml".to_owned(),
-            digest: byte_digest(&config_bytes),
+            digest: byte_digest(config_bytes),
         },
         MigrationCandidateFile {
             path: "migration-draft.json".to_owned(),
-            digest: byte_digest(&draft_bytes),
+            digest: byte_digest(draft_bytes),
         },
     ];
     let pending_actions = draft
@@ -827,26 +894,479 @@ pub fn generate_migration_candidate(
             }
         })
         .collect::<Vec<_>>();
-    let manifest = MigrationCandidateManifest {
+    MigrationCandidateManifest {
         schema_version: MIGRATION_CANDIDATE_SCHEMA_VERSION.to_owned(),
         kind: "migration-candidate".to_owned(),
         status: "incomplete".to_owned(),
         source_revision: draft.source_revision.clone(),
         draft_digest,
+        draft_source_path,
         output_root: output_relative,
         generated_files,
         pending_actions,
         next: "Complete every pending action inside this isolated candidate, then validate the candidate before any explicit application. Existing Project files were not changed."
             .to_owned(),
+    }
+}
+
+fn candidate_config_bytes() -> Vec<u8> {
+    concat!(
+        "schema_version: \"1\"\n",
+        "project_sources:\n",
+        "  contracts: contracts\n",
+        "  decisions: decisions\n",
+        "repository_observation: .agentic/repository-observation.yaml\n"
+    )
+    .as_bytes()
+    .to_vec()
+}
+
+pub fn validate_migration_candidate(
+    project_root: impl AsRef<Path>,
+    candidate_path: impl AsRef<Path>,
+) -> Result<MigrationCandidateValidationReport, MigrationError> {
+    let root = project_root
+        .as_ref()
+        .canonicalize()
+        .map_err(|error| migration_error(format!("cannot resolve project root: {error}")))?;
+    let (candidate_root, candidate_relative) =
+        resolve_existing_candidate(&root, candidate_path.as_ref())?;
+    let manifest_path = candidate_root.join("migration-manifest.yaml");
+    let manifest_text = match read_regular_utf8(&manifest_path) {
+        Ok(text) => text,
+        Err(error) => {
+            return Ok(candidate_validation_report(
+                "invalid",
+                candidate_relative,
+                None,
+                vec![candidate_validation_issue(
+                    "invalid-manifest",
+                    "migration-manifest.yaml",
+                    &error.to_string(),
+                )],
+                Vec::new(),
+            ));
+        }
     };
-    write_candidate_bundle(&output_root, &config_bytes, &draft_bytes, &manifest)?;
-    Ok(manifest)
+    let manifest_value: Value = match serde_yaml::from_str(&manifest_text) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(candidate_validation_report(
+                "invalid",
+                candidate_relative,
+                None,
+                vec![candidate_validation_issue(
+                    "invalid-manifest",
+                    "migration-manifest.yaml",
+                    &format!("Migration Candidate Manifest is not valid YAML: {error}"),
+                )],
+                Vec::new(),
+            ));
+        }
+    };
+    let manifest: MigrationCandidateManifest = match serde_json::from_value(manifest_value) {
+        Ok(manifest) => manifest,
+        Err(error) => {
+            return Ok(candidate_validation_report(
+                "invalid",
+                candidate_relative,
+                None,
+                vec![candidate_validation_issue(
+                    "invalid-manifest",
+                    "migration-manifest.yaml",
+                    &format!("Migration Candidate Manifest does not match version 2: {error}"),
+                )],
+                Vec::new(),
+            ));
+        }
+    };
+
+    let mut issues = Vec::new();
+    if !is_lower_hex(&manifest.source_revision, 40) {
+        return Ok(candidate_validation_report(
+            "invalid",
+            candidate_relative,
+            None,
+            vec![candidate_validation_issue(
+                "invalid-source-revision",
+                "migration-manifest.yaml",
+                "source_revision must be a 40-character lowercase Git object ID.",
+            )],
+            Vec::new(),
+        ));
+    }
+    if manifest.schema_version != MIGRATION_CANDIDATE_SCHEMA_VERSION
+        || manifest.kind != "migration-candidate"
+        || manifest.status != "incomplete"
+    {
+        issues.push(candidate_validation_issue(
+            "invalid-manifest-identity",
+            "migration-manifest.yaml",
+            "Manifest version, kind, or generated status is not supported.",
+        ));
+    }
+    if !manifest.draft_digest.starts_with("sha256:")
+        || !is_lower_hex(&manifest.draft_digest["sha256:".len()..], 64)
+    {
+        issues.push(candidate_validation_issue(
+            "invalid-draft-digest",
+            "migration-manifest.yaml",
+            "draft_digest must be a lowercase SHA-256 digest.",
+        ));
+    }
+    let mut ignored_paths = vec![candidate_root.clone()];
+    if let Some(relative) = &manifest.draft_source_path {
+        match safe_repository_path(&root, relative) {
+            Ok(source_path) if source_path.is_file() => match canonical_draft_digest(&source_path) {
+                Ok(digest) if digest == manifest.draft_digest => ignored_paths.push(source_path),
+                Ok(_) => issues.push(candidate_validation_issue(
+                    "draft-source-mismatch",
+                    relative,
+                    "draft_source_path does not contain the reviewed Draft fixed by draft_digest.",
+                )),
+                Err(error) => issues.push(candidate_validation_issue(
+                    "invalid-draft-source",
+                    relative,
+                    &error.to_string(),
+                )),
+            },
+            Ok(_) => {}
+            Err(error) => issues.push(candidate_validation_issue(
+                "unsafe-draft-source",
+                relative,
+                &error.to_string(),
+            )),
+        }
+    }
+    let ignored_refs = ignored_paths
+        .iter()
+        .map(PathBuf::as_path)
+        .collect::<Vec<_>>();
+    let inspection = inspect_migration_ignoring(&root, &ignored_refs)?;
+    if inspection.readiness != "review-required" {
+        issues.push(candidate_validation_issue(
+            "project-state",
+            ".",
+            "The current Project state is blocked; resolve migration inspect findings before validating the Candidate.",
+        ));
+        issues.sort();
+        return Ok(candidate_validation_report(
+            "blocked",
+            candidate_relative,
+            Some(manifest.source_revision),
+            issues,
+            manifest
+                .pending_actions
+                .iter()
+                .map(|action| action.id.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+        ));
+    }
+    if manifest.source_revision != inspection.repository.revision {
+        issues.push(candidate_validation_issue(
+            "stale-revision",
+            "migration-manifest.yaml",
+            "Candidate source_revision does not match the current Git HEAD.",
+        ));
+    }
+    if manifest.output_root != candidate_relative {
+        issues.push(candidate_validation_issue(
+            "candidate-location-mismatch",
+            "migration-manifest.yaml",
+            "Manifest output_root does not match the Candidate directory.",
+        ));
+    }
+
+    let draft_path = candidate_root.join("migration-draft.json");
+    let draft_bytes = match read_regular_bytes(&draft_path) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-generated-file",
+                "migration-draft.json",
+                &error.to_string(),
+            ));
+            Vec::new()
+        }
+    };
+    let draft = if draft_bytes.is_empty() {
+        None
+    } else {
+        parse_candidate_draft(&draft_bytes, &mut issues)
+    };
+    if let Some(draft) = &draft {
+        let canonical_value = serde_json::to_value(draft).map_err(|error| {
+            migration_error(format!("cannot serialize migration draft: {error}"))
+        })?;
+        let digest = crate::canonical_digest(&canonical_value)
+            .map_err(|error| migration_error(format!("cannot digest migration draft: {error}")))?;
+        if digest != manifest.draft_digest {
+            issues.push(candidate_validation_issue(
+                "draft-digest-mismatch",
+                "migration-draft.json",
+                "Embedded reviewed Draft does not match Manifest draft_digest.",
+            ));
+        }
+        let expected_draft = draft_from_inspection(inspection)?;
+        let mut immutable_draft = draft.clone();
+        for action in &mut immutable_draft.actions {
+            action.review = None;
+        }
+        if immutable_draft != expected_draft {
+            issues.push(candidate_validation_issue(
+                "modified-draft",
+                "migration-draft.json",
+                "Embedded Draft generated fields do not match the current source revision.",
+            ));
+        }
+        for action in &draft.actions {
+            let mut draft_issues = Vec::new();
+            validate_action_review(action, &mut draft_issues);
+            for issue in draft_issues {
+                issues.push(candidate_validation_issue(
+                    &issue.category,
+                    "migration-draft.json",
+                    &issue.message,
+                ));
+            }
+        }
+
+        let expected_manifest = build_candidate_manifest(
+            draft,
+            manifest.draft_digest.clone(),
+            manifest.draft_source_path.clone(),
+            candidate_relative.clone(),
+            &candidate_config_bytes(),
+            &draft_bytes,
+        );
+        if manifest != expected_manifest {
+            issues.push(candidate_validation_issue(
+                "modified-manifest",
+                "migration-manifest.yaml",
+                "Generated Manifest fields do not match the reviewed Draft and Candidate files.",
+            ));
+        }
+    }
+
+    verify_candidate_generated_files(&candidate_root, &manifest, &mut issues);
+    issues.sort();
+    let pending_actions = manifest
+        .pending_actions
+        .iter()
+        .map(|action| action.id.clone())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect::<Vec<_>>();
+    let status = if !issues.is_empty() {
+        "invalid"
+    } else if !pending_actions.is_empty() {
+        "incomplete"
+    } else {
+        "valid"
+    };
+    Ok(candidate_validation_report(
+        status,
+        candidate_relative,
+        Some(manifest.source_revision),
+        issues,
+        pending_actions,
+    ))
+}
+
+fn parse_candidate_draft(
+    bytes: &[u8],
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) -> Option<MigrationDraftReport> {
+    let value: Value = match serde_json::from_slice(bytes) {
+        Ok(value) => value,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-generated-file",
+                "migration-draft.json",
+                &format!("Embedded Draft is not valid JSON: {error}"),
+            ));
+            return None;
+        }
+    };
+    match serde_json::from_value(value) {
+        Ok(draft) => Some(draft),
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-generated-file",
+                "migration-draft.json",
+                &format!("Embedded Draft does not match schema version 2: {error}"),
+            ));
+            None
+        }
+    }
+}
+
+fn verify_candidate_generated_files(
+    candidate_root: &Path,
+    manifest: &MigrationCandidateManifest,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let expected_paths = [".agentic/config.yaml", "migration-draft.json"];
+    let manifest_paths = manifest
+        .generated_files
+        .iter()
+        .map(|file| file.path.as_str())
+        .collect::<BTreeSet<_>>();
+    if manifest_paths != expected_paths.into_iter().collect() {
+        issues.push(candidate_validation_issue(
+            "invalid-generated-file-list",
+            "migration-manifest.yaml",
+            "generated_files must contain exactly the vNext config and embedded Draft.",
+        ));
+    }
+    for file in &manifest.generated_files {
+        let path = match safe_repository_path(candidate_root, &file.path) {
+            Ok(path) => path,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "unsafe-generated-file",
+                    &file.path,
+                    &error.to_string(),
+                ));
+                continue;
+            }
+        };
+        match read_regular_bytes(&path) {
+            Ok(bytes) if byte_digest(&bytes) == file.digest => {}
+            Ok(_) => issues.push(candidate_validation_issue(
+                "generated-file-digest-mismatch",
+                &file.path,
+                "Generated file bytes do not match the Manifest digest.",
+            )),
+            Err(error) => issues.push(candidate_validation_issue(
+                "invalid-generated-file",
+                &file.path,
+                &error.to_string(),
+            )),
+        }
+    }
+    let config_path = candidate_root.join(".agentic/config.yaml");
+    if let Ok(bytes) = read_regular_bytes(&config_path)
+        && bytes != candidate_config_bytes()
+    {
+        issues.push(candidate_validation_issue(
+            "modified-config-candidate",
+            ".agentic/config.yaml",
+            "Generated vNext config candidate was modified.",
+        ));
+    }
+}
+
+fn canonical_draft_digest(path: &Path) -> Result<String, MigrationError> {
+    let text = read_regular_utf8(path)?;
+    let value: Value = serde_yaml::from_str(&text)
+        .map_err(|error| migration_error(format!("cannot parse migration draft: {error}")))?;
+    let draft: MigrationDraftReport = serde_json::from_value(value)
+        .map_err(|error| migration_error(format!("cannot load migration draft: {error}")))?;
+    let canonical_value = serde_json::to_value(draft)
+        .map_err(|error| migration_error(format!("cannot serialize migration draft: {error}")))?;
+    crate::canonical_digest(&canonical_value)
+        .map_err(|error| migration_error(format!("cannot digest migration draft: {error}")))
+}
+
+fn read_regular_utf8(path: &Path) -> Result<String, MigrationError> {
+    let bytes = read_regular_bytes(path)?;
+    String::from_utf8(bytes)
+        .map_err(|error| migration_error(format!("file is not valid UTF-8: {error}")))
+}
+
+fn read_regular_bytes(path: &Path) -> Result<Vec<u8>, MigrationError> {
+    let metadata = fs::symlink_metadata(path)
+        .map_err(|error| migration_error(format!("cannot inspect file: {error}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_file() {
+        return Err(migration_error(
+            "path must be a regular file, not a symlink",
+        ));
+    }
+    fs::read(path).map_err(|error| migration_error(format!("cannot read file: {error}")))
+}
+
+fn candidate_validation_report(
+    status: &str,
+    candidate_root: String,
+    source_revision: Option<String>,
+    issues: Vec<MigrationCandidateValidationIssue>,
+    pending_actions: Vec<String>,
+) -> MigrationCandidateValidationReport {
+    let next = match status {
+        "valid" => "The Candidate is complete and may proceed to explicit application review.",
+        "incomplete" => {
+            "Complete every pending action inside the isolated Candidate, then validate it again. No active Project files were changed."
+        }
+        "blocked" => {
+            "Resolve the Project-state blocker and regenerate the Candidate from the current revision. No active Project files were changed."
+        }
+        _ => {
+            "Resolve every integrity issue or regenerate the Candidate. No active Project files were changed."
+        }
+    };
+    MigrationCandidateValidationReport {
+        schema_version: MIGRATION_CANDIDATE_VALIDATION_SCHEMA_VERSION.to_owned(),
+        status: status.to_owned(),
+        candidate_root,
+        source_revision,
+        issues,
+        pending_actions,
+        next: next.to_owned(),
+    }
+}
+
+fn candidate_validation_issue(
+    category: &str,
+    path: &str,
+    message: &str,
+) -> MigrationCandidateValidationIssue {
+    MigrationCandidateValidationIssue {
+        category: category.to_owned(),
+        path: path.to_owned(),
+        message: message.to_owned(),
+    }
 }
 
 fn resolve_candidate_output(
     root: &Path,
     relative: &Path,
 ) -> Result<(PathBuf, String), MigrationError> {
+    let (output, relative) = candidate_location(root, relative)?;
+    match fs::symlink_metadata(&output) {
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Ok(_) => {
+            return Err(migration_error(format!(
+                "refusing to overwrite existing migration candidate: {relative}"
+            )));
+        }
+        Err(error) => {
+            return Err(migration_error(format!(
+                "cannot inspect migration candidate output: {error}"
+            )));
+        }
+    }
+    Ok((output, relative))
+}
+
+fn resolve_existing_candidate(
+    root: &Path,
+    relative: &Path,
+) -> Result<(PathBuf, String), MigrationError> {
+    let (candidate, relative) = candidate_location(root, relative)?;
+    let metadata = fs::symlink_metadata(&candidate)
+        .map_err(|error| migration_error(format!("cannot inspect migration candidate: {error}")))?;
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        return Err(migration_error(
+            "migration candidate must be a directory, not a symlink",
+        ));
+    }
+    Ok((candidate, relative))
+}
+
+fn candidate_location(root: &Path, relative: &Path) -> Result<(PathBuf, String), MigrationError> {
     if relative.is_absolute() {
         return Err(migration_error(
             "migration candidate output must be repository-relative",
@@ -877,19 +1397,6 @@ fn resolve_candidate_output(
     }
     let relative = parts.join("/");
     let output = safe_repository_path(root, &relative)?;
-    match fs::symlink_metadata(&output) {
-        Err(error) if error.kind() == ErrorKind::NotFound => {}
-        Ok(_) => {
-            return Err(migration_error(format!(
-                "refusing to overwrite existing migration candidate: {relative}"
-            )));
-        }
-        Err(error) => {
-            return Err(migration_error(format!(
-                "cannot inspect migration candidate output: {error}"
-            )));
-        }
-    }
     Ok((output, relative))
 }
 
@@ -942,6 +1449,13 @@ fn write_candidate_file(path: &Path, bytes: &[u8]) -> Result<(), MigrationError>
 
 fn byte_digest(bytes: &[u8]) -> String {
     format!("sha256:{:x}", Sha256::digest(bytes))
+}
+
+fn is_lower_hex(value: &str, length: usize) -> bool {
+    value.len() == length
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 fn validate_action_review(

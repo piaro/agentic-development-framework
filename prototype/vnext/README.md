@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成する経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、その整合性を検証する経路まで接続しています。
 
 ## 検証できること
 
@@ -316,7 +316,22 @@ agentic migration generate-candidate \
 
 Migration DraftだけではContractやDecisionの具体的な変換内容、Detector出力、署名済みFramework Releaseを確定できません。これらを自動生成せず、`proceed`と判断された項目をManifestの`pending_actions`へ残します。`preserve-history`も履歴保存が終わるまで未完了です。`retire`は生成対象にしません。そのため、生成直後の候補は常に`incomplete`であり、vNext Projectとして適用できるとは扱いません。
 
-Manifestは`schemas/outputs/v1/migration-candidate-manifest.schema.json`に従います。候補生成では、指定した新規directoryと不足している親directoryだけを作成します。現行の`.agentic/config.yaml`、Contract、Decision、Git index、commitは変更しません。候補の完全性検証と既存Projectへの適用はまだ実装していません。
+Manifest v2は`schemas/outputs/v1/migration-candidate-manifest.schema.json`に従います。候補生成では、指定した新規directoryと不足している親directoryだけを作成します。現行の`.agentic/config.yaml`、Contract、Decision、Git index、commitは変更しません。
+
+候補生成後は、次のcommandで生成時の整合性と未完了作業を検証できます。
+
+```sh
+agentic migration validate-candidate \
+  --project /path/to/current-project \
+  --candidate .agentic/migration-candidates/review-1 \
+  --format text
+```
+
+この検証では、source revision、埋め込まれたDraftのdigestとレビュー、Manifestの生成済みフィールド、vNext設定候補とDraft fileのbyte digestを確認します。候補directoryと、同じDraft digestを持つ生成元Draftだけをworktreeのdirty判定から除外します。それ以外の変更があれば`blocked`です。
+
+生成直後の結果は、整合性に問題がなければ`incomplete`です。`pending_actions`が残るためcommandは非0で終了します。生成fileやManifestの改変は`invalid`、source側の検証を妨げる状態は`blocked`です。`valid`は今後の完了記録に予約しており、現行のCandidate Manifest v2では生成しません。JSON Reportは`schemas/outputs/v1/migration-candidate-validation-report.schema.json`に従います。
+
+候補にfileを追加しただけでは`pending_actions`を完了扱いにしません。意味reviewとSchema・署名検証を結び付ける完了記録、および既存Projectへの適用はまだ実装していません。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
@@ -671,7 +686,7 @@ sources:
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
 | `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
-| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証と隔離候補の生成を行う |
+| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証を行う |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |

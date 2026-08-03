@@ -440,8 +440,10 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     assert_success(&output);
     let manifest: Value = serde_json::from_slice(&output.stdout).unwrap();
     validate_output_schema(&manifest, "migration-candidate-manifest.schema.json");
+    assert_eq!(manifest["schema_version"], "2");
     assert_eq!(manifest["status"], "incomplete");
     assert_eq!(manifest["output_root"], output_relative);
+    assert_eq!(manifest["draft_source_path"], "migration-draft.json");
     assert!(
         manifest["pending_actions"]
             .as_array()
@@ -490,6 +492,52 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         legacy_config
     );
 
+    let validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!validation.status.success());
+    let report: Value = serde_json::from_slice(&validation.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "incomplete");
+    assert!(report["issues"].as_array().unwrap().is_empty());
+    assert!(
+        report["pending_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action == "contracts")
+    );
+
+    fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
+    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!blocked.status.success());
+    let report: Value = serde_json::from_slice(&blocked.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "blocked");
+    fs::remove_file(root.join("unrelated.txt")).unwrap();
+
     let manifest_before = fs::read(candidate.join("migration-manifest.yaml")).unwrap();
     let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args([
@@ -509,6 +557,36 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     assert_eq!(
         fs::read(candidate.join("migration-manifest.yaml")).unwrap(),
         manifest_before
+    );
+
+    fs::write(
+        candidate.join(".agentic/config.yaml"),
+        "schema_version: tampered\n",
+    )
+    .unwrap();
+    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!invalid.status.success());
+    let report: Value = serde_json::from_slice(&invalid.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "invalid");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "generated-file-digest-mismatch")
     );
     let _ = fs::remove_dir_all(root);
 }

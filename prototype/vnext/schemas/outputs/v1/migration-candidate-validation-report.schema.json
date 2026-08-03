@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/migration-candidate-validation-report.schema.json",
+  "title": "Migration Candidate Validation Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "candidate_root",
+    "source_revision",
+    "issues",
+    "pending_actions",
+    "next"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "status": {"enum": ["valid", "incomplete", "invalid", "blocked"]},
+    "candidate_root": {
+      "type": "string",
+      "pattern": "^\\.agentic/migration-candidates/[A-Za-z0-9._/-]+$"
+    },
+    "source_revision": {
+      "oneOf": [
+        {"type": "null"},
+        {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+      ]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category", "path", "message"],
+        "properties": {
+          "category": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "path": {"type": "string", "minLength": 1},
+          "message": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "pending_actions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "next": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "valid"}}},
+      "then": {
+        "properties": {
+          "issues": {"maxItems": 0},
+          "pending_actions": {"maxItems": 0}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "incomplete"}}},
+      "then": {
+        "properties": {
+          "issues": {"maxItems": 0},
+          "pending_actions": {"minItems": 1}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"enum": ["invalid", "blocked"]}}},
+      "then": {"properties": {"issues": {"minItems": 1}}}
+    }
+  ]
+}
