@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/migration-application.schema.json",
+  "title": "Migration Application v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "kind",
+    "status",
+    "application_id",
+    "candidate_root",
+    "source_revision",
+    "candidate_manifest_digest",
+    "application_root",
+    "applied_files",
+    "archived_paths",
+    "next"
+  ],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "kind": {"const": "migration-application"},
+    "status": {"const": "applied"},
+    "application_id": {
+      "type": "string",
+      "pattern": "^migration-[0-9a-f]{12}-[0-9a-f]{12}$"
+    },
+    "candidate_root": {
+      "type": "string",
+      "pattern": "^\\.agentic/migration-candidates/[A-Za-z0-9._/-]+$"
+    },
+    "source_revision": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "candidate_manifest_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "application_root": {
+      "type": "string",
+      "pattern": "^\\.agentic/migrations/migration-[0-9a-f]{12}-[0-9a-f]{12}$"
+    },
+    "applied_files": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "digest"],
+        "properties": {
+          "path": {"type": "string", "minLength": 1},
+          "digest": {
+            "type": "string",
+            "pattern": "^sha256:[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "archived_paths": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source", "archive"],
+        "properties": {
+          "source": {"type": "string", "minLength": 1},
+          "archive": {
+            "type": "string",
+            "pattern": "^\\.agentic/migration-history/migration-[0-9a-f]{12}-[0-9a-f]{12}/source/.+$"
+          }
+        }
+      }
+    },
+    "next": {"type": "string", "minLength": 1}
+  }
+}

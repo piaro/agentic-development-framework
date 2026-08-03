@@ -27,6 +27,7 @@ pub const MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_CANDIDATE_SCHEMA_VERSION: &str = "2";
 pub const MIGRATION_ACTION_COMPLETION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_CANDIDATE_VALIDATION_SCHEMA_VERSION: &str = "2";
+pub const MIGRATION_APPLICATION_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -327,6 +328,52 @@ pub struct MigrationCandidateValidationIssue {
     pub category: String,
     pub path: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationApplicationRecord {
+    pub schema_version: String,
+    pub kind: String,
+    pub status: String,
+    pub application_id: String,
+    pub candidate_root: String,
+    pub source_revision: String,
+    pub candidate_manifest_digest: String,
+    pub application_root: String,
+    pub applied_files: Vec<MigrationAppliedFile>,
+    pub archived_paths: Vec<MigrationArchivedPath>,
+    pub next: String,
+}
+
+impl MigrationApplicationRecord {
+    pub fn render_text(&self) -> String {
+        let mut output = format!(
+            "Migration application: {}\napplication: {}\ncandidate: {}\nsource revision: {}\n",
+            self.status, self.application_id, self.candidate_root, self.source_revision
+        );
+        output.push_str("applied files:\n");
+        for file in &self.applied_files {
+            output.push_str(&format!("- {} {}\n", file.path, file.digest));
+        }
+        output.push_str("archived paths:\n");
+        for archived in &self.archived_paths {
+            output.push_str(&format!("- {} -> {}\n", archived.source, archived.archive));
+        }
+        output.push_str(&format!("Next: {}\n", self.next));
+        output
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationAppliedFile {
+    pub path: String,
+    pub digest: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct MigrationArchivedPath {
+    pub source: String,
+    pub archive: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -1231,6 +1278,475 @@ pub fn validate_migration_candidate(
     ))
 }
 
+pub fn apply_migration_candidate(
+    project_root: impl AsRef<Path>,
+    candidate_path: impl AsRef<Path>,
+) -> Result<MigrationApplicationRecord, MigrationError> {
+    let root = project_root
+        .as_ref()
+        .canonicalize()
+        .map_err(|error| migration_error(format!("cannot resolve project root: {error}")))?;
+    let (candidate_root, candidate_relative) =
+        resolve_existing_candidate(&root, candidate_path.as_ref())?;
+    let _lock = MigrationApplyLock::acquire(&candidate_root)?;
+    let validation = validate_migration_candidate(&root, Path::new(&candidate_relative))?;
+    if !validation.is_valid() {
+        return Err(migration_error(format!(
+            "migration candidate must be valid before application; validation status was {}",
+            validation.status
+        )));
+    }
+
+    let manifest = load_candidate_manifest(&candidate_root)?;
+    let draft = load_candidate_draft(&candidate_root)?;
+    let manifest_value = serde_json::to_value(&manifest).map_err(|error| {
+        migration_error(format!("cannot serialize Candidate Manifest: {error}"))
+    })?;
+    let candidate_manifest_digest = crate::canonical_digest(&manifest_value)
+        .map_err(|error| migration_error(format!("cannot digest Candidate Manifest: {error}")))?;
+    let application_id = format!(
+        "migration-{}-{}",
+        &manifest.source_revision[..12],
+        &candidate_manifest_digest["sha256:".len()..][..12]
+    );
+    let application_relative = format!(".agentic/migrations/{application_id}");
+    let application_root = safe_repository_path(&root, &application_relative)?;
+    let archive_base_relative = format!(".agentic/migration-history/{application_id}");
+    let archive_base = safe_repository_path(&root, &archive_base_relative)?;
+    if application_root.exists() || archive_base.exists() {
+        return Err(migration_error(format!(
+            "migration application {application_id} already exists or requires recovery"
+        )));
+    }
+
+    let archive_sources = application_archive_sources(&root, &candidate_relative, &draft)?;
+    let payloads = application_payloads(&candidate_root, &manifest)?;
+    preflight_application_targets(&root, &archive_sources, &payloads)?;
+    let archived_paths = archive_sources
+        .iter()
+        .map(|source| MigrationArchivedPath {
+            source: source.clone(),
+            archive: format!("{archive_base_relative}/source/{source}"),
+        })
+        .collect::<Vec<_>>();
+    let applied_files = payloads
+        .iter()
+        .map(|payload| MigrationAppliedFile {
+            path: payload.relative.clone(),
+            digest: byte_digest(&payload.bytes),
+        })
+        .collect::<Vec<_>>();
+    let record = MigrationApplicationRecord {
+        schema_version: MIGRATION_APPLICATION_SCHEMA_VERSION.to_owned(),
+        kind: "migration-application".to_owned(),
+        status: "applied".to_owned(),
+        application_id: application_id.clone(),
+        candidate_root: candidate_relative,
+        source_revision: manifest.source_revision,
+        candidate_manifest_digest,
+        application_root: application_relative.clone(),
+        applied_files,
+        archived_paths,
+        next: "Review the archived sources and applied vNext files, git add the reviewed migration, run normal vNext validation, then commit it. Git index and commits were not changed."
+            .to_owned(),
+    };
+
+    let mut created_files = Vec::new();
+    let mut moved_sources = Vec::new();
+    let result = (|| {
+        write_application_provenance(&candidate_root, &application_root)?;
+        for source in &archive_sources {
+            let source_path = safe_repository_path(&root, source)?;
+            if !source_path.exists() {
+                continue;
+            }
+            let archive_relative = format!("{archive_base_relative}/source/{source}");
+            let archive_path = safe_repository_path(&root, &archive_relative)?;
+            if let Some(parent) = archive_path.parent() {
+                fs::create_dir_all(parent).map_err(|error| {
+                    migration_error(format!("cannot create migration archive parent: {error}"))
+                })?;
+            }
+            fs::rename(&source_path, &archive_path).map_err(|error| {
+                migration_error(format!("cannot archive migration source {source}: {error}"))
+            })?;
+            moved_sources.push((source_path, archive_path));
+        }
+        for payload in &payloads {
+            let target = safe_repository_path(&root, &payload.relative)?;
+            if target.is_file()
+                && fs::read(&target).map_err(|error| {
+                    migration_error(format!("cannot read existing migration target: {error}"))
+                })? == payload.bytes
+            {
+                continue;
+            }
+            if let Err(error) = write_candidate_file(&target, &payload.bytes) {
+                if target.exists() {
+                    created_files.push(target);
+                }
+                return Err(error);
+            }
+            created_files.push(target);
+        }
+        let record_bytes = serde_yaml::to_string(&record)
+            .map_err(|error| migration_error(format!("cannot serialize application: {error}")))?;
+        write_candidate_file(
+            &application_root.join("application.yaml"),
+            record_bytes.as_bytes(),
+        )?;
+        Ok(())
+    })();
+    if let Err(error) = result {
+        let rollback = rollback_failed_application(
+            &root,
+            &application_root,
+            &archive_base,
+            &created_files,
+            &moved_sources,
+        );
+        return match rollback {
+            Ok(()) => Err(error),
+            Err(rollback_error) => Err(migration_error(format!(
+                "{error}; automatic rollback also failed: {rollback_error}"
+            ))),
+        };
+    }
+    Ok(record)
+}
+
+struct MigrationApplicationPayload {
+    relative: String,
+    bytes: Vec<u8>,
+}
+
+struct MigrationApplyLock {
+    path: PathBuf,
+}
+
+impl MigrationApplyLock {
+    fn acquire(candidate_root: &Path) -> Result<Self, MigrationError> {
+        let path = candidate_root.join("migration-apply.lock");
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(|error| {
+                migration_error(format!(
+                    "another migration application is running or requires recovery: {error}"
+                ))
+            })?;
+        writeln!(file, "pid={}", std::process::id())
+            .and_then(|()| file.sync_all())
+            .map_err(|error| {
+                let _ = fs::remove_file(&path);
+                migration_error(format!("cannot persist migration lock: {error}"))
+            })?;
+        Ok(Self { path })
+    }
+}
+
+impl Drop for MigrationApplyLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn load_candidate_manifest(
+    candidate_root: &Path,
+) -> Result<MigrationCandidateManifest, MigrationError> {
+    let value = read_yaml_value(&candidate_root.join("migration-manifest.yaml"))?;
+    serde_json::from_value(value)
+        .map_err(|error| migration_error(format!("cannot load Candidate Manifest: {error}")))
+}
+
+fn load_candidate_draft(candidate_root: &Path) -> Result<MigrationDraftReport, MigrationError> {
+    let bytes = read_regular_bytes(&candidate_root.join("migration-draft.json"))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|error| migration_error(format!("cannot load embedded Migration Draft: {error}")))
+}
+
+fn application_archive_sources(
+    root: &Path,
+    candidate_relative: &str,
+    draft: &MigrationDraftReport,
+) -> Result<Vec<String>, MigrationError> {
+    let archived_action_ids = ["contracts", "decisions", "change-workflow", "evidence"]
+        .into_iter()
+        .collect::<BTreeSet<_>>();
+    let mut candidates = BTreeSet::from([".agentic/config.yaml".to_owned()]);
+    for action in &draft.actions {
+        if archived_action_ids.contains(action.id.as_str()) {
+            candidates.extend(action.source_paths.iter().cloned());
+        }
+    }
+    let mut candidates = candidates.into_iter().collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        (left.split('/').count(), left.as_str()).cmp(&(right.split('/').count(), right.as_str()))
+    });
+    let mut sources: Vec<String> = Vec::new();
+    for relative in candidates {
+        if relative == "."
+            || relative == ".agentic"
+            || relative == ".git"
+            || relative.starts_with(".git/")
+            || path_is_within(candidate_relative, &relative)
+        {
+            return Err(migration_error(format!(
+                "refusing to archive unsafe migration source: {relative}"
+            )));
+        }
+        let path = safe_repository_path(root, &relative)?;
+        if !path.exists() {
+            continue;
+        }
+        if sources
+            .iter()
+            .any(|parent| path_is_within(&relative, parent))
+        {
+            continue;
+        }
+        sources.push(relative);
+    }
+    Ok(sources)
+}
+
+fn application_payloads(
+    candidate_root: &Path,
+    manifest: &MigrationCandidateManifest,
+) -> Result<Vec<MigrationApplicationPayload>, MigrationError> {
+    let mut paths = BTreeSet::from([".agentic/config.yaml".to_owned()]);
+    for action in &manifest.pending_actions {
+        let completion = load_action_completion(candidate_root, &action.id)?;
+        paths.extend(
+            completion
+                .artifacts
+                .into_iter()
+                .map(|artifact| artifact.path),
+        );
+    }
+    let release_root = candidate_root.join(".agentic/cache/releases");
+    if release_root.is_dir() {
+        collect_regular_relative_paths(candidate_root, &release_root, &mut paths)?;
+    }
+    paths
+        .into_iter()
+        .map(|relative| {
+            let path = safe_repository_path(candidate_root, &relative)?;
+            let bytes = read_regular_bytes(&path)?;
+            Ok(MigrationApplicationPayload { relative, bytes })
+        })
+        .collect()
+}
+
+fn load_action_completion(
+    candidate_root: &Path,
+    action_id: &str,
+) -> Result<MigrationActionCompletion, MigrationError> {
+    let path = candidate_root
+        .join("migration-completions")
+        .join(format!("{action_id}.yaml"));
+    let value = read_yaml_value(&path)?;
+    serde_json::from_value(value)
+        .map_err(|error| migration_error(format!("cannot load Completion Record: {error}")))
+}
+
+fn collect_regular_relative_paths(
+    root: &Path,
+    directory: &Path,
+    output: &mut BTreeSet<String>,
+) -> Result<(), MigrationError> {
+    let mut entries = fs::read_dir(directory)
+        .map_err(|error| migration_error(format!("cannot read Candidate directory: {error}")))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| migration_error(format!("cannot read Candidate entry: {error}")))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|error| migration_error(format!("cannot inspect Candidate entry: {error}")))?;
+        if file_type.is_symlink() {
+            return Err(migration_error(
+                "Candidate payload must not contain symlinks",
+            ));
+        }
+        if file_type.is_dir() {
+            collect_regular_relative_paths(root, &path, output)?;
+        } else if file_type.is_file() {
+            output.insert(relative_display(root, &path));
+        } else {
+            return Err(migration_error(
+                "Candidate payload must contain only regular files and directories",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn preflight_application_targets(
+    root: &Path,
+    archive_sources: &[String],
+    payloads: &[MigrationApplicationPayload],
+) -> Result<(), MigrationError> {
+    for payload in payloads {
+        let target = safe_repository_path(root, &payload.relative)?;
+        if archive_sources
+            .iter()
+            .any(|source| path_is_within(&payload.relative, source))
+        {
+            continue;
+        }
+        match fs::symlink_metadata(&target) {
+            Err(error) if error.kind() == ErrorKind::NotFound => {}
+            Ok(metadata)
+                if metadata.is_file()
+                    && fs::read(&target).ok().as_deref() == Some(&payload.bytes) => {}
+            Ok(_) => {
+                return Err(migration_error(format!(
+                    "refusing to overwrite existing migration target: {}",
+                    payload.relative
+                )));
+            }
+            Err(error) => {
+                return Err(migration_error(format!(
+                    "cannot inspect migration target {}: {error}",
+                    payload.relative
+                )));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn write_application_provenance(
+    candidate_root: &Path,
+    application_root: &Path,
+) -> Result<(), MigrationError> {
+    let parent = application_root
+        .parent()
+        .ok_or_else(|| migration_error("migration application has no parent"))?;
+    fs::create_dir_all(parent).map_err(|error| {
+        migration_error(format!("cannot create application record parent: {error}"))
+    })?;
+    fs::create_dir(application_root)
+        .map_err(|error| migration_error(format!("cannot create application record: {error}")))?;
+    for name in ["migration-manifest.yaml", "migration-draft.json"] {
+        let bytes = read_regular_bytes(&candidate_root.join(name))?;
+        write_candidate_file(&application_root.join(name), &bytes)?;
+    }
+    let source = candidate_root.join("migration-completions");
+    let target = application_root.join("migration-completions");
+    fs::create_dir(&target).map_err(|error| {
+        migration_error(format!(
+            "cannot create application completion records: {error}"
+        ))
+    })?;
+    let mut entries = fs::read_dir(&source)
+        .map_err(|error| migration_error(format!("cannot read Completion Records: {error}")))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| migration_error(format!("cannot read Completion Record: {error}")))?;
+    entries.sort_by_key(|entry| entry.file_name());
+    for entry in entries {
+        let bytes = read_regular_bytes(&entry.path())?;
+        write_candidate_file(&target.join(entry.file_name()), &bytes)?;
+    }
+    Ok(())
+}
+
+fn rollback_failed_application(
+    root: &Path,
+    application_root: &Path,
+    archive_base: &Path,
+    created_files: &[PathBuf],
+    moved_sources: &[(PathBuf, PathBuf)],
+) -> Result<(), MigrationError> {
+    let mut failures = Vec::new();
+    for path in created_files.iter().rev() {
+        if path.exists()
+            && let Err(error) = fs::remove_file(path)
+        {
+            failures.push(format!(
+                "cannot remove partially applied file {}: {error}",
+                path.display()
+            ));
+            continue;
+        }
+        remove_empty_parents(path.parent(), root);
+    }
+    let mut restore_failed = false;
+    for (source, archive) in moved_sources.iter().rev() {
+        if source.is_dir() {
+            if let Err(error) = fs::remove_dir(source) {
+                failures.push(format!(
+                    "cannot clear partial migration directory {}: {error}",
+                    source.display()
+                ));
+                restore_failed = true;
+                continue;
+            }
+        } else if source.exists() {
+            failures.push(format!(
+                "cannot restore archived source because target exists: {}",
+                source.display()
+            ));
+            restore_failed = true;
+            continue;
+        }
+        if let Some(parent) = source.parent()
+            && let Err(error) = fs::create_dir_all(parent)
+        {
+            failures.push(format!(
+                "cannot recreate archived source parent {}: {error}",
+                parent.display()
+            ));
+            restore_failed = true;
+            continue;
+        }
+        if let Err(error) = fs::rename(archive, source) {
+            failures.push(format!(
+                "cannot restore archived source {}: {error}",
+                source.display()
+            ));
+            restore_failed = true;
+        }
+    }
+    if application_root.exists()
+        && let Err(error) = fs::remove_dir_all(application_root)
+    {
+        failures.push(format!(
+            "cannot remove partial application record {}: {error}",
+            application_root.display()
+        ));
+    }
+    if !restore_failed
+        && archive_base.exists()
+        && let Err(error) = fs::remove_dir_all(archive_base)
+    {
+        failures.push(format!(
+            "cannot remove empty migration archive {}: {error}",
+            archive_base.display()
+        ));
+    }
+    if !failures.is_empty() {
+        return Err(migration_error(failures.join("; ")));
+    }
+    Ok(())
+}
+
+fn remove_empty_parents(mut directory: Option<&Path>, root: &Path) {
+    while let Some(path) = directory {
+        if path == root || !path.starts_with(root) || fs::remove_dir(path).is_err() {
+            break;
+        }
+        directory = path.parent();
+    }
+}
+
+fn path_is_within(path: &str, parent: &str) -> bool {
+    path == parent || path.starts_with(&format!("{parent}/"))
+}
+
 fn validate_action_completions(
     candidate_root: &Path,
     manifest: &MigrationCandidateManifest,
@@ -1716,7 +2232,10 @@ fn is_action_id(value: &str) -> bool {
 fn is_reserved_candidate_artifact(path: &str) -> bool {
     matches!(
         path,
-        ".agentic/config.yaml" | "migration-draft.json" | "migration-manifest.yaml"
+        ".agentic/config.yaml"
+            | "migration-draft.json"
+            | "migration-manifest.yaml"
+            | "migration-apply.lock"
     ) || path == "migration-completions"
         || path.starts_with("migration-completions/")
 }
@@ -3009,5 +3528,68 @@ impl std::error::Error for MigrationError {}
 fn migration_error(message: impl Into<String>) -> MigrationError {
     MigrationError {
         message: message.into(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn temporary_root(label: &str) -> PathBuf {
+        static SEQUENCE: AtomicU64 = AtomicU64::new(0);
+        let root = std::env::temp_dir().join(format!(
+            "agentic-migration-{label}-{}-{}",
+            std::process::id(),
+            SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir_all(&root).unwrap();
+        root.canonicalize().unwrap()
+    }
+
+    #[test]
+    fn application_preflight_never_overwrites_an_unarchived_target() {
+        let root = temporary_root("preflight");
+        fs::write(root.join("rules.yaml"), b"legacy\n").unwrap();
+        let payloads = vec![MigrationApplicationPayload {
+            relative: "rules.yaml".to_owned(),
+            bytes: b"vnext\n".to_vec(),
+        }];
+
+        let error = preflight_application_targets(&root, &[], &payloads).unwrap_err();
+        assert!(error.to_string().contains("refusing to overwrite"));
+        preflight_application_targets(&root, &["rules.yaml".to_owned()], &payloads).unwrap();
+        assert_eq!(fs::read(root.join("rules.yaml")).unwrap(), b"legacy\n");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn failed_application_rollback_restores_archived_sources() {
+        let root = temporary_root("rollback");
+        let source = root.join(".agentic/config.yaml");
+        let archive_base = root.join(".agentic/migration-history/migration-test");
+        let archive = archive_base.join("source/.agentic/config.yaml");
+        let application_root = root.join(".agentic/migrations/migration-test");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, b"legacy\n").unwrap();
+        fs::create_dir_all(archive.parent().unwrap()).unwrap();
+        fs::rename(&source, &archive).unwrap();
+        fs::write(&source, b"partial-vnext\n").unwrap();
+        fs::create_dir_all(&application_root).unwrap();
+        fs::write(application_root.join("partial.yaml"), b"partial\n").unwrap();
+
+        rollback_failed_application(
+            &root,
+            &application_root,
+            &archive_base,
+            std::slice::from_ref(&source),
+            &[(source.clone(), archive)],
+        )
+        .unwrap();
+
+        assert_eq!(fs::read(&source).unwrap(), b"legacy\n");
+        assert!(!application_root.exists());
+        assert!(!archive_base.exists());
+        fs::remove_dir_all(root).unwrap();
     }
 }

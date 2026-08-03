@@ -903,6 +903,164 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
             .iter()
             .any(|issue| issue["category"] == "invalid-framework-release")
     );
+
+    fs::copy(
+        release_project.release_root.join("release.yaml"),
+        &release_manifest,
+    )
+    .unwrap();
+    let restored = validate_migration_candidate_cli(&root, output_relative);
+    assert_success(&restored);
+
+    let source_revision = git_output(&root, &["rev-parse", "HEAD"]);
+    let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
+    let applied = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "apply-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&applied);
+    let application: Value = serde_json::from_slice(&applied.stdout).unwrap();
+    validate_output_schema(&application, "migration-application.schema.json");
+    assert_eq!(application["status"], "applied");
+    assert_eq!(application["source_revision"], source_revision);
+    assert_eq!(application["candidate_root"], output_relative);
+    assert!(candidate.exists());
+    assert!(!candidate.join("migration-apply.lock").exists());
+
+    let application_root = root.join(application["application_root"].as_str().unwrap());
+    assert_eq!(
+        read_yaml(&application_root.join("application.yaml")),
+        application
+    );
+    assert!(application_root.join("migration-manifest.yaml").is_file());
+    assert!(application_root.join("migration-draft.json").is_file());
+    assert!(application_root.join("migration-completions").is_dir());
+    for archived in application["archived_paths"].as_array().unwrap() {
+        assert!(root.join(archived["archive"].as_str().unwrap()).exists());
+    }
+    let archived_config = application["archived_paths"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|archived| archived["source"] == ".agentic/config.yaml")
+        .unwrap();
+    assert_eq!(
+        fs::read(root.join(archived_config["archive"].as_str().unwrap())).unwrap(),
+        legacy_config
+    );
+    for file in application["applied_files"].as_array().unwrap() {
+        let bytes = fs::read(root.join(file["path"].as_str().unwrap())).unwrap();
+        assert_eq!(
+            file["digest"],
+            format!("sha256:{:x}", Sha256::digest(bytes))
+        );
+    }
+    assert_eq!(
+        read_yaml(&root.join(".agentic/config.yaml"))["schema_version"],
+        "1"
+    );
+    assert!(read_yaml(&root.join(".agentic/config.yaml"))["project_sources"].is_object());
+    assert_eq!(git_output(&root, &["rev-parse", "HEAD"]), source_revision);
+    assert!(git_output(&root, &["diff", "--cached", "--name-only"]).is_empty());
+
+    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "apply-candidate",
+            "--candidate",
+            output_relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!repeated.status.success());
+    assert!(application_root.join("application.yaml").is_file());
+    assert!(!candidate.join("migration-apply.lock").exists());
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
+fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project() {
+    let root = legacy_migration_project("migration-apply-incomplete");
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args(["migration", "draft", "--format", "json", "--project"])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&draft_output);
+    let mut draft: Value = serde_json::from_slice(&draft_output.stdout).unwrap();
+    complete_migration_reviews(&mut draft);
+    fs::write(
+        root.join("migration-draft.json"),
+        serde_json::to_vec_pretty(&draft).unwrap(),
+    )
+    .unwrap();
+    let candidate_relative = ".agentic/migration-candidates/incomplete";
+    let generated = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "generate-candidate",
+            "--draft",
+            "migration-draft.json",
+            "--output",
+            candidate_relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&generated);
+
+    let config_before = fs::read(root.join(".agentic/config.yaml")).unwrap();
+    let status_before = git_output(
+        &root,
+        &["status", "--porcelain=v1", "--untracked-files=all"],
+    );
+    let applied = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "apply-candidate",
+            "--candidate",
+            candidate_relative,
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!applied.status.success());
+    assert!(
+        String::from_utf8_lossy(&applied.stderr)
+            .contains("migration candidate must be valid before application")
+    );
+    assert_eq!(
+        fs::read(root.join(".agentic/config.yaml")).unwrap(),
+        config_before
+    );
+    assert_eq!(
+        git_output(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        ),
+        status_before
+    );
+    assert!(!root.join(".agentic/migrations").exists());
+    assert!(!root.join(".agentic/migration-history").exists());
+    assert!(
+        !root
+            .join(candidate_relative)
+            .join("migration-apply.lock")
+            .exists()
+    );
     let _ = fs::remove_dir_all(root);
 }
 

@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、Completion Record、Framework Release署名、vNext Schemaを検証する経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成します。Completion Record、Framework Release署名、vNext Schemaを検証し、有効な候補を明示操作で既存Projectへ適用する経路まで接続しています。
 
 ## 検証できること
 
@@ -362,7 +362,26 @@ artifacts:
 5. Completion Recordが申告した有効Recordの一覧と、実際に読み込めるRecordの一覧を照合する
 6. Contract、Decision、Change、Evidence、Resultを選択したReleaseのvNext Schemaで検証する
 
-すべて成功すると結果は`valid`になり、commandは終了コード0を返します。署名改変、Schema違反、未承認のBinding authorityなどがあれば`invalid`です。`valid`は候補が明示的な適用reviewへ進めることを示しますが、既存Projectへの適用自体はまだ実装していません。
+すべて成功すると結果は`valid`になり、commandは終了コード0を返します。署名改変、Schema違反、未承認のBinding authorityなどがあれば`invalid`です。`valid`になった候補だけを、次の明示操作で既存Projectへ適用できます。
+
+```sh
+agentic migration apply-candidate \
+  --project /path/to/current-project \
+  --candidate .agentic/migration-candidates/review-1 \
+  --format text
+```
+
+適用前に候補をもう一度検証し、検証結果が`valid`でなければProjectを変更せず終了します。適用時は次の順に処理します。
+
+1. Manifestのdigestとsource revisionから一意なapplication IDを作り、同じ適用の重複実行を拒否する
+2. 適用先を事前検査し、移行元として退避するpath以外に異なる内容のfileがあれば上書きせず終了する
+3. 現行config、Contract、Decision、Change workflow、Evidenceを`.agentic/migration-history/<application-id>/source/`へ元の相対pathのまま退避する
+4. Candidateの設定、review済み成果物、署名済みFramework ReleaseをProjectの有効pathへ配置する
+5. Manifest、Draft、Completion Record、適用結果を`.agentic/migrations/<application-id>/`へ保存する
+
+途中で失敗した場合は、作成したfileを削除し、退避した移行元を元のpathへ戻します。自動復元にも失敗した場合は、エラーに復元失敗を明記します。Candidate自体は削除しません。Git indexとcommitも変更しないため、適用後は差分と退避内容を確認し、対象fileを`git add`してから通常のvNext検証を実行します。検証に成功した場合だけcommitしてください。
+
+text出力とJSON出力には、適用したfileのdigest、退避元と退避先、次の操作を含めます。JSON形式は`schemas/outputs/v1/migration-application.schema.json`に従い、同じ内容を`<application-root>/application.yaml`へ保存します。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
@@ -717,13 +736,13 @@ sources:
 | `rust/src/kernel.rs` | Requirement選択、freshness、次状態を判定する純粋ロジック |
 | `rust/src/context.rs` | NextActionから実行用Contextと参照digestを生成 |
 | `rust/src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
-| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証を行う |
+| `rust/src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証・明示適用を行う |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
 | `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
 | `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
 | `schemas/catalog/v1/` | 標準Signal Domain CatalogとFramework Detection Catalogの機械可読な固定形式 |
-| `schemas/outputs/v1/` | 保存しない生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Contract Health Report／Gate Report、Detector Benchmark／Repository Audit Report |
+| `schemas/outputs/v1/` | CLI生成物の公開形式。Next Response、Explain Report、Binding Validation Report、Migration Application、Contract Health Report／Gate Report、Detector Benchmark／Repository Audit Report |
 | `schemas/delivery/v1/` | 移行互換用の未署名Framework Release manifest |
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
