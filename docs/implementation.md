@@ -397,6 +397,10 @@ agentic next change.example --project /path/to/current-project --require-clean -
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
+あわせて、binaryへ同梱したエージェント向けSkillを`.agents/skills/`へ、進め方の案内を`docs/agentic/README.md`へ配置し、`AGENTS.md`へ管理ブロックを追記します。`AGENTS.md`が既にある場合は末尾へ追記し、管理ブロックが既にあれば触れません。追記は一時fileを経由した置換で行うため、途中で失敗してもProject自身の記述は残ります。利用者はbinary 1つで一周できます。
+
+旧Python CLI用のContract雛形とLevel別overlayは配置しません。Record形式が現在の制御基盤と異なるため、置くと`contracts/`が読み込めないProjectになります。Levelの選択は、雛形ではなく署名済みFramework Releaseが持つRule集合の選択として設計し直す必要があり、初版では扱いません。
+
 ```sh
 agentic project init --project /path/to/project
 agentic change init change.example \

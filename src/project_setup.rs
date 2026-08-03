@@ -5,6 +5,7 @@ use crate::distribution_trust::{DISTRIBUTION_TRUST_FILE, trust_store_for_lock};
 use crate::framework_detection::{
     FrameworkCandidate, FrameworkCatalog, is_framework_manifest_path,
 };
+use crate::project_assets;
 use crate::project_config::load_project_config;
 use crate::remote_delivery::install_release_archive;
 use crate::source_detection::{
@@ -38,6 +39,9 @@ pub struct ProjectInitReceipt {
     pub release_id: String,
     pub already_installed: bool,
     pub created_files: Vec<PathBuf>,
+    /// Set when the guidance block was appended to an existing `AGENTS.md`
+    /// instead of the file being created.
+    pub agents_block_appended: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,6 +78,15 @@ pub fn initialize_project(
         return Err(setup_error("candidate root must be a directory"));
     }
     let analysis_roots = normalize_analysis_roots(options.analysis_roots)?;
+    let project_name = project_root
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("project");
+    let planned_assets = project_assets::planned_assets(project_name)
+        .map_err(|error| setup_error(error.to_string()))?;
+    for asset in &planned_assets {
+        reject_symlink_components(&project_root, Path::new(&asset.relative_path))?;
+    }
     let lock_path = candidate_root.join(CANDIDATE_LOCK_FILE);
     let archive_path = candidate_root.join(FRAMEWORK_ARCHIVE_FILE);
     let trust_path = candidate_root.join(DISTRIBUTION_TRUST_FILE);
@@ -96,8 +109,13 @@ pub fn initialize_project(
         project_root.join(".agentic/trusted-release-keys.yaml"),
         project_root.join(".agentic/cache/.gitignore"),
     ];
+    let asset_targets = planned_assets
+        .iter()
+        .map(|asset| project_root.join(&asset.relative_path))
+        .collect::<Vec<_>>();
     let conflicts = targets
         .iter()
+        .chain(asset_targets.iter())
         .filter(|path| path.exists())
         .map(|path| relative_display(&project_root, path))
         .collect::<Vec<_>>();
@@ -150,20 +168,103 @@ pub fn initialize_project(
     let mut created = vec![targets[3].clone()];
     for (path, bytes) in writes {
         if let Err(error) = write_new(path, bytes) {
-            for created_path in &created {
-                let _ = fs::remove_file(created_path);
-            }
+            roll_back(&created);
             return Err(error);
         }
         created.push(path.clone());
     }
+
+    for (asset, path) in planned_assets.iter().zip(asset_targets.iter()) {
+        if let Some(parent) = path.parent()
+            && let Err(error) = fs::create_dir_all(parent)
+        {
+            roll_back(&created);
+            return Err(setup_error(format!(
+                "cannot create {}: {error}",
+                relative_display(&project_root, parent)
+            )));
+        }
+        if let Err(error) = write_new(path, asset.contents.as_bytes()) {
+            roll_back(&created);
+            return Err(error);
+        }
+        created.push(path.clone());
+    }
+
+    let agents_path = project_root.join(project_assets::AGENTS_FILE);
+    let agents_block = project_assets::agents_block(project_name)
+        .map_err(|error| setup_error(error.to_string()))?;
+    let agents_outcome = match merge_agents_block(&agents_path, &agents_block) {
+        Ok(outcome) => outcome,
+        Err(error) => {
+            roll_back(&created);
+            return Err(error);
+        }
+    };
+    let agents_block_appended = matches!(agents_outcome, AgentsFileOutcome::Appended);
+    if !matches!(agents_outcome, AgentsFileOutcome::LeftAlone) {
+        created.push(agents_path.clone());
+    }
+
     created.sort();
+    created.dedup();
     Ok(ProjectInitReceipt {
         project_root,
         release_id,
         already_installed: install.already_installed,
         created_files: created,
+        agents_block_appended,
     })
+}
+
+/// What happened to `AGENTS.md`. Appending is the one place initialization
+/// touches a file the project already owns, so it is reported back.
+enum AgentsFileOutcome {
+    Created,
+    Appended,
+    LeftAlone,
+}
+
+/// Appends the guidance block to `AGENTS.md`, creating the file when absent.
+///
+/// An existing file is replaced through a temporary file, so a failure part way
+/// through leaves the project's own instructions intact.
+fn merge_agents_block(
+    agents_path: &Path,
+    block: &str,
+) -> Result<AgentsFileOutcome, ProjectSetupError> {
+    match fs::read_to_string(agents_path) {
+        Ok(existing) => {
+            if existing.contains(project_assets::AGENTS_BLOCK_MARKER) {
+                return Ok(AgentsFileOutcome::LeftAlone);
+            }
+            let mut merged = existing;
+            if !merged.ends_with('\n') {
+                merged.push('\n');
+            }
+            merged.push_str(block);
+            let staged = agents_path.with_extension("md.agentic-init");
+            write_new(&staged, merged.as_bytes())?;
+            if let Err(error) = replace_file(&staged, agents_path) {
+                let _ = fs::remove_file(&staged);
+                return Err(error);
+            }
+            Ok(AgentsFileOutcome::Appended)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let mut contents = String::from("# Agents\n");
+            contents.push_str(block);
+            write_new(agents_path, contents.as_bytes())?;
+            Ok(AgentsFileOutcome::Created)
+        }
+        Err(error) => Err(setup_error(format!("{}: {error}", agents_path.display()))),
+    }
+}
+
+fn roll_back(created: &[PathBuf]) {
+    for path in created {
+        let _ = fs::remove_file(path);
+    }
 }
 
 pub fn initialize_change(

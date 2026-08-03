@@ -1346,6 +1346,23 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
         root.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml")
             .is_file()
     );
+    for skill in ["agentic-analyst", "agentic-builder", "agentic-challenger"] {
+        assert!(
+            root.join(format!(".agents/skills/{skill}/SKILL.md"))
+                .is_file(),
+            "{skill} was not placed"
+        );
+    }
+    assert!(root.join("docs/agentic/README.md").is_file());
+    assert!(
+        root.join(".agents/skills/agentic-challenger/references/challenge-method.md")
+            .is_file()
+    );
+    // Records shaped for the retired CLI would leave contracts/ unable to load.
+    assert!(!root.join("contracts/catalog.yaml").exists());
+    let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
+    assert!(agents.contains("<!-- agentic-development:start -->"));
+    assert!(agents.contains("$agentic-analyst"));
 
     let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .args(["project", "init", "--project"])
@@ -1372,18 +1389,9 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
         .output()
         .unwrap();
     assert_success(&change);
-    run_git(
-        &root,
-        &[
-            "add",
-            ".agentic/config.yaml",
-            ".agentic/framework.lock",
-            ".agentic/repository-observation.yaml",
-            ".agentic/trusted-release-keys.yaml",
-            ".agentic/cache/.gitignore",
-            ".agentic/changes/change.example/change.yaml",
-        ],
-    );
+    // Initialization now also places the skills, the templates, and AGENTS.md,
+    // so the whole tree is staged rather than a fixed list of files.
+    run_git(&root, &["add", "-A"]);
     run_git(&root, &["commit", "--quiet", "-m", "initialize agentic"]);
 
     let next = Command::new(env!("CARGO_BIN_EXE_agentic"))

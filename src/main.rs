@@ -1474,9 +1474,14 @@ fn run_project_management_command(
                 .join(", ");
             Ok(ProjectManagementResponse {
                 output: format!(
-                    "Project initialized with Framework Release {}.\nCreated: {}\nNext: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --output .agentic/repository-observation.draft.yaml --project {} and complete the reviewed bindings and accepted Decisions.\nThen: agentic project validate-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project promote-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project validate-bindings --project {}\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
+                    "Project initialized with Framework Release {}.\nCreated: {}\n{}Next: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --output .agentic/repository-observation.draft.yaml --project {} and complete the reviewed bindings and accepted Decisions.\nThen: agentic project validate-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project promote-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project validate-bindings --project {}\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
                     receipt.release_id,
                     files,
+                    if receipt.agents_block_appended {
+                        "Appended the Agentic Development block to the existing AGENTS.md.\n"
+                    } else {
+                        ""
+                    },
                     receipt.project_root.display(),
                     receipt.project_root.display(),
                     receipt.project_root.display(),

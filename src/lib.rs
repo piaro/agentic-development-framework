@@ -35,6 +35,7 @@ pub mod migration;
 mod php_detection;
 pub mod project;
 pub mod project_application;
+pub mod project_assets;
 pub mod project_config;
 pub mod project_runtime;
 pub mod project_setup;
