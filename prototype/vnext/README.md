@@ -383,6 +383,18 @@ agentic migration apply-candidate \
 
 text出力とJSON出力には、適用したfileのdigest、退避元と退避先、次の操作を含めます。JSON形式は`schemas/outputs/v1/migration-application.schema.json`に従い、同じ内容を`<application-root>/application.yaml`へ保存します。
 
+適用後の標準確認手順は次のとおりです。stage前に差分と`.agentic/migration-history/<application-id>/`の退避内容を確認してください。最初のBinding検証はstage済みfileを対象に実行し、commit後は`--require-clean`でもう一度確認します。
+
+```sh
+git add <reviewed-migration-paths>
+agentic project validate-bindings --project /path/to/current-project --format json
+git commit -m "migrate project to vNext"
+agentic project validate-bindings --project /path/to/current-project --require-clean --format json
+agentic next change.example --project /path/to/current-project --require-clean --format json
+```
+
+旧EvidenceがYAMLで保存されている場合も、vNextへ`proceed`するEvidence成果物は`.json`へ変換します。Filesystem Storeが有効Recordとして読み込むEvidenceはJSON fileであり、Completion Recordのartifact pathとdigestも変換後の`.json`を参照させます。旧YAMLは移行元としてApplication archiveに残ります。
+
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
 ```sh

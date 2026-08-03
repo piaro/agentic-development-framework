@@ -720,6 +720,18 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
 #[test]
 fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     let root = legacy_migration_project("migration-candidate-activation");
+    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/cli-project");
+    copy_tree(&fixture_root.join("src"), &root.join("src"));
+    run_git(&root, &["add", "src"]);
+    run_git(
+        &root,
+        &[
+            "commit",
+            "--quiet",
+            "-m",
+            "add representative project source",
+        ],
+    );
     let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
@@ -753,7 +765,6 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     assert_success(&generated);
     let manifest: Value = serde_json::from_slice(&generated.stdout).unwrap();
     let candidate = root.join(output_relative);
-    let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../fixtures/cli-project");
     let release_project = TestProject::new();
 
     fs::copy(
@@ -809,9 +820,9 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         .unwrap(),
     )
     .unwrap();
-    fs::write(
+    fs::copy(
+        fixture_root.join(".agentic/repository-observation.yaml"),
         candidate.join(".agentic/repository-observation.yaml"),
-        "schema_version: \"5\"\nphase: pre-build\nanalysis:\n  roots: [.]\nartifacts: []\n",
     )
     .unwrap();
 
@@ -986,6 +997,68 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     assert!(!repeated.status.success());
     assert!(application_root.join("application.yaml").is_file());
     assert!(!candidate.join("migration-apply.lock").exists());
+
+    run_git(&root, &["add", "."]);
+    let staged_validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "validate-bindings",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&staged_validation);
+    let validation: Value = serde_json::from_slice(&staged_validation.stdout).unwrap();
+    validate_output_schema(&validation, "binding-validation-report.schema.json");
+    assert_eq!(validation["status"], "valid");
+    assert_eq!(validation["summary"]["facts"], 2);
+
+    run_git(
+        &root,
+        &["commit", "--quiet", "-m", "apply reviewed vNext migration"],
+    );
+    assert!(
+        git_output(
+            &root,
+            &["status", "--porcelain=v1", "--untracked-files=all"]
+        )
+        .is_empty()
+    );
+    let clean_validation = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "project",
+            "validate-bindings",
+            "--require-clean",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&clean_validation);
+    let validation: Value = serde_json::from_slice(&clean_validation.stdout).unwrap();
+    assert_eq!(validation["status"], "valid");
+
+    let next = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "next",
+            "change.place-order",
+            "--require-clean",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&next);
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    validate_output_schema(&next, "next-response.schema.json");
+    assert_eq!(next["state"], "needs-analysis");
     let _ = fs::remove_dir_all(root);
 }
 
