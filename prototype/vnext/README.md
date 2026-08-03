@@ -1,6 +1,6 @@
 # vNext shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、その整合性を検証する経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成し、成果物とCompletion Recordの整合性を検証する経路まで接続しています。
 
 ## 検証できること
 
@@ -329,9 +329,31 @@ agentic migration validate-candidate \
 
 この検証では、source revision、埋め込まれたDraftのdigestとレビュー、Manifestの生成済みフィールド、vNext設定候補とDraft fileのbyte digestを確認します。候補directoryと、同じDraft digestを持つ生成元Draftだけをworktreeのdirty判定から除外します。それ以外の変更があれば`blocked`です。
 
-生成直後の結果は、整合性に問題がなければ`incomplete`です。`pending_actions`が残るためcommandは非0で終了します。生成fileやManifestの改変は`invalid`、source側の検証を妨げる状態は`blocked`です。`valid`は今後の完了記録に予約しており、現行のCandidate Manifest v2では生成しません。JSON Reportは`schemas/outputs/v1/migration-candidate-validation-report.schema.json`に従います。
+生成直後の結果は、整合性に問題がなければ`incomplete`です。`pending_actions`が残るためcommandは非0で終了します。生成fileやManifestの改変は`invalid`、source側の検証を妨げる状態は`blocked`です。JSON Report v2は`schemas/outputs/v1/migration-candidate-validation-report.schema.json`に従います。
 
-候補にfileを追加しただけでは`pending_actions`を完了扱いにしません。意味reviewとSchema・署名検証を結び付ける完了記録、および既存Projectへの適用はまだ実装していません。
+候補にfileを追加しただけでは`pending_actions`を完了扱いにしません。各actionについて、`migration-completions/<action-id>.yaml`へCompletion Recordを作成します。形式は`schemas/outputs/v1/migration-action-completion.schema.json`で定義しています。
+
+```yaml
+schema_version: "1"
+kind: migration-action-completion
+action_id: contracts
+source_revision: <Manifestと同じGit revision>
+draft_digest: <Manifestと同じDraft digest>
+review:
+  reviewer: migration-reviewer
+  rationale: Reviewed every migrated Contract against its source.
+  evidence_refs:
+    - review:contracts-migration
+completed_checks:
+  - <埋め込まれたDraftのcompletion_checksを省略せず記載>
+artifacts:
+  - path: contracts/checkout.yaml
+    digest: sha256:<file bytesのSHA-256>
+```
+
+検証時は、Recordのsource revisionとDraft digest、reviewの必須項目、Draftに固定された全completion check、成果物のpathとbyte digestを照合します。同じ成果物を複数actionから参照したり、生成済みManifestやDraftを成果物として申告したりすることはできません。Completion Recordに申告されていない候補fileも`invalid`です。`preserve-history`の成果物は`migration-history/<action-id>/`配下に限定されます。Framework Release cacheは次段階の署名・file inventory検証でまとめて確認するため、この申告対象には含めません。
+
+有効なCompletion Recordが確認されたactionは`pending_actions`から外れます。ただし、すべてのRecordが揃っても、現段階では`pending_validations`に`candidate-schema-and-release`が残るため`incomplete`です。選択したFramework Releaseの署名と、候補RecordのvNext Schema検証を接続するまでは`valid`にしません。既存Projectへの適用もまだ実装していません。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 

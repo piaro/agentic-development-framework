@@ -508,6 +508,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     assert!(!validation.status.success());
     let report: Value = serde_json::from_slice(&validation.stdout).unwrap();
     validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["schema_version"], "2");
     assert_eq!(report["status"], "incomplete");
     assert!(report["issues"].as_array().unwrap().is_empty());
     assert!(
@@ -517,6 +518,131 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
             .iter()
             .any(|action| action == "contracts")
     );
+    assert_eq!(
+        report["pending_validations"],
+        json!(["candidate-schema-and-release"])
+    );
+
+    let reviewed_contract = b"reviewed contract candidate\n";
+    fs::create_dir_all(candidate.join("contracts")).unwrap();
+    fs::write(candidate.join("contracts/migrated.yaml"), reviewed_contract).unwrap();
+    fs::create_dir_all(candidate.join("migration-completions")).unwrap();
+    let contract_checks = draft["actions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|action| action["id"] == "contracts")
+        .unwrap()["completion_checks"]
+        .clone();
+    let completion = json!({
+        "schema_version": "1",
+        "kind": "migration-action-completion",
+        "action_id": "contracts",
+        "source_revision": manifest["source_revision"],
+        "draft_digest": manifest["draft_digest"],
+        "review": {
+            "reviewer": "migration-reviewer",
+            "rationale": "Reviewed the migrated Contract artifact against every source Contract.",
+            "evidence_refs": ["review:contracts-migration"]
+        },
+        "completed_checks": contract_checks,
+        "artifacts": [{
+            "path": "contracts/migrated.yaml",
+            "digest": format!("sha256:{:x}", Sha256::digest(reviewed_contract))
+        }]
+    });
+    validate_output_schema(&completion, "migration-action-completion.schema.json");
+    write_yaml(
+        &candidate.join("migration-completions/contracts.yaml"),
+        &completion,
+    );
+
+    let completed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!completed.status.success());
+    let report: Value = serde_json::from_slice(&completed.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "incomplete");
+    assert!(
+        !report["pending_actions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|action| action == "contracts")
+    );
+    assert_eq!(
+        report["pending_validations"],
+        json!(["candidate-schema-and-release"])
+    );
+
+    fs::write(
+        candidate.join("contracts/migrated.yaml"),
+        b"tampered contract candidate\n",
+    )
+    .unwrap();
+    let tampered_completion = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!tampered_completion.status.success());
+    let report: Value = serde_json::from_slice(&tampered_completion.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "invalid");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "completion-artifact-digest-mismatch")
+    );
+    fs::write(candidate.join("contracts/migrated.yaml"), reviewed_contract).unwrap();
+
+    fs::write(candidate.join("unclaimed.txt"), "not reviewed\n").unwrap();
+    let unclaimed = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))
+        .args([
+            "migration",
+            "validate-candidate",
+            "--candidate",
+            output_relative,
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert!(!unclaimed.status.success());
+    let report: Value = serde_json::from_slice(&unclaimed.stdout).unwrap();
+    validate_output_schema(&report, "migration-candidate-validation-report.schema.json");
+    assert_eq!(report["status"], "invalid");
+    assert!(
+        report["issues"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|issue| issue["category"] == "unclaimed-candidate-file")
+    );
+    fs::remove_file(candidate.join("unclaimed.txt")).unwrap();
 
     fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
     let blocked = Command::new(env!("CARGO_BIN_EXE_agentic-vnext-rust"))

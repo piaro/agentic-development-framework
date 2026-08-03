@@ -19,7 +19,8 @@ pub const MIGRATION_INSPECTION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_DRAFT_SCHEMA_VERSION: &str = "2";
 pub const MIGRATION_DRAFT_VALIDATION_SCHEMA_VERSION: &str = "1";
 pub const MIGRATION_CANDIDATE_SCHEMA_VERSION: &str = "2";
-pub const MIGRATION_CANDIDATE_VALIDATION_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_ACTION_COMPLETION_SCHEMA_VERSION: &str = "1";
+pub const MIGRATION_CANDIDATE_VALIDATION_SCHEMA_VERSION: &str = "2";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationInspectionReport {
@@ -247,6 +248,27 @@ pub struct MigrationPendingAction {
     pub instruction: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MigrationActionCompletion {
+    pub schema_version: String,
+    pub kind: String,
+    pub action_id: String,
+    pub source_revision: String,
+    pub draft_digest: String,
+    pub review: MigrationCompletionReview,
+    pub completed_checks: Vec<String>,
+    pub artifacts: Vec<MigrationCandidateFile>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct MigrationCompletionReview {
+    pub reviewer: String,
+    pub rationale: String,
+    pub evidence_refs: Vec<String>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct MigrationCandidateValidationReport {
     pub schema_version: String,
@@ -255,6 +277,7 @@ pub struct MigrationCandidateValidationReport {
     pub source_revision: Option<String>,
     pub issues: Vec<MigrationCandidateValidationIssue>,
     pub pending_actions: Vec<String>,
+    pub pending_validations: Vec<String>,
     pub next: String,
 }
 
@@ -276,6 +299,12 @@ impl MigrationCandidateValidationReport {
             output.push_str(&format!(
                 "pending actions: {}\n",
                 self.pending_actions.join(",")
+            ));
+        }
+        if !self.pending_validations.is_empty() {
+            output.push_str(&format!(
+                "pending validations: {}\n",
+                self.pending_validations.join(",")
             ));
         }
         output.push_str(&format!("Next: {}\n", self.next));
@@ -1151,20 +1180,34 @@ pub fn validate_migration_candidate(
     }
 
     verify_candidate_generated_files(&candidate_root, &manifest, &mut issues);
+    let mut claimed_artifacts = BTreeSet::new();
+    let pending_actions = match draft.as_ref() {
+        Some(draft) => validate_action_completions(
+            &candidate_root,
+            &manifest,
+            draft,
+            &mut claimed_artifacts,
+            &mut issues,
+        ),
+        None => manifest
+            .pending_actions
+            .iter()
+            .map(|action| action.id.clone())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>(),
+    };
+    verify_unclaimed_candidate_files(&candidate_root, &claimed_artifacts, &mut issues);
     issues.sort();
-    let pending_actions = manifest
-        .pending_actions
-        .iter()
-        .map(|action| action.id.clone())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect::<Vec<_>>();
     let status = if !issues.is_empty() {
         "invalid"
     } else if !pending_actions.is_empty() {
         "incomplete"
     } else {
-        "valid"
+        // Completion Records prove artifact integrity and reviewed intent. The
+        // signed Release and its Schemas must still validate the assembled
+        // Candidate before this branch may return `valid`.
+        "incomplete"
     };
     Ok(candidate_validation_report(
         status,
@@ -1173,6 +1216,502 @@ pub fn validate_migration_candidate(
         issues,
         pending_actions,
     ))
+}
+
+fn validate_action_completions(
+    candidate_root: &Path,
+    manifest: &MigrationCandidateManifest,
+    draft: &MigrationDraftReport,
+    claimed_artifacts: &mut BTreeSet<String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) -> Vec<String> {
+    let completion_root = candidate_root.join("migration-completions");
+    let expected_files = manifest
+        .pending_actions
+        .iter()
+        .filter(|action| is_action_id(&action.id))
+        .map(|action| format!("{}.yaml", action.id))
+        .collect::<BTreeSet<_>>();
+    inspect_completion_directory(&completion_root, &expected_files, issues);
+
+    let draft_actions = draft
+        .actions
+        .iter()
+        .map(|action| (action.id.as_str(), action))
+        .collect::<BTreeMap<_, _>>();
+    let mut pending = BTreeSet::new();
+    for action in &manifest.pending_actions {
+        let issue_count = issues.len();
+        if !is_action_id(&action.id) {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-action",
+                "migration-manifest.yaml",
+                "Pending action id cannot be used as a Completion Record filename.",
+            ));
+            pending.insert(action.id.clone());
+            continue;
+        }
+        let relative = format!("migration-completions/{}.yaml", action.id);
+        let path = completion_root.join(format!("{}.yaml", action.id));
+        if !path.exists() {
+            pending.insert(action.id.clone());
+            continue;
+        }
+        let completion = match parse_action_completion(&path, &relative, issues) {
+            Some(completion) => completion,
+            None => {
+                pending.insert(action.id.clone());
+                continue;
+            }
+        };
+        let Some(draft_action) = draft_actions.get(action.id.as_str()) else {
+            issues.push(candidate_validation_issue(
+                "unknown-completion-action",
+                &relative,
+                "Completion Record action_id is not present in the embedded Draft.",
+            ));
+            pending.insert(action.id.clone());
+            continue;
+        };
+        validate_completion_identity(
+            &completion,
+            action,
+            draft_action,
+            manifest,
+            &relative,
+            issues,
+        );
+        validate_completion_artifacts(
+            candidate_root,
+            &completion,
+            action,
+            &relative,
+            claimed_artifacts,
+            issues,
+        );
+        if issues.len() != issue_count {
+            pending.insert(action.id.clone());
+        }
+    }
+    pending.into_iter().collect()
+}
+
+fn verify_unclaimed_candidate_files(
+    candidate_root: &Path,
+    claimed_artifacts: &BTreeSet<String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let mut files = Vec::new();
+    collect_candidate_files(candidate_root, candidate_root, &mut files, issues);
+    for file in files {
+        if is_reserved_candidate_artifact(&file)
+            || file.starts_with("migration-completions/")
+            || file.starts_with(".agentic/cache/releases/")
+        {
+            continue;
+        }
+        if !claimed_artifacts.contains(&file) {
+            issues.push(candidate_validation_issue(
+                "unclaimed-candidate-file",
+                &file,
+                "Candidate files must be bound to exactly one Completion Record.",
+            ));
+        }
+    }
+}
+
+fn collect_candidate_files(
+    candidate_root: &Path,
+    directory: &Path,
+    files: &mut Vec<String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(error) => {
+            let relative = directory
+                .strip_prefix(candidate_root)
+                .unwrap_or(directory)
+                .to_string_lossy()
+                .replace('\\', "/");
+            issues.push(candidate_validation_issue(
+                "invalid-candidate-entry",
+                if relative.is_empty() { "." } else { &relative },
+                &format!("Cannot read Candidate directory: {error}"),
+            ));
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "invalid-candidate-entry",
+                    ".",
+                    &format!("Cannot inspect Candidate entry: {error}"),
+                ));
+                continue;
+            }
+        };
+        let path = entry.path();
+        let relative = path
+            .strip_prefix(candidate_root)
+            .unwrap_or(&path)
+            .to_string_lossy()
+            .replace('\\', "/");
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "invalid-candidate-entry",
+                    &relative,
+                    &format!("Cannot inspect Candidate entry: {error}"),
+                ));
+                continue;
+            }
+        };
+        if file_type.is_symlink() {
+            issues.push(candidate_validation_issue(
+                "unsafe-candidate-entry",
+                &relative,
+                "Candidate entries must not be symlinks.",
+            ));
+        } else if file_type.is_dir() {
+            collect_candidate_files(candidate_root, &path, files, issues);
+        } else if file_type.is_file() {
+            files.push(relative);
+        } else {
+            issues.push(candidate_validation_issue(
+                "unsafe-candidate-entry",
+                &relative,
+                "Candidate entries must be regular files or directories.",
+            ));
+        }
+    }
+}
+
+fn inspect_completion_directory(
+    completion_root: &Path,
+    expected_files: &BTreeSet<String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    let metadata = match fs::symlink_metadata(completion_root) {
+        Err(error) if error.kind() == ErrorKind::NotFound => return,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-directory",
+                "migration-completions",
+                &format!("Cannot inspect Completion Record directory: {error}"),
+            ));
+            return;
+        }
+        Ok(metadata) => metadata,
+    };
+    if metadata.file_type().is_symlink() || !metadata.is_dir() {
+        issues.push(candidate_validation_issue(
+            "invalid-completion-directory",
+            "migration-completions",
+            "Completion Records must be stored in a regular directory, not a symlink.",
+        ));
+        return;
+    }
+    let entries = match fs::read_dir(completion_root) {
+        Ok(entries) => entries,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-directory",
+                "migration-completions",
+                &format!("Cannot read Completion Record directory: {error}"),
+            ));
+            return;
+        }
+    };
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "invalid-completion-record",
+                    "migration-completions",
+                    &format!("Cannot inspect Completion Record entry: {error}"),
+                ));
+                continue;
+            }
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative = format!("migration-completions/{name}");
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "invalid-completion-record",
+                    &relative,
+                    &format!("Cannot inspect Completion Record: {error}"),
+                ));
+                continue;
+            }
+        };
+        if file_type.is_symlink() || !file_type.is_file() || !expected_files.contains(&name) {
+            issues.push(candidate_validation_issue(
+                "unexpected-completion-record",
+                &relative,
+                "Only regular <pending-action-id>.yaml Completion Records are allowed.",
+            ));
+        }
+    }
+}
+
+fn parse_action_completion(
+    path: &Path,
+    relative: &str,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) -> Option<MigrationActionCompletion> {
+    let text = match read_regular_utf8(path) {
+        Ok(text) => text,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-record",
+                relative,
+                &error.to_string(),
+            ));
+            return None;
+        }
+    };
+    let value: Value = match serde_yaml::from_str(&text) {
+        Ok(value) => value,
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-record",
+                relative,
+                &format!("Completion Record is not valid YAML: {error}"),
+            ));
+            return None;
+        }
+    };
+    match serde_json::from_value(value) {
+        Ok(completion) => Some(completion),
+        Err(error) => {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-record",
+                relative,
+                &format!("Completion Record does not match schema version 1: {error}"),
+            ));
+            None
+        }
+    }
+}
+
+fn validate_completion_identity(
+    completion: &MigrationActionCompletion,
+    pending: &MigrationPendingAction,
+    draft_action: &MigrationDraftAction,
+    manifest: &MigrationCandidateManifest,
+    relative: &str,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    if completion.schema_version != MIGRATION_ACTION_COMPLETION_SCHEMA_VERSION
+        || completion.kind != "migration-action-completion"
+        || completion.action_id != pending.id
+        || completion.source_revision != manifest.source_revision
+        || completion.draft_digest != manifest.draft_digest
+    {
+        issues.push(candidate_validation_issue(
+            "completion-identity-mismatch",
+            relative,
+            "Completion Record identity does not match its pending action, source revision, and reviewed Draft.",
+        ));
+    }
+    if completion.review.reviewer.trim().is_empty() || completion.review.rationale.trim().is_empty()
+    {
+        issues.push(candidate_validation_issue(
+            "invalid-completion-review",
+            relative,
+            "Completion reviewer and rationale must be non-empty.",
+        ));
+    }
+    let evidence = completion
+        .review
+        .evidence_refs
+        .iter()
+        .map(|reference| reference.trim())
+        .collect::<BTreeSet<_>>();
+    if evidence.is_empty()
+        || evidence.contains("")
+        || evidence.len() != completion.review.evidence_refs.len()
+    {
+        issues.push(candidate_validation_issue(
+            "invalid-completion-evidence",
+            relative,
+            "Completion evidence_refs must contain unique non-empty references.",
+        ));
+    }
+    let completed_checks = completion
+        .completed_checks
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    let expected_checks = draft_action
+        .completion_checks
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    if completed_checks.len() != completion.completed_checks.len()
+        || completed_checks != expected_checks
+    {
+        issues.push(candidate_validation_issue(
+            "completion-check-mismatch",
+            relative,
+            "completed_checks must exactly match the checks fixed by the embedded Draft.",
+        ));
+    }
+}
+
+fn validate_completion_artifacts(
+    candidate_root: &Path,
+    completion: &MigrationActionCompletion,
+    pending: &MigrationPendingAction,
+    relative: &str,
+    claimed_artifacts: &mut BTreeSet<String>,
+    issues: &mut Vec<MigrationCandidateValidationIssue>,
+) {
+    if completion.artifacts.is_empty() {
+        issues.push(candidate_validation_issue(
+            "missing-completion-artifact",
+            relative,
+            "A Completion Record must bind at least one reviewed artifact.",
+        ));
+        return;
+    }
+    let mut action_artifacts = BTreeSet::new();
+    for artifact in &completion.artifacts {
+        if !action_artifacts.insert(artifact.path.clone()) {
+            issues.push(candidate_validation_issue(
+                "duplicate-completion-artifact",
+                relative,
+                "Completion artifact paths must be unique.",
+            ));
+            continue;
+        }
+        if !claimed_artifacts.insert(artifact.path.clone()) {
+            issues.push(candidate_validation_issue(
+                "shared-completion-artifact",
+                &artifact.path,
+                "One artifact cannot complete more than one migration action.",
+            ));
+        }
+        if is_reserved_candidate_artifact(&artifact.path) {
+            issues.push(candidate_validation_issue(
+                "reserved-completion-artifact",
+                &artifact.path,
+                "Generated Candidate metadata cannot be used as completion evidence.",
+            ));
+            continue;
+        }
+        if !artifact.digest.starts_with("sha256:")
+            || !is_lower_hex(&artifact.digest["sha256:".len()..], 64)
+        {
+            issues.push(candidate_validation_issue(
+                "invalid-completion-artifact-digest",
+                &artifact.path,
+                "Completion artifact digest must be a lowercase SHA-256 digest.",
+            ));
+            continue;
+        }
+        let path = match safe_repository_path(candidate_root, &artifact.path) {
+            Ok(path) => path,
+            Err(error) => {
+                issues.push(candidate_validation_issue(
+                    "unsafe-completion-artifact",
+                    &artifact.path,
+                    &error.to_string(),
+                ));
+                continue;
+            }
+        };
+        match read_regular_bytes(&path) {
+            Ok(bytes) if byte_digest(&bytes) == artifact.digest => {}
+            Ok(_) => issues.push(candidate_validation_issue(
+                "completion-artifact-digest-mismatch",
+                &artifact.path,
+                "Completion artifact bytes do not match the reviewed digest.",
+            )),
+            Err(error) => issues.push(candidate_validation_issue(
+                "invalid-completion-artifact",
+                &artifact.path,
+                &error.to_string(),
+            )),
+        }
+    }
+    if pending.decision == "preserve-history" {
+        let history_root = format!("migration-history/{}/", pending.id);
+        if !action_artifacts
+            .iter()
+            .all(|path| path.starts_with(&history_root))
+        {
+            issues.push(candidate_validation_issue(
+                "active-preserved-history",
+                relative,
+                "preserve-history artifacts must stay under migration-history/<action-id>/.",
+            ));
+        }
+    } else {
+        for target in &pending.target_paths {
+            if !action_artifacts
+                .iter()
+                .any(|artifact| artifact_covers_target(artifact, target))
+            {
+                issues.push(candidate_validation_issue(
+                    "uncovered-completion-target",
+                    relative,
+                    &format!("No reviewed artifact covers required target {target:?}."),
+                ));
+            }
+        }
+    }
+}
+
+fn is_action_id(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().enumerate().all(|(index, byte)| {
+            if index == 0 {
+                byte.is_ascii_lowercase()
+            } else {
+                byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-'
+            }
+        })
+}
+
+fn is_reserved_candidate_artifact(path: &str) -> bool {
+    matches!(
+        path,
+        ".agentic/config.yaml" | "migration-draft.json" | "migration-manifest.yaml"
+    ) || path == "migration-completions"
+        || path.starts_with("migration-completions/")
+}
+
+fn artifact_covers_target(artifact: &str, target: &str) -> bool {
+    let artifact_parts = artifact.split('/').collect::<Vec<_>>();
+    let target_parts = target.split('/').collect::<Vec<_>>();
+    if artifact_parts.len() < target_parts.len() {
+        return false;
+    }
+    if !target_parts
+        .iter()
+        .zip(&artifact_parts)
+        .all(|(expected, actual)| {
+            (expected.starts_with('<') && expected.ends_with('>') && !actual.is_empty())
+                || expected == actual
+        })
+    {
+        return false;
+    }
+    let target_is_file = target_parts.last().is_some_and(|part| {
+        [".json", ".yaml", ".yml", ".md", ".lock"]
+            .iter()
+            .any(|extension| part.ends_with(extension))
+    });
+    !target_is_file || artifact_parts.len() == target_parts.len()
 }
 
 fn parse_candidate_draft(
@@ -1295,10 +1834,18 @@ fn candidate_validation_report(
     issues: Vec<MigrationCandidateValidationIssue>,
     pending_actions: Vec<String>,
 ) -> MigrationCandidateValidationReport {
+    let pending_validations = if status == "incomplete" {
+        vec!["candidate-schema-and-release".to_owned()]
+    } else {
+        Vec::new()
+    };
     let next = match status {
         "valid" => "The Candidate is complete and may proceed to explicit application review.",
+        "incomplete" if pending_actions.is_empty() => {
+            "Completion Records are structurally complete. Candidate Schema and signed Framework Release validation must pass before explicit application review. No active Project files were changed."
+        }
         "incomplete" => {
-            "Complete every pending action inside the isolated Candidate, then validate it again. No active Project files were changed."
+            "Create migration-completions/<action-id>.yaml for every pending action using the Migration Action Completion schema, then validate again. No active Project files were changed."
         }
         "blocked" => {
             "Resolve the Project-state blocker and regenerate the Candidate from the current revision. No active Project files were changed."
@@ -1314,6 +1861,7 @@ fn candidate_validation_report(
         source_revision,
         issues,
         pending_actions,
+        pending_validations,
         next: next.to_owned(),
     }
 }
