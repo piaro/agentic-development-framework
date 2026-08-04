@@ -43,8 +43,16 @@ step, or from a password manager, avoids that.
 |---|---|---|
 | Secret | `AGENTIC_RELEASE_SIGNING_KEY_HEX` | the seed |
 | Variable | `AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX` | the public key |
-| Variable | `AGENTIC_RELEASE_SOURCE_ID` | where projects fetch from, for example `remote:official` |
-| Variable | `AGENTIC_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.prototype` |
+| Variable | `AGENTIC_RELEASE_SOURCE_ID` | the name releases are signed as coming from, for example `remote:official` |
+| Variable | `AGENTIC_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.2026-08` |
+
+Both names are recorded in the framework lock and the trust store and compared
+as exact strings, so changing either one later breaks projects that already
+pinned them. Choose them once.
+
+The key identifier should distinguish this key from the next one, because
+rotation means both exist in the trust store at the same time. A date or a
+sequence number does that; `prototype` does not.
 
 The public key is a variable rather than a secret on purpose. The candidate job
 checks the signature it produced against it, so a wrong or rotated key stops the
@@ -97,6 +105,34 @@ happened.
 The license files are published because the binaries statically link their
 dependencies. Several of those dependencies require their terms to travel with
 the binary, so publishing without them would not be permitted.
+
+## How a release reaches a project
+
+Two separate things are published: the CLI binary, and the framework release
+that a project pins - the rules and schemas the control plane evaluates against.
+
+`bootstrap/install.sh` downloads both from the same GitHub release, verifies
+their attestations, and installs them together. `project init` then reads the
+framework release from the directory the binary sits in, so a project is set up
+without any further download. Updating the framework release later works the
+same way: fetch the assets, then `agentic release install-archive` and
+`agentic release switch`.
+
+`agentic release fetch` is a separate path that downloads
+`<base_url>/<release_id>.tar` over HTTPS. It is the only thing that needs the
+source ID resolved to a location, and the project declares that mapping itself:
+
+```yaml
+# .agentic/release-sources.yaml
+schema_version: "1"
+sources:
+  - id: remote:official
+    base_url: https://example.com/agentic/releases
+```
+
+`project init` does not write that file. Hosting the archives at a stable URL
+and pointing projects at it is a deployment choice rather than something the kit
+decides, so remote fetching stays opt-in.
 
 ## Rotating or revoking a key
 

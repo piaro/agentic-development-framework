@@ -170,8 +170,15 @@ fn configured_base_url(
         }
     }
     selected.ok_or_else(|| {
+        // The source ID is a name the Release was signed with, not a location.
+        // Fetching over HTTP is the one path that needs it resolved, and the
+        // mapping is the project's to declare.
         remote_error(format!(
-            "Framework Release source is not configured: {expected_source_id:?}"
+            "Framework Release source {expected_source_id:?} is not configured in \
+             {RELEASE_SOURCES_PATH}. Add an entry mapping it to a base URL:\n\
+             \x20 - id: {expected_source_id}\n\
+             \x20   base_url: https://example.com/releases\n\
+             Installing from a local directory or archive does not need this."
         ))
     })
 }
