@@ -381,6 +381,13 @@ sh scripts/tests/test-vnext-rust.sh
 
 `scripts/tests/test-vnext-rust.sh`は、書式、lint、テストに加えて、Detector品質corpus、golden期待値、署名済みRelease生成、公開、導入までを通します。
 
+## 報告と貢献
+
+- 不具合の報告と提案はIssueへ。様式は用意してあります
+- 脆弱性は公開の場に書かず、GitHubの非公開報告を使ってください。対象と対象外は`SECURITY.md`に書いてあります
+- 変更を送る前の確認事項は`CONTRIBUTING.md`にあります。意図的に採らない方針もそこに書いてあります
+- 変更履歴は`CHANGELOG.md`です
+
 ## ライセンス
 
 MITライセンスとApache License 2.0の二本立てです。利用者はどちらかを選べます。全文は`LICENSE-MIT`と`LICENSE-APACHE`にあります。

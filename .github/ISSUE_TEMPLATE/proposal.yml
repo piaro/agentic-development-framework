@@ -1,0 +1,42 @@
+name: Proposal
+description: Suggest a change to what the kit does
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please read [Out of scope](https://github.com/piaro/agentic-development-kit/blob/main/CONTRIBUTING.md#out-of-scope)
+        first. Some directions are deliberately not taken, and knowing that now
+        saves you the work.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you were trying to do, and where the kit got in the way. Describe the situation rather than the fix you have in mind.
+    validations:
+      required: true
+
+  - type: textarea
+    id: current
+    attributes:
+      label: What you do today
+      description: How you work around it now, and what that costs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you propose
+      description: If you have a specific change in mind, describe it and what it would affect.
+
+  - type: textarea
+    id: judgement
+    attributes:
+      label: Does it move any judgement away from people?
+      description: >
+        The kit checks structure, references, state, digests, and coverage; it
+        does not decide what is semantically correct. If your proposal would
+        have it infer a product decision or accept something without a reviewed
+        binding, say so - that is the part worth discussing.

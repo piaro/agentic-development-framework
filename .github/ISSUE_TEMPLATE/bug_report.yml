@@ -1,0 +1,71 @@
+name: Bug report
+description: Something behaved differently from what the documentation says
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Found a security problem instead? Do not file it here - see
+        [SECURITY.md](https://github.com/piaro/agentic-development-kit/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, and what it did.
+      placeholder: |
+        Ran: agentic next change.example --project .
+        Got: blocked-detection with no gap listed
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      description: Where you got that expectation from helps a lot - a document, a message, or a reasonable assumption.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: How to reproduce it
+      description: The smallest sequence that shows the problem. A project that fails is more useful than a description of one.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Output of `agentic --version`.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How you installed it
+      options:
+        - Published binary
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: macOS 15 on Apple silicon
+    validations:
+      required: true
+
+  - type: textarea
+    id: languages
+    attributes:
+      label: Languages in the analyzed source, if relevant
+      description: >
+        For a detection problem, say which languages and frameworks are involved.
+        C++ has no syntax detector by design, and aliases and dynamic dispatch
+        are not resolved yet - those are known gaps rather than bugs.
