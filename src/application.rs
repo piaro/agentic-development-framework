@@ -1,4 +1,4 @@
-//! Storage-independent orchestration of the vNext technical modules.
+//! Storage-independent orchestration of the technical modules.
 //!
 //! The Application owns call order and issued Context lookup. Semantic state
 //! remains a Thin Kernel output, while physical persistence remains a Project

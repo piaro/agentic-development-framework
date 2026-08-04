@@ -9,7 +9,7 @@ VERIFY_CANDIDATE=$KIT_ROOT/scripts/verify-release-candidate.sh
 PUBLISH=$KIT_ROOT/scripts/publish-github-release.sh
 INSPECT=$KIT_ROOT/scripts/inspect-candidate-run.sh
 FAKE_GH=$KIT_ROOT/scripts/tests/fixtures/fake-gh-release.py
-TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-publication-test.XXXXXX")
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/adf-release-publication-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"
 }
@@ -20,16 +20,16 @@ PUBLIC_KEY=ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c
 SOURCE_ID=remote:test-fixture
 SIGNER_KEY_ID=test.framework.release
 SOURCE_REVISION=1111111111111111111111111111111111111111
-RELEASE_TAG=framework-prototype-vnext-dev
+RELEASE_TAG=framework-adf-dev
 CANDIDATE=$TEST_ROOT/candidate
 BINARIES=$TEST_ROOT/binaries
-BINARY=$KIT_ROOT/target/release/agentic
+BINARY=$KIT_ROOT/target/release/adf
 
-AGENTIC_RELEASE_SIGNING_KEY_HEX=$SEED \
-  AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
-  AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID \
-  AGENTIC_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
-  AGENTIC_RELEASE_OUTPUT_DIR=$CANDIDATE \
+ADF_RELEASE_SIGNING_KEY_HEX=$SEED \
+  ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+  ADF_RELEASE_SOURCE_ID=$SOURCE_ID \
+  ADF_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
+  ADF_RELEASE_OUTPUT_DIR=$CANDIDATE \
   sh "$RELEASE_CI" >/dev/null
 
 python3 - "$BINARIES" "$SOURCE_REVISION" "$KIT_ROOT" <<'PY'
@@ -51,7 +51,7 @@ targets = (
 checksums = []
 for target in targets:
     suffix = ".exe" if target.endswith("-windows-msvc") else ""
-    name = f"agentic-{target}{suffix}"
+    name = f"adf-{target}{suffix}"
     path = root / name
     path.write_bytes(f"test binary for {target}\n".encode())
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -89,7 +89,7 @@ python3 "$KIT_ROOT/scripts/verify-release-binaries.py" \
 
 TAMPERED_BINARIES=$TEST_ROOT/tampered-binaries
 cp -R "$BINARIES" "$TAMPERED_BINARIES"
-printf 'tampered' >>"$TAMPERED_BINARIES/agentic-aarch64-apple-darwin"
+printf 'tampered' >>"$TAMPERED_BINARIES/adf-aarch64-apple-darwin"
 if python3 "$KIT_ROOT/scripts/verify-release-binaries.py" \
   "$TAMPERED_BINARIES" "$SOURCE_REVISION" >/dev/null 2>&1; then
   echo "Binary verifier accepted bytes that differ from the Build Record" >&2
@@ -105,17 +105,17 @@ case "$NATIVE_TARGET" in
   *-windows-msvc) NATIVE_SUFFIX=.exe ;;
   *) NATIVE_SUFFIX= ;;
 esac
-test -s "$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX"
-test -s "$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX.build.json"
-"$NATIVE_OUTPUT/agentic-$NATIVE_TARGET$NATIVE_SUFFIX" --version |
+test -s "$NATIVE_OUTPUT/adf-$NATIVE_TARGET$NATIVE_SUFFIX"
+test -s "$NATIVE_OUTPUT/adf-$NATIVE_TARGET$NATIVE_SUFFIX.build.json"
+"$NATIVE_OUTPUT/adf-$NATIVE_TARGET$NATIVE_SUFFIX" --version |
   grep -q "$SOURCE_REVISION"
 
 verify_candidate() {
-  AGENTIC_RELEASE_CI_BINARY=$BINARY \
-    AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
-    AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID \
-    AGENTIC_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
-    AGENTIC_RELEASE_TAG=$RELEASE_TAG \
+  ADF_RELEASE_CI_BINARY=$BINARY \
+    ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+    ADF_RELEASE_SOURCE_ID=$SOURCE_ID \
+    ADF_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
+    ADF_RELEASE_TAG=$RELEASE_TAG \
     sh "$VERIFY_CANDIDATE" "$1"
 }
 
@@ -168,11 +168,11 @@ import json
 import sys
 
 print(json.dumps({
-    "path": ".github/workflows/vnext-release.yml",
+    "path": ".github/workflows/release.yml",
     "event": "workflow_dispatch",
     "status": "completed",
     "conclusion": "success",
-    "head_repository": {"full_name": "example/agentic-development-kit"},
+    "head_repository": {"full_name": "example/agentic-development-framework"},
     "head_branch": "main",
     "head_sha": sys.argv[1],
 }))
@@ -180,9 +180,9 @@ PY
 )
 INSPECTED=$(FAKE_GH_STATE=$TEST_ROOT/inspect-state \
   FAKE_GH_RUN_JSON=$RUN_JSON \
-  AGENTIC_GH_CLI=$FAKE_GH \
-  GITHUB_REPOSITORY=example/agentic-development-kit \
-  AGENTIC_RELEASE_DEFAULT_BRANCH=main \
+  ADF_GH_CLI=$FAKE_GH \
+  GITHUB_REPOSITORY=example/agentic-development-framework \
+  ADF_RELEASE_DEFAULT_BRANCH=main \
   sh "$INSPECT" 12345)
 test "$INSPECTED" = "$SOURCE_REVISION"
 
@@ -194,9 +194,9 @@ print(json.dumps(value))
 ')
 if FAKE_GH_STATE=$TEST_ROOT/inspect-failed-state \
   FAKE_GH_RUN_JSON=$FAILED_RUN_JSON \
-  AGENTIC_GH_CLI=$FAKE_GH \
-  GITHUB_REPOSITORY=example/agentic-development-kit \
-  AGENTIC_RELEASE_DEFAULT_BRANCH=main \
+  ADF_GH_CLI=$FAKE_GH \
+  GITHUB_REPOSITORY=example/agentic-development-framework \
+  ADF_RELEASE_DEFAULT_BRANCH=main \
   sh "$INSPECT" 12345 >/dev/null 2>&1; then
   echo "Candidate run inspector accepted a failed workflow" >&2
   exit 1
@@ -204,16 +204,16 @@ fi
 
 publish_with_state() {
   state=$1
-  AGENTIC_RELEASE_CI_BINARY=$BINARY \
-    AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
-    AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID \
-    AGENTIC_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
-    AGENTIC_RELEASE_CANDIDATE_RUN_ID=12345 \
-    AGENTIC_RELEASE_DEFAULT_BRANCH=main \
-    AGENTIC_RELEASE_REQUIRE_ATTESTATIONS=1 \
-    AGENTIC_GH_CLI=$FAKE_GH \
+  ADF_RELEASE_CI_BINARY=$BINARY \
+    ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+    ADF_RELEASE_SOURCE_ID=$SOURCE_ID \
+    ADF_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
+    ADF_RELEASE_CANDIDATE_RUN_ID=12345 \
+    ADF_RELEASE_DEFAULT_BRANCH=main \
+    ADF_RELEASE_REQUIRE_ATTESTATIONS=1 \
+    ADF_GH_CLI=$FAKE_GH \
     FAKE_GH_STATE=$state \
-    GITHUB_REPOSITORY=example/agentic-development-kit \
+    GITHUB_REPOSITORY=example/agentic-development-framework \
     sh "$PUBLISH" "$CANDIDATE" "$BINARIES" "$RELEASE_TAG" "$SOURCE_REVISION"
 }
 
@@ -226,7 +226,7 @@ test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/distribution-trust.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publish-receipt.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publication-record.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/SHA256SUMS"
-test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/agentic-x86_64-unknown-linux-gnu"
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/adf-x86_64-unknown-linux-gnu"
 # Statically linked dependencies require their terms to be published alongside.
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/LICENSE-APACHE"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/LICENSE-MIT"
@@ -246,7 +246,7 @@ fi
 test "$(cat "$TAMPERED_STATE/releases/$RELEASE_TAG/state")" = "draft"
 
 FAILED_ATTESTATION_STATE=$TEST_ROOT/failed-attestation-state
-if FAKE_GH_FAIL_ATTESTATION=agentic-x86_64-unknown-linux-gnu \
+if FAKE_GH_FAIL_ATTESTATION=adf-x86_64-unknown-linux-gnu \
   publish_with_state "$FAILED_ATTESTATION_STATE" >/dev/null 2>&1; then
   echo "Publication accepted a binary without valid provenance" >&2
   exit 1
@@ -262,16 +262,16 @@ fi
 test ! -e "$FAILED_TRUST_ATTESTATION_STATE/releases"
 
 WRONG_TAG_STATE=$TEST_ROOT/wrong-tag-state
-if AGENTIC_RELEASE_CI_BINARY=$BINARY \
-  AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
-  AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID \
-  AGENTIC_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
-  AGENTIC_RELEASE_CANDIDATE_RUN_ID=12345 \
-  AGENTIC_RELEASE_DEFAULT_BRANCH=main \
-  AGENTIC_RELEASE_REQUIRE_ATTESTATIONS=1 \
-  AGENTIC_GH_CLI=$FAKE_GH \
+if ADF_RELEASE_CI_BINARY=$BINARY \
+  ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+  ADF_RELEASE_SOURCE_ID=$SOURCE_ID \
+  ADF_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID \
+  ADF_RELEASE_CANDIDATE_RUN_ID=12345 \
+  ADF_RELEASE_DEFAULT_BRANCH=main \
+  ADF_RELEASE_REQUIRE_ATTESTATIONS=1 \
+  ADF_GH_CLI=$FAKE_GH \
   FAKE_GH_STATE=$WRONG_TAG_STATE \
-  GITHUB_REPOSITORY=example/agentic-development-kit \
+  GITHUB_REPOSITORY=example/agentic-development-framework \
   sh "$PUBLISH" "$CANDIDATE" "$BINARIES" framework-wrong "$SOURCE_REVISION" \
   >/dev/null 2>&1; then
   echo "Publication accepted a tag unrelated to the Release ID" >&2
@@ -279,4 +279,4 @@ if AGENTIC_RELEASE_CI_BINARY=$BINARY \
 fi
 test ! -e "$WRONG_TAG_STATE/releases"
 
-echo "vNext Release publication tests passed"
+echo "Release publication tests passed"

@@ -1,4 +1,4 @@
-# Agentic Development Kit
+# Agentic Development Framework
 
 A control plane for repositories worked on by AI agents. It decides what happens
 next in a change, and refuses to call that change done until the evidence its
@@ -39,25 +39,25 @@ verifies.
 
 ## Getting started
 
-You need the `agentic` binary and a git repository. Nothing else - no Python, no
+You need the `adf` binary and a git repository. Nothing else - no Python, no
 Rust toolchain.
 
 ```sh
-agentic project init --project /path/to/project
+adf project init --project /path/to/project
 ```
 
 That places the configuration, the pinned framework release, the three agent
-skills, a guide at `docs/agentic/README.md`, and a block in `AGENTS.md`. Nothing
+skills, a guide at `docs/adf/README.md`, and a block in `AGENTS.md`. Nothing
 existing is overwritten, and nothing is committed for you.
 
 If the repository already has code, let the detectors list what they can see and
 review it before it counts:
 
 ```sh
-agentic project observe --project . --output .agentic/repository-observation.draft.yaml
+adf project observe --project . --output .adf/repository-observation.draft.yaml
 # fill in the logical IDs, owners, and the accepted decisions that authorize them
-agentic project validate-bindings --draft .agentic/repository-observation.draft.yaml
-agentic project promote-bindings --draft .agentic/repository-observation.draft.yaml
+adf project validate-bindings --draft .adf/repository-observation.draft.yaml
+adf project promote-bindings --draft .adf/repository-observation.draft.yaml
 ```
 
 Candidates are never applied on their own. A name that looks like a database
@@ -66,26 +66,26 @@ write is a candidate, not a fact.
 Then start a change:
 
 ```sh
-agentic change init change.first-feature \
+adf change init change.first-feature \
   --title "First feature" \
   --intent "Why this change exists"
 
-agentic next change.first-feature
+adf next change.first-feature
 ```
 
 From here, `next` says what to do. Agents normally reach it over MCP:
 
 ```sh
-agentic mcp --project /path/to/project
+adf mcp --project /path/to/project
 ```
 
 ## The loop
 
 ```text
-        agentic change init
+        adf change init
                 │
                 ▼
-    ┌──▶ agentic next ──── one action, with the context for it
+    ┌──▶ adf next ──── one action, with the context for it
     │           │
     │           ├─ Analyst    review detected signals, confirm what the change
     │           │             touches, write contracts, ask a person when no
@@ -93,7 +93,7 @@ agentic mcp --project /path/to/project
     │           ├─ Builder    implement, then record evidence per clause
     │           └─ Challenger try to falsify it, before and after the build
     │           │
-    └───────────┴─ agentic submit ──── validated, stored, reevaluated
+    └───────────┴─ adf submit ──── validated, stored, reevaluated
                 │
                 ▼
           ready to merge
@@ -114,7 +114,7 @@ runs in a context independent of the one that built it.
 | `needs-post-build-challenge` | falsify the implementation |
 | `ready-to-merge` | nothing |
 
-`agentic explain <change-id>` says why the change is where it is.
+`adf explain <change-id>` says why the change is where it is.
 
 ## Commands
 

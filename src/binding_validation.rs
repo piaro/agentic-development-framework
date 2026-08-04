@@ -197,11 +197,11 @@ impl BindingValidationReport {
                 lines.push("Next: Binding Records are ready for normal project evaluation.".to_owned())
             }
             "invalid" => lines.extend([
-                "Next: run agentic project observe --output .agentic/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
+                "Next: run adf project observe --output .adf/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
                     .to_owned(),
                 "Then: review the listed physical names, logical refs, owners, fact kinds, and accepted Decision authorities."
                     .to_owned(),
-                "Then: run agentic project validate-bindings again.".to_owned(),
+                "Then: run adf project validate-bindings again.".to_owned(),
                 "Binding candidates are never applied automatically.".to_owned(),
             ]),
             _ => lines.push(
@@ -260,8 +260,8 @@ mod tests {
         assert_eq!(report.summary.binding_issues, 2);
         assert_eq!(report.summary.coverage_issues, 1);
         let text = report.render_text();
-        assert!(text.contains("Next: run agentic project observe"));
-        assert!(text.contains("Then: run agentic project validate-bindings again"));
+        assert!(text.contains("Next: run adf project observe"));
+        assert!(text.contains("Then: run adf project validate-bindings again"));
         assert!(text.contains("never applied automatically"));
     }
 }

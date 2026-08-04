@@ -18,7 +18,7 @@ pub const DATA_MODEL_VERSION: &str = "3";
 pub const EXPLANATION_VERSION: &str = "2";
 pub const FRAMEWORK_LOCK_SCHEMA_VERSION: &str = "1";
 pub const SIGNED_FRAMEWORK_LOCK_SCHEMA_VERSION: &str = "2";
-pub const FRAMEWORK_RELEASE: &str = "prototype-vnext-dev";
+pub const FRAMEWORK_RELEASE: &str = "adf-dev";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct FrameworkLock {

@@ -9,14 +9,14 @@ SOURCE_RULES=$KIT_ROOT/testdata/fixtures/db-sqs/rules.yaml
 SOURCE_SCHEMAS=$KIT_ROOT/schemas/v1
 SOURCE_FRAMEWORK_CATALOG=$KIT_ROOT/testdata/fixtures/framework-catalog/framework-catalog.yaml
 BASE_LOCK=$KIT_ROOT/testdata/fixtures/db-sqs/framework-lock.yaml
-OUTPUT_DIR=${AGENTIC_RELEASE_OUTPUT_DIR:-"$KIT_ROOT/dist/vnext"}
-SOURCE_ID=${AGENTIC_RELEASE_SOURCE_ID:-remote:official}
-SIGNER_KEY_ID=${AGENTIC_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
-PUBLIC_KEY=${AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX:?AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX is required}
-: "${AGENTIC_RELEASE_SIGNING_KEY_HEX:?AGENTIC_RELEASE_SIGNING_KEY_HEX is required}"
+OUTPUT_DIR=${ADF_RELEASE_OUTPUT_DIR:-"$KIT_ROOT/dist/framework"}
+SOURCE_ID=${ADF_RELEASE_SOURCE_ID:-remote:official}
+SIGNER_KEY_ID=${ADF_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
+PUBLIC_KEY=${ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX:?ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX is required}
+: "${ADF_RELEASE_SIGNING_KEY_HEX:?ADF_RELEASE_SIGNING_KEY_HEX is required}"
 
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "cargo is required to build the vNext Release Publisher" >&2
+  echo "cargo is required to build the Release Publisher" >&2
   exit 2
 fi
 if [ -e "$OUTPUT_DIR/framework-release.tar" ] ||
@@ -27,7 +27,7 @@ if [ -e "$OUTPUT_DIR/framework-release.tar" ] ||
   exit 2
 fi
 
-WORK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-ci.XXXXXX")
+WORK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/adf-release-ci.XXXXXX")
 cleanup() {
   rm -rf "$WORK_ROOT"
 }
@@ -42,7 +42,7 @@ cargo build \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --release \
   --locked
-BINARY=$RUST_ROOT/target/release/agentic
+BINARY=$RUST_ROOT/target/release/adf
 
 build_release() {
   destination=$1
@@ -74,9 +74,9 @@ cmp "$WORK_ROOT/first/framework-release.tar" "$WORK_ROOT/second/framework-releas
 cmp "$WORK_ROOT/first/candidate-framework.lock" "$WORK_ROOT/second/candidate-framework.lock"
 cmp "$WORK_ROOT/first/distribution-trust.json" "$WORK_ROOT/second/distribution-trust.json"
 
-export AGENTIC_RELEASE_CI_BINARY=$BINARY
-export AGENTIC_RELEASE_SOURCE_ID=$SOURCE_ID
-export AGENTIC_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID
+export ADF_RELEASE_CI_BINARY=$BINARY
+export ADF_RELEASE_SOURCE_ID=$SOURCE_ID
+export ADF_RELEASE_SIGNER_KEY_ID=$SIGNER_KEY_ID
 "$SCRIPT_DIR/verify-release-archive.sh" \
   "$WORK_ROOT/first/framework-release.tar" \
   "$WORK_ROOT/first/candidate-framework.lock"

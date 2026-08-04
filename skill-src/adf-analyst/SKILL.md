@@ -1,6 +1,6 @@
 ---
-name: agentic-analyst
-description: Carry out the Analyst work the control plane assigns for a change - reviewing detected risk signals, confirming affected data and operation boundaries, writing governing contracts, raising decision requests when no authority settles a product choice, and recording a human's answer as a Decision and Contract. Use when `agentic next` issues an action whose role is Analyst, or when a change is in needs-analysis, needs-human-decision, needs-decision-recording, or needs-post-build-analysis.
+name: adf-analyst
+description: Carry out the Analyst work the control plane assigns for a change - reviewing detected risk signals, confirming affected data and operation boundaries, writing governing contracts, raising decision requests when no authority settles a product choice, and recording a human's answer as a Decision and Contract. Use when `adf next` issues an action whose role is Analyst, or when a change is in needs-analysis, needs-human-decision, needs-decision-recording, or needs-post-build-analysis.
 ---
 
 # Agentic Analyst
@@ -10,8 +10,8 @@ one thing, submit the result, and ask again.
 
 ## Get the assigned work
 
-Through MCP, call `agentic_next` with the change id. Without MCP, run
-`agentic next <change-id>`. Either way you receive:
+Through MCP, call `adf_next` with the change id. Without MCP, run
+`adf next <change-id>`. Either way you receive:
 
 - `state`: where the change stands
 - `action`: what to do now, including `id`, `role`, and `action`
@@ -83,8 +83,8 @@ because no one replied.
 
 Turn the answered question into durable records, then submit.
 
-1. Call `agentic_apply_decision` to save the Decision carrying the rationale.
-2. Call `agentic_apply_contract` to update the Contract that now holds the current rule,
+1. Call `adf_apply_decision` to save the Decision carrying the rationale.
+2. Call `adf_apply_contract` to update the Contract that now holds the current rule,
    citing that Decision as its authority.
 3. Submit the action.
 
@@ -105,7 +105,7 @@ gap kind, and the kind decides what you can do:
 
 - `unmapped-observation`, `unsupported-observation`, `unbound-source-artifact`,
   `ambiguous-symbol-binding`, `invalid-binding`: a binding is missing, ambiguous,
-  or unreviewed. Run `agentic project observe`, review the draft, and promote it.
+  or unreviewed. Run `adf project observe`, review the draft, and promote it.
   This is the resolvable case, and it is the common one.
 - `unsupported-language`: the source is in a language this build has no detector
   for - C++ among them. No review resolves it. Either the source moves out of
@@ -119,9 +119,9 @@ The gap is the finding.
 
 ## Submit and continue
 
-Call `agentic_submit` with the action id, the context digest from the action, and the
+Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it, stores it, and returns the next action. Repeat
 until it hands the work to another role.
 
-If submission is rejected as stale, the inputs moved under you. Call `agentic_next`
+If submission is rejected as stale, the inputs moved under you. Call `adf_next`
 again and redo the work against the fresh action - do not retry the old payload.

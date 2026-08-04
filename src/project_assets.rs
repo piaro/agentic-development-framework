@@ -15,11 +15,11 @@ include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 const SKILL_SOURCE_PREFIX: &str = "skill-src/";
 const SKILL_TARGET_PREFIX: &str = ".agents/skills/";
 const AGENTS_BLOCK_ASSET: &str = "templates/AGENTS.block";
-const GUIDE_ASSET: &str = "templates/docs/agentic/README.md";
-const GUIDE_TARGET: &str = "docs/agentic/README.md";
+const GUIDE_ASSET: &str = "templates/docs/adf/README.md";
+const GUIDE_TARGET: &str = "docs/adf/README.md";
 
 pub const AGENTS_FILE: &str = "AGENTS.md";
-pub const AGENTS_BLOCK_MARKER: &str = "<!-- agentic-development:start -->";
+pub const AGENTS_BLOCK_MARKER: &str = "<!-- adf:start -->";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MissingAsset(pub String);
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn the_three_role_skills_are_placed() {
         let placed = paths();
-        for skill in ["agentic-analyst", "agentic-builder", "agentic-challenger"] {
+        for skill in ["adf-analyst", "adf-builder", "adf-challenger"] {
             assert!(
                 placed.contains(&format!(".agents/skills/{skill}/SKILL.md")),
                 "{skill} was not placed"
@@ -108,8 +108,8 @@ mod tests {
     fn the_reference_documents_travel_with_their_skills() {
         let placed = paths();
         for reference in [
-            ".agents/skills/agentic-analyst/references/contract-governance.md",
-            ".agents/skills/agentic-challenger/references/challenge-method.md",
+            ".agents/skills/adf-analyst/references/contract-governance.md",
+            ".agents/skills/adf-challenger/references/challenge-method.md",
         ] {
             assert!(
                 placed.contains(&reference.to_owned()),
@@ -128,7 +128,7 @@ mod tests {
     fn templates_of_the_retired_python_cli_are_not_placed() {
         for placed in paths() {
             assert!(
-                !placed.starts_with(".agentic/") && !placed.starts_with("contracts/"),
+                !placed.starts_with(".adf/") && !placed.starts_with("contracts/"),
                 "{placed} belongs to the retired CLI"
             );
         }
@@ -150,6 +150,6 @@ mod tests {
     fn the_agents_block_carries_its_marker() {
         let block = agents_block("example").expect("the block is embedded");
         assert!(block.contains(AGENTS_BLOCK_MARKER));
-        assert!(block.contains("$agentic-analyst"));
+        assert!(block.contains("$adf-analyst"));
     }
 }

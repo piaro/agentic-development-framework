@@ -1,5 +1,5 @@
 schema_version: "1"
-namespace: dev.agentic-kit
+namespace: dev.adf
 rules:
   - id: typeorm-persistence
     framework: typeorm

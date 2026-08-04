@@ -6,8 +6,8 @@ SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 BOOTSTRAP=$KIT_ROOT/bootstrap/install.sh
 FAKE_GH=$KIT_ROOT/scripts/tests/fixtures/fake-gh-release.py
-RUST_BINARY=$KIT_ROOT/target/debug/agentic
-TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-bootstrap-test.XXXXXX")
+RUST_BINARY=$KIT_ROOT/target/debug/adf
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/adf-bootstrap-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"
 }
@@ -23,8 +23,8 @@ case "$(uname -s):$(uname -m)" in
     exit 1
     ;;
 esac
-BINARY=agentic-$TARGET
-REPOSITORY=example/agentic-development-kit
+BINARY=adf-$TARGET
+REPOSITORY=example/agentic-development-framework
 STATE=$TEST_ROOT/github
 INSTALL_ROOT=$TEST_ROOT/installed
 
@@ -120,7 +120,7 @@ run_bootstrap() {
   tag=$1
   FAKE_GH_STATE=$STATE \
     FAKE_GH_DEFAULT_BRANCH=main \
-    AGENTIC_GH_CLI=$FAKE_GH \
+    ADF_GH_CLI=$FAKE_GH \
     sh "$BOOTSTRAP" \
       --repo "$REPOSITORY" \
       --tag "$tag" \
@@ -131,7 +131,7 @@ TAG_ONE=framework-bootstrap-v1
 REVISION_ONE=1111111111111111111111111111111111111111
 create_release "$TAG_ONE" "$REVISION_ONE"
 run_bootstrap "$TAG_ONE" >/dev/null
-STATUS=$("$INSTALL_ROOT/bin/agentic" binary status \
+STATUS=$("$INSTALL_ROOT/bin/adf" binary status \
   --install-root "$INSTALL_ROOT" \
   --format json)
 printf '%s' "$STATUS" | python3 -c '
@@ -145,7 +145,7 @@ TAG_TWO=framework-bootstrap-v2
 REVISION_TWO=2222222222222222222222222222222222222222
 create_release "$TAG_TWO" "$REVISION_TWO"
 run_bootstrap "$TAG_TWO" >/dev/null
-STATUS=$("$INSTALL_ROOT/bin/agentic" binary status \
+STATUS=$("$INSTALL_ROOT/bin/adf" binary status \
   --install-root "$INSTALL_ROOT" \
   --format json)
 printf '%s' "$STATUS" | python3 -c '
@@ -155,9 +155,9 @@ assert value["current"] == "framework-bootstrap-v2"
 assert value["previous"] == "framework-bootstrap-v1"
 '
 
-"$INSTALL_ROOT/bin/agentic" binary rollback \
+"$INSTALL_ROOT/bin/adf" binary rollback \
   --install-root "$INSTALL_ROOT" >/dev/null
-STATUS=$("$INSTALL_ROOT/bin/agentic" binary status \
+STATUS=$("$INSTALL_ROOT/bin/adf" binary status \
   --install-root "$INSTALL_ROOT" \
   --format json)
 printf '%s' "$STATUS" | python3 -c '
@@ -182,7 +182,7 @@ for call, revision in zip(
 ):
     assert call[call.index("--repo") + 1] == repository
     assert call[call.index("--signer-workflow") + 1] == (
-        repository + "/.github/workflows/vnext-release.yml"
+        repository + "/.github/workflows/release.yml"
     )
     assert call[call.index("--source-digest") + 1] == revision
     assert call[call.index("--source-ref") + 1] == "refs/heads/main"
@@ -194,7 +194,7 @@ REVISION_THREE=3333333333333333333333333333333333333333
 create_release "$TAG_THREE" "$REVISION_THREE"
 if FAKE_GH_STATE=$STATE \
   FAKE_GH_FAIL_ATTESTATION=$BINARY \
-  AGENTIC_GH_CLI=$FAKE_GH \
+  ADF_GH_CLI=$FAKE_GH \
   sh "$BOOTSTRAP" \
     --repo "$REPOSITORY" \
     --tag "$TAG_THREE" \
@@ -202,7 +202,7 @@ if FAKE_GH_STATE=$STATE \
   echo "bootstrap accepted a binary without valid provenance" >&2
   exit 1
 fi
-STATUS=$("$INSTALL_ROOT/bin/agentic" binary status \
+STATUS=$("$INSTALL_ROOT/bin/adf" binary status \
   --install-root "$INSTALL_ROOT" \
   --format json)
 printf '%s' "$STATUS" | python3 -c '
@@ -217,7 +217,7 @@ REVISION_DRAFT=4444444444444444444444444444444444444444
 create_release "$TAG_DRAFT" "$REVISION_DRAFT"
 printf 'draft\n' >"$STATE/releases/$TAG_DRAFT/state"
 if FAKE_GH_STATE=$STATE \
-  AGENTIC_GH_CLI=$FAKE_GH \
+  ADF_GH_CLI=$FAKE_GH \
   sh "$BOOTSTRAP" \
     --repo "$REPOSITORY" \
     --tag "$TAG_DRAFT" \
@@ -227,4 +227,4 @@ if FAKE_GH_STATE=$STATE \
 fi
 test "$(wc -l <"$STATE/attestation-calls.jsonl" | tr -d ' ')" = "4"
 
-echo "vNext bootstrap tests passed"
+echo "bootstrap tests passed"

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/result-payloads/analysis",
+  "$id": "adf://schemas/v1/result-payloads/analysis",
   "x-result-schema": "result.analysis",
   "x-allowed-roles": ["Analyst"],
   "type": "object",

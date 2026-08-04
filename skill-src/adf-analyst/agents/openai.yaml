@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentic Analyst"
   short_description: "Do the analysis the control plane assigns for a change"
-  default_prompt: "Use $agentic-analyst to work the next Analyst action for this change."
+  default_prompt: "Use $adf-analyst to work the next Analyst action for this change."

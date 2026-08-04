@@ -5,30 +5,30 @@
 ## 変更を始める
 
 ```sh
-agentic change init <change-id> --title "変更タイトル"
+adf change init <change-id> --title "変更タイトル"
 ```
 
 ## 進め方
 
-次にやることは`agentic next <change-id>`が返します。エージェントはその1件を実行し、結果を提出して、また次を受け取ります。手順の順番を覚えておく必要はありません。
+次にやることは`adf next <change-id>`が返します。エージェントはその1件を実行し、結果を提出して、また次を受け取ります。手順の順番を覚えておく必要はありません。
 
 ```sh
-agentic next <change-id>
+adf next <change-id>
 ```
 
-エージェントの通常経路はMCPです。`agentic mcp`を起動すると、同じやり取りを`agentic_next`と`agentic_submit`で行えます。
+エージェントの通常経路はMCPです。`adf mcp`を起動すると、同じやり取りを`adf_next`と`adf_submit`で行えます。
 
 受け取った作業の役割に応じてSkillを使い分けます。
 
 | 役割 | Skill | 担当する作業 |
 |---|---|---|
-| Analyst | `$agentic-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contractの記入、人への判断依頼、回答の記録 |
-| Builder | `$agentic-builder` | 実装と、Contract条項に対応する証拠の記録 |
-| Challenger | `$agentic-challenger` | 実装前と実装後の反証 |
+| Analyst | `$adf-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contractの記入、人への判断依頼、回答の記録 |
+| Builder | `$adf-builder` | 実装と、Contract条項に対応する証拠の記録 |
+| Challenger | `$adf-challenger` | 実装前と実装後の反証 |
 
 実装後の反証は、実装した文脈から独立した文脈で行います。
 
-判定の理由を知りたいときは`agentic explain <change-id>`を実行します。
+判定の理由を知りたいときは`adf explain <change-id>`を実行します。
 
 ## 決めてよいことの範囲
 

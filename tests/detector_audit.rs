@@ -1,7 +1,7 @@
-use agentic::canonical_digest;
-use agentic::detector_audit::{DetectorAuditReport, run_repository_detector_audit};
-use agentic::detector_audit_baseline::check_repository_detector_audit_baseline;
-use agentic::schema::validate_json_document;
+use adf::canonical_digest;
+use adf::detector_audit::{DetectorAuditReport, run_repository_detector_audit};
+use adf::detector_audit_baseline::check_repository_detector_audit_baseline;
+use adf::schema::validate_json_document;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -52,7 +52,7 @@ fn repository_audit_blocks_on_parse_and_language_gaps() {
     fs::write(root.join("engine.cpp"), "void run() {}\n").unwrap();
     commit_all(&root);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["detector-audit", root.to_str().unwrap(), "--format", "json"])
         .output()
         .unwrap();
@@ -96,7 +96,7 @@ fn reviewed_baseline_matches_a_clean_repository_and_reports_regressions() {
         serde_yaml::from_str(&fs::read_to_string(&baseline_path).unwrap()).unwrap();
     baseline["report_digest"] = json!(format!("sha256:{}", "0".repeat(64)));
     fs::write(&baseline_path, serde_yaml::to_string(&baseline).unwrap()).unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["detector-audit-check", root.to_str().unwrap()])
         .arg("--baseline")
         .arg(&baseline_path)
@@ -120,7 +120,7 @@ fn matching_baseline_never_waives_a_known_coverage_gap() {
     let audit = run_repository_detector_audit(&root, true).unwrap();
     let baseline_path = write_baseline("blocked", &audit);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["detector-audit-check", root.to_str().unwrap()])
         .arg("--baseline")
         .arg(&baseline_path)
@@ -133,7 +133,7 @@ fn matching_baseline_never_waives_a_known_coverage_gap() {
     assert_eq!(baseline_report["audit_status"], "blocked");
     assert_eq!(baseline_report["actual_gaps"].as_array().unwrap().len(), 1);
 
-    let audit_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let audit_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["detector-audit", root.to_str().unwrap(), "--format", "json"])
         .output()
         .unwrap();
@@ -163,10 +163,8 @@ fn checked_in_repository_audit_baselines_follow_the_input_schema() {
 }
 
 fn test_repository(name: &str) -> PathBuf {
-    let root = std::env::temp_dir().join(format!(
-        "agentic-detector-audit-{}-{name}",
-        std::process::id()
-    ));
+    let root =
+        std::env::temp_dir().join(format!("adf-detector-audit-{}-{name}", std::process::id()));
     if root.exists() {
         fs::remove_dir_all(&root).unwrap();
     }
@@ -199,7 +197,7 @@ fn run_git(root: &Path, arguments: &[&str]) {
 
 fn write_baseline(name: &str, audit: &DetectorAuditReport) -> PathBuf {
     let path = std::env::temp_dir().join(format!(
-        "agentic-detector-audit-baseline-{}-{name}.yaml",
+        "adf-detector-audit-baseline-{}-{name}.yaml",
         std::process::id()
     ));
     let value = json!({

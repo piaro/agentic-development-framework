@@ -1,4 +1,4 @@
-# Agentic Development Kit 見直しメモ
+# Agentic Development Framework 見直しメモ
 
 > 状態: 検討中
 >
@@ -7,7 +7,7 @@
 
 ## 1. 見直しの目的
 
-Agentic Development Kitを、特定のコードベースに固有の開発手順ではなく、AIエージェントを利用する多様な開発環境へ頒布・適用できるフレームワークとして再検討する。
+Agentic Development Frameworkを、特定のコードベースに固有の開発手順ではなく、AIエージェントを利用する多様な開発環境へ頒布・適用できるフレームワークとして再検討する。
 
 今回の見直しでは、特に次を対象とする。
 
@@ -137,7 +137,7 @@ Requirement定義と適用Ruleは、Thin Kernelの判定を設定するフレー
 ```mermaid
 flowchart TB
     request["Requesterの依頼<br/>会話・Issue・要求文書"]
-    run["Kernelの実行要求<br/>agentic next・Action完了・CI"]
+    run["Kernelの実行要求<br/>adf next・Action完了・CI"]
 
     subgraph stored["導入先が保存する情報"]
         contracts["Human-first Contracts<br/>現在守るべき規範"]
@@ -244,7 +244,7 @@ Change、Contract、Decision、コード、ResultからContext Compilerへ向か
 - 次に実行できるActionを一つ以上提示する
 - 作業を止める条件と、参照後に変更された入力がないかを検査する
 
-人やエージェントが`Changeの整理 → Contractの確認 → Challengerによる反証 → Builderによる実装`という順序を暗記するのではなく、`agentic next <change-id>`が現在の進行状況と次に行う作業を返す。
+人やエージェントが`Changeの整理 → Contractの確認 → Challengerによる反証 → Builderによる実装`という順序を暗記するのではなく、`adf next <change-id>`が現在の進行状況と次に行う作業を返す。
 
 ### 5.3 Human-first Contracts
 
@@ -257,7 +257,7 @@ ContractはHuman-first Markdownを正本とし、Frameworkが機械判定する�
 
 背景、例、図、操作フローは通常のMarkdown本文へ置く。
 
-```agentic-contract
+```adf-contract
 schema_version: "1"
 id: contract.order-payment
 applies_to: [operation.capture-payment, data.orders, data.payments]
@@ -327,7 +327,7 @@ StateとGenerated Contextは正本にしないが、Kernelの判断過程まで�
 - AgentまたはHumanへ実際に渡したContextのdigest
 - Next Actionを選んだ理由と、ほかのActionを選ばなかった理由
 
-`agentic explain <change-id>`は現在の判定だけでなく、Result IDを指定して過去の判定根拠を再表示できるようにする。外部情報を再現に使う場合は、URIだけでなく取得時点のsnapshotまたはdigestを保存する。
+`adf explain <change-id>`は現在の判定だけでなく、Result IDを指定して過去の判定根拠を再表示できるようにする。外部情報を再現に使う場合は、URIだけでなく取得時点のsnapshotまたはdigestを保存する。
 
 ### 5.5 Requirement選択機構
 
@@ -412,7 +412,7 @@ Detectorが出力した未確認のrisk signal候補が一件でもあれば、�
 | 共通rule table | 生成物として採用 | 分割管理した定義からRule Indexを生成する。巨大なtableを直接編集しない |
 | plugin | Detectorに限定 | 高度な候補検出にだけ使い、Requirement選択や解除は行わせない |
 
-この構成では、Ruleを一件追加しても既存のContract形式を変更する必要がない。`agentic explain`は、確認済みの事実、適用したRule ID、選ばれたRequirement ID、Rule提供元のversionとdigestを順に表示できる。13章と15章では、この構成を前提にData IntegrityとDistributed EffectsのRequirement定義と適用Ruleを具体化する。
+この構成では、Ruleを一件追加しても既存のContract形式を変更する必要がない。`adf explain`は、確認済みの事実、適用したRule ID、選ばれたRequirement ID、Rule提供元のversionとdigestを順に表示できる。13章と15章では、この構成を前提にData IntegrityとDistributed EffectsのRequirement定義と適用Ruleを具体化する。
 
 #### 5.5.6 複雑なケースでの確認
 
@@ -557,7 +557,7 @@ Assessment、Challenge、resolved lockなどの内部データは残り得るが
 実装はModuleへ分けるが、Moduleごとに別製品として導入・更新させない。最初は一つのFramework Releaseとして配布するモジュラーモノリスとし、内部の責務とテスト境界だけを明確にする。
 
 ```text
-agentic
+adf
 ├── core
 │   ├── model
 │   └── kernel
@@ -661,7 +661,7 @@ diagnostics: []
 
 ### 5.11 保存先とGit管理方針
 
-Repository直下の`contracts/`と`decisions/`は、Frameworkを外しても残るプロダクト固有の規範と判断履歴の正本とする。`.agentic/`はFrameworkの設定・lock・進行管理Record・拡張・再生成可能なcacheをまとめる名前空間とする。配下にはGit管理する導入先所有Recordとgitignoreする生成物の両方があるため、`.agentic/`全体をFrameworkが自由に削除できる内部ディレクトリとは扱わない。
+Repository直下の`contracts/`と`decisions/`は、Frameworkを外しても残るプロダクト固有の規範と判断履歴の正本とする。`.adf/`はFrameworkの設定・lock・進行管理Record・拡張・再生成可能なcacheをまとめる名前空間とする。配下にはGit管理する導入先所有Recordとgitignoreする生成物の両方があるため、`.adf/`全体をFrameworkが自由に削除できる内部ディレクトリとは扱わない。
 
 保存方法は、ファイル形式ではなく情報の性質で決める。
 
@@ -675,37 +675,37 @@ Repository直下の`contracts/`と`decisions/`は、Frameworkを外しても残�
 | 文書・生成物 | Defaultの保存先 | Git管理 | 理由・保存する範囲 |
 |---|---|---|---|
 | `AGENTS.md`のFramework入口 | Repository内 | する | すべての開発者・Agentが同じ入口を使うため |
-| 導入先設定 | `.agentic/config.yaml` | する | 導入方式、利用する組織Rule、Repository固有設定を共有するため。secretは含めない |
-| Framework lock | `.agentic/framework.lock` | する | Frameworkと組織提供物のversion、digest、署名者をCIと開発環境で固定するため |
-| 信頼するRelease公開鍵 | `.agentic/trusted-release-keys.yaml` | する | Release署名を検証する公開鍵、許可する論理的な取得元ID、鍵の`active`・`retired`・`revoked`状態を全開発環境・CIで揃えるため。秘密鍵は置かない |
-| Framework Release取得元 | `.agentic/release-sources.yaml` | する | Framework lockの論理的な取得元IDを、review済みのHTTPS base URLへ対応付けるため。credentialは含めない |
-| Change / Change Contract | `.agentic/changes/<change-id>/change.md` | する | 目的、範囲、Change固有の規範をsession間で共有するため |
+| 導入先設定 | `.adf/config.yaml` | する | 導入方式、利用する組織Rule、Repository固有設定を共有するため。secretは含めない |
+| Framework lock | `.adf/framework.lock` | する | Frameworkと組織提供物のversion、digest、署名者をCIと開発環境で固定するため |
+| 信頼するRelease公開鍵 | `.adf/trusted-release-keys.yaml` | する | Release署名を検証する公開鍵、許可する論理的な取得元ID、鍵の`active`・`retired`・`revoked`状態を全開発環境・CIで揃えるため。秘密鍵は置かない |
+| Framework Release取得元 | `.adf/release-sources.yaml` | する | Framework lockの論理的な取得元IDを、review済みのHTTPS base URLへ対応付けるため。credentialは含めない |
+| Change / Change Contract | `.adf/changes/<change-id>/change.md` | する | 目的、範囲、Change固有の規範をsession間で共有するため |
 | Shared Contract | 新規導入では`contracts/` | する | Frameworkから独立して残る、現在有効なプロダクト規範の正本であるため |
 | Decision Record | 新規導入では`decisions/` | する | Frameworkから独立して残る、判断内容・理由・決定権限の履歴であるため |
-| Repository固有Requirement・Rule | `.agentic/extensions/requirements/`、`.agentic/extensions/rules/` | 存在する場合はする | 導入先固有の開発制御であり、コード変更と同じreviewを受けるため |
-| Repository固有Skill | `.agentic/extensions/skills/` | 存在する場合はする | 導入先固有のAgent手順を共有するため |
-| Result Record | `.agentic/changes/<change-id>/results/<action-id>.<context-digest>.json` | する | Requirementの充足、signalの確認結果、Finding、入力digestを別sessionとCIが参照するため |
-| Evidence Record | `.agentic/changes/<change-id>/evidence/<evidence-id>.json` | する | Contract条項と検証結果の対応、検証revision、外部Artifactへのrefを共有するため |
+| Repository固有Requirement・Rule | `.adf/extensions/requirements/`、`.adf/extensions/rules/` | 存在する場合はする | 導入先固有の開発制御であり、コード変更と同じreviewを受けるため |
+| Repository固有Skill | `.adf/extensions/skills/` | 存在する場合はする | 導入先固有のAgent手順を共有するため |
+| Result Record | `.adf/changes/<change-id>/results/<action-id>.<context-digest>.json` | する | Requirementの充足、signalの確認結果、Finding、入力digestを別sessionとCIが参照するため |
+| Evidence Record | `.adf/changes/<change-id>/evidence/<evidence-id>.json` | する | Contract条項と検証結果の対応、検証revision、外部Artifactへのrefを共有するため |
 | 依頼のsnapshot | Change内、またはChangeから参照する小さなtext | 原則する | 外部Issue等が変わっても、判断時に読んだ内容を識別するため。機密情報は外部保存してrefとdigestだけを置く |
-| ProjectSnapshot | memoryまたは`.agentic/cache/project/` | しない | Git上の正本とrevisionから再生成できるため |
-| Rule Index | memoryまたは`.agentic/cache/rules/` | しない | 固定したRequirement、Rule、version、digestから再生成できるため |
-| DetectionReport | memoryまたは`.agentic/cache/detection/` | しない | 同じGit差分とDetector versionから再生成できるため。Analystの採否だけResult Recordへ保存する |
-| State / KernelDecision | memoryまたは`.agentic/cache/state/` | しない | 現在の入力から再計算する。過去の重要な判定根拠はResult Recordへ残す |
+| ProjectSnapshot | memoryまたは`.adf/cache/project/` | しない | Git上の正本とrevisionから再生成できるため |
+| Rule Index | memoryまたは`.adf/cache/rules/` | しない | 固定したRequirement、Rule、version、digestから再生成できるため |
+| DetectionReport | memoryまたは`.adf/cache/detection/` | しない | 同じGit差分とDetector versionから再生成できるため。Analystの採否だけResult Recordへ保存する |
+| State / KernelDecision | memoryまたは`.adf/cache/state/` | しない | 現在の入力から再計算する。過去の重要な判定根拠はResult Recordへ残す |
 | Next Action / NextResponse | memory、標準出力、API response | しない | 現在のStateから再生成できるため |
 | Generated Context | memoryまたは一時file | しない | 重複情報と機密情報を含み得るため。採用・除外したref、理由、digestだけResult Recordへ残す |
 | Human判断画面 | memory、標準出力、Web UI | しない | Next ActionとContextから再生成できるため。回答はDecision RecordとResult Recordへ保存する |
-| 規範一覧、関係図、Mutation Graph、検索index | `.agentic/cache/views/`または標準出力 | 原則しない | 正本から再生成できるため。公開文書として追跡する場合だけGit管理し、CIで鮮度を検査する |
-| Framework Releaseの展開物 | `.agentic/cache/releases/`または共通user cache | しない | `framework.lock`のversionとdigestから再取得・検証できるため |
-| offline bundle | `.agentic/bundles/`またはArtifact Store | しない | 大容量・binaryになり得るため。bundle manifestとdigestはFramework lockまたは配布記録へ残す |
+| 規範一覧、関係図、Mutation Graph、検索index | `.adf/cache/views/`または標準出力 | 原則しない | 正本から再生成できるため。公開文書として追跡する場合だけGit管理し、CIで鮮度を検査する |
+| Framework Releaseの展開物 | `.adf/cache/releases/`または共通user cache | しない | `framework.lock`のversionとdigestから再取得・検証できるため |
+| offline bundle | `.adf/bundles/`またはArtifact Store | しない | 大容量・binaryになり得るため。bundle manifestとdigestはFramework lockまたは配布記録へ残す |
 | Release CI候補 | CI Artifact Store。local検証時は`dist/vnext/` | しない | 署名済みtar、候補Framework lock、Publish Receiptを人がreviewして公開工程へ渡す一時成果物であり、source Repositoryの正本ではないため |
 | Binary Build Record・`SHA256SUMS` | Binary候補Artifactと公開Release | source Repositoryではしない | binaryのtarget、source revision、Rust version、size、SHA-256と、公開binary集合を検証するため |
 | Binary Artifact Attestation | GitHub Attestations API・透明性log | source Repositoryではしない | binary digestをbuild workflow、Repository、commit、runner種別へ暗号学的に結び付け、配布後に来歴を検証するため |
 | Publication Record | 公開先のGitHub Release等 | source Repositoryではしない | 公開tag、候補workflow run ID、source revision、署名者・取得元ID、公開assetのdigestを結び付ける来歴記録。Release署名の信頼元にはしない |
-| test report、coverage、raw probe出力 | CI Artifact Storeまたは`.agentic/cache/artifacts/` | 原則しない | 大容量または機密情報を含み得るため。Evidence RecordへURI、digest、Git revision、retentionを保存する |
+| test report、coverage、raw probe出力 | CI Artifact Storeまたは`.adf/cache/artifacts/` | 原則しない | 大容量または機密情報を含み得るため。Evidence RecordへURI、digest、Git revision、retentionを保存する |
 | compactな検証結果 | Evidence Record内 | する | exit status、検証対象、要約など、判定に必要な小さい情報だけを保存する |
 | Agentの全文会話、raw prompt・response | 保存しない。必要な監査基盤がある場合だけ外部保存 | しない | secret、個人情報、不要な推論、巨大な重複情報をGitへ入れないため |
-| credential、token、local環境設定 | 環境変数、secret manager、`.agentic/local/` | 絶対にしない | 秘密情報であるため |
-| tmp、debug log | `.agentic/tmp/`、`.agentic/logs/` | しない | 実行環境固有であり、正本でも共有すべきResultでもないため |
+| credential、token、local環境設定 | 環境変数、secret manager、`.adf/local/` | 絶対にしない | 秘密情報であるため |
+| tmp、debug log | `.adf/tmp/`、`.adf/logs/` | しない | 実行環境固有であり、正本でも共有すべきResultでもないため |
 
 Result Recordは全文ログではなく、Schemaで定めた小さな結果だけを一回のAction発行につき一fileで追記する。Action IDは同じ作業対象へ再分析が必要になった場合に再利用され得るため、物理fileはAction IDと発行時Context digestの組で識別する。共有indexを手編集せず、必要な一覧はResult Record群から生成する。これにより、複数Changeの同時進行によるmerge conflictとRepository肥大化を抑える。
 
@@ -720,7 +720,7 @@ AGENTS.md                              Git管理
 contracts/                             Git管理・導入先が所有
 decisions/                             Git管理・導入先が所有
 
-.agentic/
+.adf/
 ├── config.yaml                        Git管理
 ├── framework.lock                     Git管理
 ├── changes/
@@ -742,15 +742,15 @@ decisions/                             Git管理・導入先が所有
 導入時に追加する`.gitignore`の管理blockは、少なくとも次を含める。
 
 ```gitignore
-# agentic-development-kit generated/local files
-.agentic/cache/
-.agentic/bundles/
-.agentic/local/
-.agentic/logs/
-.agentic/tmp/
+# agentic-development-framework generated/local files
+.adf/cache/
+.adf/bundles/
+.adf/local/
+.adf/logs/
+.adf/tmp/
 ```
 
-`.agentic/`全体をignoreしてはならない。`config.yaml`、`framework.lock`、Change、Result、Evidence、Repository固有extensionまで除外され、複数人・複数Agent・CIで同じ状態を共有できなくなるためである。
+`.adf/`全体をignoreしてはならない。`config.yaml`、`framework.lock`、Change、Result、Evidence、Repository固有extensionまで除外され、複数人・複数Agent・CIで同じ状態を共有できなくなるためである。
 
 新規導入時は、正本の場所をGit管理する設定へ明示する。
 
@@ -760,7 +760,7 @@ project_sources:
   decisions: decisions/
 ```
 
-既存Repositoryへの導入では、すでにContract、ADR、Decision Logとして使われている正本を`.agentic/`以下へ強制移動しない。導入時に既存の場所を確認し、同じ設定でRepository相対pathを指定する。
+既存Repositoryへの導入では、すでにContract、ADR、Decision Logとして使われている正本を`.adf/`以下へ強制移動しない。導入時に既存の場所を確認し、同じ設定でRepository相対pathを指定する。
 
 ```yaml
 project_sources:
@@ -770,7 +770,7 @@ project_sources:
 
 `project` Moduleは設定されたpathから正本を読み、同じ`ProjectSnapshot`へ正規化する。Kernel、rules、detection、contextは物理pathの違いを扱わない。正本を複数箇所へ複製せず、ContractとDecisionのcanonical rootはそれぞれ一つにする。設定するpathはRepository rootからの相対pathに限定し、Repository外、cache、local、tmpを正本に指定できないようにする。
 
-Frameworkのupgradeは、`contracts/`、`decisions/`、`.agentic/changes/`、`.agentic/extensions/`を上書き・削除しない。Frameworkの削除機能を設ける場合も、Defaultではcache、bundle、導入した実行エンジンだけを対象とする。Git管理する`config.yaml`、`framework.lock`と導入先所有データは、明示的なpurge操作なしに削除しない。
+Frameworkのupgradeは、`contracts/`、`decisions/`、`.adf/changes/`、`.adf/extensions/`を上書き・削除しない。Frameworkの削除機能を設ける場合も、Defaultではcache、bundle、導入した実行エンジンだけを対象とする。Git管理する`config.yaml`、`framework.lock`と導入先所有データは、明示的なpurge操作なしに削除しない。
 
 既存プロジェクトへの導入では、既存の`.gitignore`を上書きしない。Framework管理blockだけを追記し、upgradeではそのblockだけを更新する。すでに利用者が個別のignore規則を持つ場合は、追記前に競合を表示する。
 
@@ -1185,13 +1185,13 @@ Result RecordとEvidence Recordは次のように分ける。
 ```text
 contracts/                         新規導入時のShared Contracts
 decisions/                         新規導入時のDecision Records
-.agentic/changes/<id>/change.md    Change + Change Contract section
-.agentic/changes/<id>/results/     Git管理するResult Records
-.agentic/changes/<id>/evidence/    Git管理するEvidence Records
-.agentic/cache/                     gitignoreする再生成可能な情報
+.adf/changes/<id>/change.md    Change + Change Contract section
+.adf/changes/<id>/results/     Git管理するResult Records
+.adf/changes/<id>/evidence/    Git管理するEvidence Records
+.adf/cache/                     gitignoreする再生成可能な情報
 ```
 
-既存Repositoryでは、`.agentic/config.yaml`の`project_sources`が指す既存のContract・Decision rootを使用し、二重管理しない。
+既存Repositoryでは、`.adf/config.yaml`の`project_sources`が指す既存のContract・Decision rootを使用し、二重管理しない。
 
 Changeへ依頼を取り込む例:
 
@@ -1369,10 +1369,10 @@ Analyst、Builder、Challengerは役割名であり、常に別々のAgentを3�
 通常の入口は次の一つとする。
 
 ```sh
-agentic next <change-id>
+adf next <change-id>
 ```
 
-詳細が必要な場合だけ、`agentic explain <change-id>`で確認済みのrisk signal、適用したRule、選ばれたRequirement、停止理由、参照元を表示する。
+詳細が必要な場合だけ、`adf explain <change-id>`で確認済みのrisk signal、適用したRule、選ばれたRequirement、停止理由、参照元を表示する。
 
 ## 13. Data Integrity向けRequirementと適用Rule
 
@@ -1769,7 +1769,7 @@ contract_refs: []
 decision_refs: []
 ```
 
-Changeは`.agentic/changes/change.place-order/change.md`へGit管理する。`declared_scope`はAnalystの確認前の申告であり、Detectorや実際のGit差分より強い事実として扱わない。
+Changeは`.adf/changes/change.place-order/change.md`へGit管理する。`declared_scope`はAnalystの確認前の申告であり、Detectorや実際のGit差分より強い事実として扱わない。
 
 #### Contract
 
@@ -2112,7 +2112,7 @@ Builderは`ready-to-build`で発行されたContextを使い、Repository更新�
 - 新しいsignal candidateだけを再確認し、無関係なResultを不必要にstaleにしない
 - Contract、Rule、Context、Git差分の変更に応じて、影響するResultだけをstaleにできる
 - `explain`でcandidate → disposition → Rule → Requirement Instance → Result → blockerを追跡できる
-- `.agentic/cache/`を削除しても同じStateを再生成できる
+- `.adf/cache/`を削除しても同じStateを再生成できる
 - Git clone、Framework lock、Git管理RecordだけからCIが`ready-to-merge`を再現できる
 - Git管理RecordにGenerated Context全文、raw Agent会話、secretを含めない
 
@@ -2166,7 +2166,7 @@ Rust実装をRepository直下に置く。実行方法と各ファイルの責務
 - Git差分から機械的に作る解析対象集合。現在のcoverageはmanifestに宣言済みのartifactだけを対象とし、artifact自体の記載漏れは検出できない
 - symbol・物理resourceを導入先の安定IDへ対応付けるBinding Recordと、そのauthority・鮮度規則
 - コードsymbol、Evidence条件まで絞るContext selector
-- 最終配布名`agentic`へのCLI統合、Result IDを指定した過去時点の`explain`
+- 最終配布名`adf`へのCLI統合、Result IDを指定した過去時点の`explain`
 - 組織提供Releaseの合成、認証付き取得、複数mirror、署名済み失効list
 - Project・組織固有Result Schemaの安全な追加方法とSchema migration
 - 複数processを実際に同時起動する保存競合テスト。現在は共通goldenで同じ旧digestからの逐次競合を検証する
@@ -2392,7 +2392,7 @@ Rust Applicationは、この形式を`explain(change-id)`として実装して�
 
 Human Authorityは`open`、`answered-not-recorded`、`recorded`、`stale-request`を区別する。accepted Decisionを根拠とするContract clauseが存在する場合は`recorded`を優先し、判断依頼作成時の参照が古くなっていても完了済みの判断を未完了に戻さない。古くなった参照は`request_stale_refs`へ残す。
 
-Rust CLIは実Projectに対する`next`と`explain`、署名付きFramework Releaseのremote取得を実装し、textとJSONを切り替えられる。JSONのExplain出力はこのSchemaで検証する。未実装なのは最終配布名`agentic`への統合、認証付き・再開可能な取得、Result IDを指定した過去時点の再表示である。
+Rust CLIは実Projectに対する`next`と`explain`、署名付きFramework Releaseのremote取得を実装し、textとJSONを切り替えられる。JSONのExplain出力はこのSchemaで検証する。未実装なのは最終配布名`adf`への統合、認証付き・再開可能な取得、Result IDを指定した過去時点の再表示である。
 
 ### 14.14 Prototype Framework Lock
 
@@ -2402,7 +2402,7 @@ Prototypeでは次を固定する。
 
 ```yaml
 schema_version: "1"
-framework_release: prototype-vnext-dev
+framework_release: adf-dev
 protocols:
   application: "1"
   canonicalization: canonical-json-v1
@@ -2444,7 +2444,7 @@ release_artifact:
   signer_key_id: "framework.release.2026"
 ```
 
-`artifact_digest`は、Release manifestから署名値そのものを除いたcanonical JSONのdigestである。その部分にはRelease ID、asset位置、全fileのSHA-256、取得元ID、署名方式、署名鍵IDが含まれる。`source_id`は変化し得るURLやlocal pathではなく、`offline:official`のように配布経路を識別する論理IDである。`signer_key_id`は`.agentic/trusted-release-keys.yaml`の公開鍵を指す。
+`artifact_digest`は、Release manifestから署名値そのものを除いたcanonical JSONのdigestである。その部分にはRelease ID、asset位置、全fileのSHA-256、取得元ID、署名方式、署名鍵IDが含まれる。`source_id`は変化し得るURLやlocal pathではなく、`offline:official`のように配布経路を識別する論理IDである。`signer_key_id`は`.adf/trusted-release-keys.yaml`の公開鍵を指す。
 
 Applicationはv1とv2のruntime identityを同じ厳密さで比較する。v2固有の署名、取得元、配布物digestは`delivery`がApplication構築前に検証する。責務を分けても、v2の未知fieldや欠落fieldは受理しない。
 
@@ -2459,7 +2459,7 @@ contracts/
 └── <contract-id>.md                  # .yamlも移行互換で読込み可能
 decisions/
 └── <decision-id>.md                  # .yamlも移行互換で読込み可能
-.agentic/
+.adf/
 └── changes/
     └── <change-id>/
         ├── change.md                  # .yamlも移行互換で読込み可能
@@ -2476,7 +2476,7 @@ Rust版も同じ配置と変換規則を実装している。`serde_yaml`はYAML
 読み書き規則は次のとおり。
 
 - ContractとDecisionのrootはRepository相対pathだけを許可する
-- Repository外、および`.agentic/cache/`、`bundles/`、`local/`、`logs/`、`tmp/`配下を正本rootにできない
+- Repository外、および`.adf/cache/`、`bundles/`、`local/`、`logs/`、`tmp/`配下を正本rootにできない
 - 物理fileの列挙順ではなくRecord ID順に正規化し、InMemory Adapterと同じSnapshot digestを生成する
 - Resultは一Action発行一fileとし、Action IDとContext digestの組に対するexclusive createで既存fileを上書きしない
 - 同じAction発行版を別processが同時保存した場合は一方だけ成功し、もう一方は競合エラーにする
@@ -2497,7 +2497,7 @@ Derived Cacheは、Git管理Recordと固定済みFramework lockから決定的�
 PrototypeはApplication評価後に次を出力する。
 
 ```text
-.agentic/cache/
+.adf/cache/
 ├── project/<change-id>.json
 ├── rules/<framework-lock-digest>.json
 ├── detection/<change-id>.json
@@ -2519,7 +2519,7 @@ PrototypeのCache Moduleには意図的にread APIを設けない。Application�
 
 そのため、次が成立する。
 
-- `.agentic/cache/`全体を削除しても同じKernelDecisionとGenerated Context digestを再生成できる
+- `.adf/cache/`全体を削除しても同じKernelDecisionとGenerated Context digestを再生成できる
 - JSONが途中で破損していても、正本からの次回評価で置き換えられる
 - cache書込みが失敗してもKernelDecisionは返し、失敗は`cache_diagnostics`へ分離する
 - cacheにResult、Decision、Contractの新しい正本を作らない
@@ -2531,14 +2531,14 @@ PrototypeのCache Moduleには意図的にread APIを設けない。Application�
 
 CI Evaluationは、開発者のmemoryやlocal cacheを引き継がず、cleanなGit cloneに含まれるRecordとコードから同じApplicationを実行する。CI専用の簡略判定を作らず、開発中の`next`と同じFramework lock、Project Store、Detector、Rule Index、Thin Kernelを使用する。
 
-Prototypeの`.agentic/config.yaml`は次を指定する。
+Prototypeの`.adf/config.yaml`は次を指定する。
 
 ```yaml
 schema_version: "1"
 project_sources:
   contracts: contracts
   decisions: decisions
-repository_observation: .agentic/repository-observation.yaml
+repository_observation: .adf/repository-observation.yaml
 ```
 
 CI Evaluatorは次の順に処理する。
@@ -2603,7 +2603,7 @@ Contractの例を示す。
 
 DBとSQSを同じtransactionでは確定できないため、利用者向けの受付結果を明示する。
 
-```agentic-contract
+```adf-contract
 schema_version: "1"
 id: contract.order-lifecycle
 applies_to:
@@ -2763,7 +2763,7 @@ needs-analysis
 Rust CLIは、共有goldenだけでなく実際の導入Projectへ同じApplicationを接続する。
 
 ```text
-.agentic/config.yaml
+.adf/config.yaml
   ├─ Contract root
   ├─ Decision root
   └─ Repository observation manifest
@@ -2784,21 +2784,21 @@ Application
   └─ explain → Explain Report
 ```
 
-`ProjectConfig`は`.agentic/config.yaml`のfieldを完全一致で検査し、Contract、Decision、Repository observationのpathをRepository相対pathに限定する。`GitRepositoryAdapter`は、observation manifestと宣言されたコードartifactがGit管理対象であることを確認し、現在のfile bytesと`ref`、path、`applies_to`からartifact digestを生成する。Observation Schema v2ではcoverageを必須とし、解析済みと宣言されていないartifactをgapへ追加する。コードから業務上のfactを推測せず、manifestへ明示されたtyped factだけをDetectorへ渡す現在の方式はPrototype限定である。
+`ProjectConfig`は`.adf/config.yaml`のfieldを完全一致で検査し、Contract、Decision、Repository observationのpathをRepository相対pathに限定する。`GitRepositoryAdapter`は、observation manifestと宣言されたコードartifactがGit管理対象であることを確認し、現在のfile bytesと`ref`、path、`applies_to`からartifact digestを生成する。Observation Schema v2ではcoverageを必須とし、解析済みと宣言されていないartifactをgapへ追加する。コードから業務上のfactを推測せず、manifestへ明示されたtyped factだけをDetectorへ渡す現在の方式はPrototype限定である。
 
 Prototype CLIは次の形で実行する。
 
 ```text
-agentic next <change-id>
+adf next <change-id>
   [--project <root>]
   [--release <offline-release-root>]
   [--format text|json]
   [--require-clean]
 
-agentic explain <change-id>
+adf explain <change-id>
   [同じoption]
 
-agentic project validate-bindings
+adf project validate-bindings
   [--project <root>]
   [--format text|json]
   [--require-clean]
@@ -2814,7 +2814,7 @@ agentic project validate-bindings
 
 CLI integration testは、一つの実Git Repositoryをfixtureから作成し、`next`と`explain`が同じStateとAction IDを返すこと、両JSONが出力Schemaを満たすこと、text表示、dirty artifactの再評価、`--require-clean`による拒否を検証する。Binding検証についても、正常系、不足、同名symbolの曖昧性、未承認authority、parse失敗を固定report Schemaと終了codeで検証する。
 
-`VerifiedRelease` resolverは、Framework lockの`framework_release`から`.agentic/cache/releases/<release-id>/`を選び、`release.yaml`を読む。manifestが指定できるのはRelease内相対pathだけであり、絶対path、`..`、symlinkによるRelease外参照を拒否する。署名済みv2では、manifestのEd25519署名、取得元ID、署名鍵ID、署名対象部分のdigest、列挙された全fileの生bytes SHA-256を先に検証する。続いてRule sourceのcanonical digest、Schema bundle version・digestがFramework lockと一致した場合だけApplicationへ渡す。ApplicationはRule Index digestとprotocol全体をFramework lockで検証する。
+`VerifiedRelease` resolverは、Framework lockの`framework_release`から`.adf/cache/releases/<release-id>/`を選び、`release.yaml`を読む。manifestが指定できるのはRelease内相対pathだけであり、絶対path、`..`、symlinkによるRelease外参照を拒否する。署名済みv2では、manifestのEd25519署名、取得元ID、署名鍵ID、署名対象部分のdigest、列挙された全fileの生bytes SHA-256を先に検証する。続いてRule sourceのcanonical digest、Schema bundle version・digestがFramework lockと一致した場合だけApplicationへ渡す。ApplicationはRule Index digestとprotocol全体をFramework lockで検証する。
 
 Project cache以外のoffline Releaseを検査する場合だけ`--release <root>`を使用する。この指定もFramework lockのRelease ID、署名、取得元、各digestを迂回できない。未署名manifest v1は移行互換としてFramework lock v1でだけ利用でき、Framework lock v2は署名済みmanifest v2を必須とする。
 
@@ -2837,7 +2837,7 @@ CLI integration testはRule・Schema・署名・取得元の改ざんと、Relea
 一時directoryへcopy
   │ copied bytesを再検証
   ▼
-.agentic/cache/releases/<release-id>/ へatomic rename
+.adf/cache/releases/<release-id>/ へatomic rename
   │
   ├─ 現行Framework lockをdigest名でcacheへ退避
   └─ 候補Framework lockをatomic replace
@@ -2878,7 +2878,7 @@ Trust Store v1は移行互換として全鍵を`active`相当で読む。新し�
 
 #### 14.22.2 Remote transport
 
-`.agentic/release-sources.yaml`は、Framework lockが固定する論理的な`source_id`をHTTPS base URLへ対応付ける。CLI引数から任意URLを渡す形式にせず、取得先の追加・変更をGit review対象にする。credential、token、query stringはこの文書へ保存しない。
+`.adf/release-sources.yaml`は、Framework lockが固定する論理的な`source_id`をHTTPS base URLへ対応付ける。CLI引数から任意URLを渡す形式にせず、取得先の追加・変更をGit review対象にする。credential、token、query stringはこの文書へ保存しない。
 
 `release fetch <candidate-lock>`は`<base-url>/<release-id>.tar`を取得する。redirectは、review済みhostやHTTPSを迂回し得るため追跡しない。HTTPはtest・local mirror用のloopback addressだけに限定する。downloadは64 MiB、展開後の通常fileは合計256 MiB、archive entryは4096件を上限とする。
 
@@ -2907,7 +2907,7 @@ Publisherは、Rule・Schema・全runtime protocolがbase lockと一致するこ
 
 tar内のfile順、mtime、uid、gid、modeを固定し、同じ入力と署名鍵から同じbytesを生成する。出力pathはsource directory外に限定し、既存fileを上書きしない。archiveと候補lockの片方だけが既に存在する場合も停止する。
 
-秘密鍵はCLI引数に渡さず、`AGENTIC_RELEASE_SIGNING_KEY_HEX`から64桁のhex seedとして読む。標準出力へ返すのは公開鍵だけである。Release CIでは`--expected-public-key`も渡し、secretから導出した公開鍵がGitHub Repository variable等に事前登録した公開鍵と異なる場合は、成果物を作る前に停止する。Prototypeでは同じRust binaryにPublisher commandを含めるが、正式配布では通常利用者の実行経路とRelease CIの署名権限を分離する。
+秘密鍵はCLI引数に渡さず、`ADF_RELEASE_SIGNING_KEY_HEX`から64桁のhex seedとして読む。標準出力へ返すのは公開鍵だけである。Release CIでは`--expected-public-key`も渡し、secretから導出した公開鍵がGitHub Repository variable等に事前登録した公開鍵と異なる場合は、成果物を作る前に停止する。Prototypeでは同じRust binaryにPublisher commandを含めるが、正式配布では通常利用者の実行経路とRelease CIの署名権限を分離する。
 
 Publish ReceiptのJSON形式は`schemas/delivery/v2/publish-receipt.schema.json`で固定する。Release CIはarchive digestをupload後の照合へ使用し、候補Framework lockは人または承認済みautomationが差分をreviewしてから導入先へ反映する。Publisher自身はupload、Framework lockの有効化、Trust Storeの更新を行わない。
 
@@ -2929,7 +2929,7 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 
 このworkflowは外部配布先へのupload、GitHub Release作成、Trust Store変更、導入先Framework lockの有効化を行わない。CI Artifactは公開前に人が確認できる候補であり、公開は環境保護規則等で明示的承認を要求する別jobとする。これにより、署名権限を持つCIの成功と、不特定の利用者へ配布する判断を同一操作にしない。
 
-秘密鍵はCI secretにだけ保存し、log、CLI引数、Artifactへ含めない。公開鍵、`source_id`、`signer_key_id`はsecretではないが、署名者と配布経路を固定する信頼設定なのでreview対象とする。localの`dist/vnext/`とCI ArtifactはGit管理せず、候補Framework lockを正式採用するときだけ、導入先Repositoryの`.agentic/framework.lock`を通常のcode reviewで更新する。
+秘密鍵はCI secretにだけ保存し、log、CLI引数、Artifactへ含めない。公開鍵、`source_id`、`signer_key_id`はsecretではないが、署名者と配布経路を固定する信頼設定なのでreview対象とする。localの`dist/vnext/`とCI ArtifactはGit管理せず、候補Framework lockを正式採用するときだけ、導入先Repositoryの`.adf/framework.lock`を通常のcode reviewで更新する。
 
 #### 14.22.5 承認付きGitHub Release公開
 
@@ -2937,7 +2937,7 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 
 1. 指定runが`.github/workflows/vnext-release.yml`の`workflow_dispatch`実行である
 2. runが同じRepositoryの既定branchを対象に完了し、成功している
-3. 固定名`agentic-vnext-release-candidate`と`agentic-vnext-release-binaries`のArtifactが指定runから取得できる
+3. 固定名`adf-release-candidate`と`adf-release-binaries`のArtifactが指定runから取得できる
 4. Artifactが署名済みtar、候補Framework lock、Distribution Trust、Publish Receiptの四fileだけを持つ
 5. Publish Receiptのarchive digest・公開鍵・出力file名が実fileと一致する
 6. tarと候補lockが、取得元ID、署名鍵ID、署名、全file、Rule、Schema、protocolの検証を通る
@@ -2958,7 +2958,7 @@ Release CIは署名するだけのjobではない。`.github/workflows/vnext-rel
 | `distribution-trust.json` | 初回導入で使う公開鍵、許可source、鍵status。binaryとは別にArtifact Attestationを検証する |
 | `publish-receipt.json` | Publisherが生成したartifact・archive digestと公開鍵 |
 | `SHA256SUMS` | 5種類のnative binaryのSHA-256一覧 |
-| `agentic-<target>[.exe]` | 対象OS・CPU上でnative buildしたRust CLI |
+| `adf-<target>[.exe]` | 対象OS・CPU上でnative buildしたRust CLI |
 | `<binary>.build.json` | binaryのtarget、source revision、Rust version、size、digest |
 | `publication-record.json` | 公開workflowが生成した候補run、source revision、tag、各公開asset digestの来歴 |
 
@@ -2972,11 +2972,11 @@ Publication Recordは公開操作の追跡情報であり、署名済みmanifest
 
 | runner | Rust target | 公開file |
 |---|---|---|
-| `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `agentic-x86_64-unknown-linux-gnu` |
-| `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `agentic-aarch64-unknown-linux-gnu` |
-| `macos-15-intel` | `x86_64-apple-darwin` | `agentic-x86_64-apple-darwin` |
-| `macos-15` | `aarch64-apple-darwin` | `agentic-aarch64-apple-darwin` |
-| `windows-2025` | `x86_64-pc-windows-msvc` | `agentic-x86_64-pc-windows-msvc.exe` |
+| `ubuntu-24.04` | `x86_64-unknown-linux-gnu` | `adf-x86_64-unknown-linux-gnu` |
+| `ubuntu-24.04-arm` | `aarch64-unknown-linux-gnu` | `adf-aarch64-unknown-linux-gnu` |
+| `macos-15-intel` | `x86_64-apple-darwin` | `adf-x86_64-apple-darwin` |
+| `macos-15` | `aarch64-apple-darwin` | `adf-aarch64-apple-darwin` |
+| `windows-2025` | `x86_64-pc-windows-msvc` | `adf-x86_64-pc-windows-msvc.exe` |
 
 `build-release-binary.sh`は`rustc -vV`のhost tripleが期待targetと完全一致しない場合に停止する。これはrunner labelの変更や誤設定によって、file名と実binaryのarchitectureが食い違うことを防ぐ。cross compileではなく各対象OS・CPUのGitHub-hosted runnerでnative buildする。
 
@@ -2996,7 +2996,7 @@ Artifact Attestationは公開RepositoryではSigstore Public Good Instanceと透
 
 通常利用者はRustやPythonを導入せず、公開済みnative binaryを実行する。初回導入のPOSIX `sh`・PowerShell scriptは、Release tagを利用者から明示的に受け取り、現在のOS・CPUに対応する次の8 assetを一時directoryへ取得する。
 
-- `agentic-<target>[.exe]`
+- `adf-<target>[.exe]`
 - `<binary>.build.json`
 - `SHA256SUMS`
 - `publication-record.json`
@@ -3029,7 +3029,7 @@ attestation検証済みbinaryは、8 assetについて次を再検証する。
 | bootstrapの一時directory | 処理終了時に削除・Git管理しない | 検証前assetを既存versionと分離する作業領域 |
 | GitHub ReleaseとArtifact Attestation | GitHubに保存 | 公開asset、build元Repository・workflow・commitを確認する外部の配布記録 |
 
-`active`は文書、Contract、Framework Stateではなく、どのCLI binaryを起動するかを示す機械管理の永続runtime状態である。Projectごとの`.agentic/framework.lock`とは別物であり、CLI binaryを更新してもProjectが利用するRule・Schema・SkillのFramework Releaseは自動で切り替えない。
+`active`は文書、Contract、Framework Stateではなく、どのCLI binaryを起動するかを示す機械管理の永続runtime状態である。Projectごとの`.adf/framework.lock`とは別物であり、CLI binaryを更新してもProjectが利用するRule・Schema・SkillのFramework Releaseは自動で切り替えない。
 
 更新は新しいtagのassetを別directoryで検証し、`releases/<tag>/`へrenameしてから`active`だけを置換する。POSIXでは同一filesystemのrename、Windowsでは`MoveFileExW`のreplaceとwrite-throughを用いる。置換前にfile内容をflushし、同じ導入先に対するinstall・update・rollbackはOS file lockで直列化する。失敗した候補は有効化せず、現在tagを維持する。既存のKit管理外launcherが同じpathにある場合は上書きしない。
 

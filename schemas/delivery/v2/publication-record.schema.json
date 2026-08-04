@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/publication-record.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/delivery/v2/publication-record.schema.json",
   "title": "Framework Release Publication Record v1",
   "type": "object",
   "additionalProperties": false,
@@ -94,16 +94,16 @@
         "LICENSE-MIT",
         "SHA256SUMS",
         "THIRD-PARTY-NOTICES.md",
-        "agentic-aarch64-apple-darwin",
-        "agentic-aarch64-apple-darwin.build.json",
-        "agentic-aarch64-unknown-linux-gnu",
-        "agentic-aarch64-unknown-linux-gnu.build.json",
-        "agentic-x86_64-apple-darwin",
-        "agentic-x86_64-apple-darwin.build.json",
-        "agentic-x86_64-pc-windows-msvc.exe",
-        "agentic-x86_64-pc-windows-msvc.exe.build.json",
-        "agentic-x86_64-unknown-linux-gnu",
-        "agentic-x86_64-unknown-linux-gnu.build.json"
+        "adf-aarch64-apple-darwin",
+        "adf-aarch64-apple-darwin.build.json",
+        "adf-aarch64-unknown-linux-gnu",
+        "adf-aarch64-unknown-linux-gnu.build.json",
+        "adf-x86_64-apple-darwin",
+        "adf-x86_64-apple-darwin.build.json",
+        "adf-x86_64-pc-windows-msvc.exe",
+        "adf-x86_64-pc-windows-msvc.exe.build.json",
+        "adf-x86_64-unknown-linux-gnu",
+        "adf-x86_64-unknown-linux-gnu.build.json"
       ],
       "properties": {
         "LICENSE-APACHE": {
@@ -122,43 +122,43 @@
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-aarch64-apple-darwin": {
+        "adf-aarch64-apple-darwin": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-aarch64-apple-darwin.build.json": {
+        "adf-aarch64-apple-darwin.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-aarch64-unknown-linux-gnu": {
+        "adf-aarch64-unknown-linux-gnu": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-aarch64-unknown-linux-gnu.build.json": {
+        "adf-aarch64-unknown-linux-gnu.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-apple-darwin": {
+        "adf-x86_64-apple-darwin": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-apple-darwin.build.json": {
+        "adf-x86_64-apple-darwin.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-pc-windows-msvc.exe": {
+        "adf-x86_64-pc-windows-msvc.exe": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-pc-windows-msvc.exe.build.json": {
+        "adf-x86_64-pc-windows-msvc.exe.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-unknown-linux-gnu": {
+        "adf-x86_64-unknown-linux-gnu": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },
-        "agentic-x86_64-unknown-linux-gnu.build.json": {
+        "adf-x86_64-unknown-linux-gnu.build.json": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         }

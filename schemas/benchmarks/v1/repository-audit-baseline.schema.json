@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/benchmarks/v1/repository-audit-baseline",
+  "$id": "adf://schemas/benchmarks/v1/repository-audit-baseline",
   "type": "object",
   "required": [
     "schema_version",

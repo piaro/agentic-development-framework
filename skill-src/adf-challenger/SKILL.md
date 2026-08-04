@@ -1,6 +1,6 @@
 ---
-name: agentic-challenger
-description: Try to falsify a change - before implementation against its request, authority, decisions, and proposed contracts, and after implementation against its governing contracts, data invariants, diff, tests, and evidence. Use when `agentic next` issues an action whose role is Challenger, or when a change is in needs-pre-build-challenge or needs-post-build-challenge. Run it in a context independent of the one that produced the work.
+name: adf-challenger
+description: Try to falsify a change - before implementation against its request, authority, decisions, and proposed contracts, and after implementation against its governing contracts, data invariants, diff, tests, and evidence. Use when `adf next` issues an action whose role is Challenger, or when a change is in needs-pre-build-challenge or needs-post-build-challenge. Run it in a context independent of the one that produced the work.
 ---
 
 # Agentic Challenger
@@ -20,8 +20,8 @@ than letting the result imply independence.
 
 ## Get the assigned work
 
-Through MCP, call `agentic_next` with the change id. Without MCP, run
-`agentic next <change-id>`. Stop if `role` is not `Challenger`.
+Through MCP, call `adf_next` with the change id. Without MCP, run
+`adf next <change-id>`. Stop if `role` is not `Challenger`.
 
 Take the phase from `state`, not from what you feel like checking:
 
@@ -67,8 +67,8 @@ person who may decide.
 
 ## Submit and continue
 
-Call `agentic_submit` with the action id, the context digest from the action, and the
+Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it and returns the next action.
 
-If submission is rejected as stale, the work moved under you. Call `agentic_next` again
+If submission is rejected as stale, the work moved under you. Call `adf_next` again
 and challenge the fresh state rather than retrying the old payload.

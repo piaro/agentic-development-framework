@@ -3,7 +3,7 @@
 version = 4
 
 [[package]]
-name = "agentic-development-kit"
+name = "agentic-development-framework"
 version = "0.1.0"
 dependencies = [
  "ed25519-dalek",

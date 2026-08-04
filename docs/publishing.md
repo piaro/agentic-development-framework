@@ -27,7 +27,7 @@ published binary:
 
 ```sh
 cargo build --release
-AGENTIC_RELEASE_SIGNING_KEY_HEX=<seed> ./target/release/agentic release public-key
+ADF_RELEASE_SIGNING_KEY_HEX=<seed> ./target/release/adf release public-key
 ```
 
 This prints the public key and nothing else. The seed is never printed and never
@@ -41,10 +41,10 @@ step, or from a password manager, avoids that.
 
 | Where | Name | Value |
 |---|---|---|
-| Secret | `AGENTIC_RELEASE_SIGNING_KEY_HEX` | the seed |
-| Variable | `AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX` | the public key |
-| Variable | `AGENTIC_RELEASE_SOURCE_ID` | the name releases are signed as coming from, for example `remote:official` |
-| Variable | `AGENTIC_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.2026-08` |
+| Secret | `ADF_RELEASE_SIGNING_KEY_HEX` | the seed |
+| Variable | `ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX` | the public key |
+| Variable | `ADF_RELEASE_SOURCE_ID` | the name releases are signed as coming from, for example `remote:official` |
+| Variable | `ADF_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.2026-08` |
 
 Both names are recorded in the framework lock and the trust store and compared
 as exact strings, so changing either one later breaks projects that already
@@ -68,7 +68,7 @@ single mistaken dispatch from putting bytes in front of users.
 
 ### 1. Build the candidate
 
-Run the **vNext Release candidate** workflow from the default branch. It runs the
+Run the **Release candidate** workflow from the default branch. It runs the
 regression suite, builds and signs the framework release, builds the binary for
 each published platform, attests them, collects the license terms of everything
 linked into them, and uploads the whole set as workflow artifacts.
@@ -77,7 +77,7 @@ Nothing is published. Stop here and look at what it produced.
 
 ### 2. Publish it
 
-Run the **Publish vNext Framework Release** workflow with the candidate run's ID
+Run the **Publish a Framework Release** workflow with the candidate run's ID
 and the release tag, which must be `framework-<release_id>`.
 
 It verifies the candidate came from the default branch of this repository, waits
@@ -92,8 +92,8 @@ happened.
 
 | Asset | What it is |
 |---|---|
-| `agentic-<target>[.exe]` | the binary for each platform |
-| `agentic-<target>[.exe].build.json` | its source revision, digest, size, and compiler version |
+| `adf-<target>[.exe]` | the binary for each platform |
+| `adf-<target>[.exe].build.json` | its source revision, digest, size, and compiler version |
 | `SHA256SUMS` | checksums for everything above |
 | `framework-release.tar` | the signed framework release |
 | `candidate-framework.lock` | what a project pins to install it |
@@ -115,19 +115,19 @@ that a project pins - the rules and schemas the control plane evaluates against.
 their attestations, and installs them together. `project init` then reads the
 framework release from the directory the binary sits in, so a project is set up
 without any further download. Updating the framework release later works the
-same way: fetch the assets, then `agentic release install-archive` and
-`agentic release switch`.
+same way: fetch the assets, then `adf release install-archive` and
+`adf release switch`.
 
-`agentic release fetch` is a separate path that downloads
+`adf release fetch` is a separate path that downloads
 `<base_url>/<release_id>.tar` over HTTPS. It is the only thing that needs the
 source ID resolved to a location, and the project declares that mapping itself:
 
 ```yaml
-# .agentic/release-sources.yaml
+# .adf/release-sources.yaml
 schema_version: "1"
 sources:
   - id: remote:official
-    base_url: https://example.com/agentic/releases
+    base_url: https://example.com/adf/releases
 ```
 
 `project init` does not write that file. Hosting the archives at a stable URL

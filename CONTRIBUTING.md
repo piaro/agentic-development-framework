@@ -14,15 +14,15 @@ code than after. See [Out of scope](#out-of-scope).
 You need Rust 1.89 or newer. Nothing else.
 
 ```sh
-git clone https://github.com/piaro/agentic-development-kit
-cd agentic-development-kit
+git clone https://github.com/piaro/agentic-development-framework
+cd agentic-development-framework
 cargo test --locked
 ```
 
 Before sending a change, run what CI runs:
 
 ```sh
-sh scripts/tests/test-vnext-rust.sh
+sh scripts/tests/test-rust.sh
 ```
 
 That covers formatting, lint, the unit and integration tests, the detector
@@ -47,7 +47,7 @@ run to be slow.
 
 | Path | What is there |
 |---|---|
-| `Cargo.toml`, `src/`, `tests/` | the implementation; the binary is named `agentic` |
+| `Cargo.toml`, `src/`, `tests/` | the implementation; the binary is named `adf` |
 | `schemas/` | the record and output schemas, also carried in a framework release |
 | `skill-src/`, `templates/` | what the binary embeds and `project init` places |
 | `scripts/` | release helpers, with the acceptance tests in `scripts/tests/` |

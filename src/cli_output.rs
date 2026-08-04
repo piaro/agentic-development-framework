@@ -102,7 +102,7 @@ fn detection_guidance(diagnostics: &[String]) -> Vec<String> {
                 .to_owned(),
         );
         lines.push(
-            "Either narrow analysis.roots in .agentic/repository-observation.yaml so these sources are not analyzed, or leave them and accept that the change stops here until a detector exists."
+            "Either narrow analysis.roots in .adf/repository-observation.yaml so these sources are not analyzed, or leave them and accept that the change stops here until a detector exists."
                 .to_owned(),
         );
     }
@@ -125,14 +125,14 @@ fn detection_guidance(diagnostics: &[String]) -> Vec<String> {
     {
         lines.push(String::new());
         lines.push(
-            "Next: run agentic project observe --output .agentic/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
+            "Next: run adf project observe --output .adf/repository-observation.draft.yaml to generate a non-authoritative Binding draft."
                 .to_owned(),
         );
         lines.push(
             "Then: review the draft, complete its logical refs, owners, fact kinds, and accepted Decision authorities."
                 .to_owned(),
         );
-        lines.push("Then: run agentic project validate-bindings.".to_owned());
+        lines.push("Then: run adf project validate-bindings.".to_owned());
         lines.push("Binding candidates are never applied automatically.".to_owned());
     }
 
@@ -161,8 +161,8 @@ mod tests {
 
         let output = render_next_text("change.test", &response);
 
-        assert!(output.contains("Next: run agentic project observe"));
-        assert!(output.contains("Then: run agentic project validate-bindings"));
+        assert!(output.contains("Next: run adf project observe"));
+        assert!(output.contains("Then: run adf project validate-bindings"));
         assert!(output.contains("never applied automatically"));
     }
 

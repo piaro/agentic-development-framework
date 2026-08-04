@@ -1,4 +1,4 @@
-//! Strict loading of the small, project-owned `.agentic/config.yaml`.
+//! Strict loading of the small, project-owned `.adf/config.yaml`.
 
 use serde_json::Value;
 use std::collections::BTreeSet;
@@ -16,7 +16,7 @@ pub struct ProjectConfig {
 }
 
 pub fn load_project_config(root: &Path) -> Result<ProjectConfig, ProjectConfigError> {
-    let path = repository_path(root, ".agentic/config.yaml")?;
+    let path = repository_path(root, ".adf/config.yaml")?;
     let text = fs::read_to_string(&path)
         .map_err(|error| config_error(format!("{}: {error}", path.display())))?;
     let value: Value = serde_yaml::from_str(&text)

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/outputs/v1/contract-health-gate-report",
+  "$id": "adf://schemas/outputs/v1/contract-health-gate-report",
   "type": "object",
   "required": [
     "schema_version",

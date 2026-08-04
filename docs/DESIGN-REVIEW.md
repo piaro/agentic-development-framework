@@ -5,7 +5,7 @@
 > レビュー日: 2026-07-29
 > 対象: `FRAMEWORK-REVIEW.md` 全体、Rust実装と当時併存していたPython実装、共有golden fixture、`scripts/tests/test-vnext-*`
 >
-> レビュー当時、Rust実装は`prototype/vnext/rust/`、Python実装は`prototype/vnext/agentic_vnext/`にあった。現在はRust実装をRepository直下へ移し、Python実装は削除している。この文書が指すPython側のfileは履歴からのみ参照できる。
+> レビュー当時、Rust実装は`prototype/vnext/rust/`、Python実装は`prototype/vnext/adf_vnext/`にあった。現在はRust実装をRepository直下へ移し、Python実装は削除している。この文書が指すPython側のfileは履歴からのみ参照できる。
 >
 > この文書はレビュー結果であり、確定した設計変更ではない。対応方針は別途決定する。
 
@@ -69,7 +69,7 @@ RustのFilesystem StoreとMCP Adapterには条項単位の楽観的並行制御�
 
 Signalを条件とする制御はrisk signalの検出から始まる。検出できなければ、そのSignalに依存するRequirementは選ばれず、何も止まらない。Human AuthorityなどSignalに依存しない制御は残るため、「全ての制御」とする初回の表現は過大だった。
 
-現在の検出処理の入力を確認した。`fixtures/cli-project/.agentic/repository-observation.yaml` が、コードの成果物と導入先固有の論理IDとの対応、および事実そのものを手書きで宣言している。
+現在の検出処理の入力を確認した。`fixtures/cli-project/.adf/repository-observation.yaml` が、コードの成果物と導入先固有の論理IDとの対応、および事実そのものを手書きで宣言している。
 
 ```yaml
 artifacts:
@@ -277,13 +277,13 @@ Rust版へ組込みSignal Catalogを追加し、各SignalのID、生成Detector�
 
 ### 2.8 正本の既定の置き場が、4.6の原則と逆行している
 
-4.6は「導入先が所有する情報を最小化する」を原則に置き、5.11は所有権をpathで決めるとしていた。そのうえで新規導入時の既定を`.agentic/contracts/`と`.agentic/decisions/`にしており、長期的なプロダクト知識とFrameworkの運用Recordの境界が分かりにくかった。
+4.6は「導入先が所有する情報を最小化する」を原則に置き、5.11は所有権をpathで決めるとしていた。そのうえで新規導入時の既定を`.adf/contracts/`と`.adf/decisions/`にしており、長期的なプロダクト知識とFrameworkの運用Recordの境界が分かりにくかった。
 
 Rust版の新規初期化と既定のProject Storeを、Repository直下の`contracts/`と`decisions/`へ変更した。これらはFrameworkを外しても残るプロダクト固有の規範と判断履歴である。
 
-`.agentic/`には、Framework設定・lock・Change・Result・Evidence・拡張・cacheを置く。Change等はGit管理する導入先所有Recordだが、Frameworkの進行管理protocolへ依存するため、この名前空間に置く。
+`.adf/`には、Framework設定・lock・Change・Result・Evidence・拡張・cacheを置く。Change等はGit管理する導入先所有Recordだが、Frameworkの進行管理protocolへ依存するため、この名前空間に置く。
 
-ProjectConfigによるRepository相対pathの指定は、既存のADRや任意の文書配置を読むための通常機能として維持する。`.agentic/contracts/`専用の互換分岐や自動移動は追加しない。設定されていれば通常の任意pathとして読めるが、新規初期化の既定にはしない。
+ProjectConfigによるRepository相対pathの指定は、既存のADRや任意の文書配置を読むための通常機能として維持する。`.adf/contracts/`専用の互換分岐や自動移動は追加しない。設定されていれば通常の任意pathとして読めるが、新規初期化の既定にはしない。
 
 ### 2.9 成功の定義が無い
 
@@ -309,7 +309,7 @@ Context不足、再現率、説明可能性、更新作業量等は原因分析�
 
 この層で最も重い。
 
-検出処理が出す候補の同一性は、検出根拠となったコードのhashを含めて計算している。当時の`prototype/vnext/agentic_vnext/detection.py:35-53`を参照。一方で 13.8 と 14.6 の11番は、実装後にコード差分から候補を再検出し、未確認の候補があればAnalystへ戻すと定めている。
+検出処理が出す候補の同一性は、検出根拠となったコードのhashを含めて計算している。当時の`prototype/vnext/adf_vnext/detection.py:35-53`を参照。一方で 13.8 と 14.6 の11番は、実装後にコード差分から候補を再検出し、未確認の候補があればAnalystへ戻すと定めている。
 
 Builderが実装したファイルは必ずhashが変わるため、そのファイルを根拠にしていた候補は毎回「新しい未確認候補」になる。Builderは必ず対象ファイルを編集するので、この経路は常に発動する。
 
@@ -446,7 +446,7 @@ CIと別セッションから参照できるという要件は、通常のブラ
 5. 候補の同一性を、論理IDと根拠の版に分ける。実装後の差し戻し先を実装前の工程から実装後のChallengerへ変える。あわせて、実装でコードのhashが変わる場合をgolden fixtureとテストへ追加する。3.1
 6. （Rust版で対応済み）Markdown正本のtyped clauseへ適用範囲を持たせ、Requirementに一致する条項本文だけをGenerated Contextへ投影する。2.6、3.4
 7. （Rust版で対応済み）Signal CatalogでDetectorとRuleの語彙・bindingをcompile時に照合する。実装言語はRustへ一本化し、Pythonとの同等性を新規設計の受入条件から外す。配布まわりはローカルのReleaseとlock検証までで凍結する。2.7、3.2
-8. （Rust版で対応済み）新規導入のContract・Decision既定rootをRepository直下へ戻し、`.agentic/`にはFrameworkの制御・進行管理Recordを置く。2.8
+8. （Rust版で対応済み）新規導入のContract・Decision既定rootをRepository直下へ戻し、`.adf/`にはFrameworkの制御・進行管理Recordを置く。2.8
 9. （指標と初期目標は確定、実測は未完了）同じ評価シナリオで現行方式とRust版の基準線を測り、実装開始後の仕様手戻り率を比較する。2.9
 10. （Rust版の個別Changeゲートまで対応済み）Repository全体`ContractHealthReport`を基に、現在のChangeへ関係する`stale`・`failed`条項を`before-merge`で再検証する。残る定期CIの停止基準は、個別Changeとは別の運用ポリシーとして決める。2.5
 

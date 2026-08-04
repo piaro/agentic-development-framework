@@ -26,7 +26,7 @@ pub const LEGACY_RELEASE_MANIFEST_SCHEMA_VERSION: &str = "1";
 pub const SIGNED_RELEASE_MANIFEST_SCHEMA_VERSION: &str = "2";
 pub const LEGACY_TRUST_STORE_SCHEMA_VERSION: &str = "1";
 pub const TRUST_STORE_SCHEMA_VERSION: &str = "2";
-pub const TRUST_STORE_PATH: &str = ".agentic/trusted-release-keys.yaml";
+pub const TRUST_STORE_PATH: &str = ".adf/trusted-release-keys.yaml";
 
 static TEMP_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -104,9 +104,7 @@ fn resolve_verified_release_for(
     let release_root = match explicit_root {
         Some(path) if path.is_absolute() => path.to_path_buf(),
         Some(path) => project_root.join(path),
-        None => project_root
-            .join(".agentic/cache/releases")
-            .join(release_id),
+        None => project_root.join(".adf/cache/releases").join(release_id),
     };
     let release_root = release_root.canonicalize().map_err(|error| {
         delivery_error(format!(
@@ -210,7 +208,7 @@ pub fn install_release(
         Some(bundle_root),
         TrustUse::NewActivation,
     )?;
-    let releases_root = project_root.join(".agentic/cache/releases");
+    let releases_root = project_root.join(".adf/cache/releases");
     fs::create_dir_all(&releases_root).map_err(|error| {
         delivery_error(format!(
             "cannot create {}: {error}",
@@ -316,14 +314,14 @@ fn switch_framework_lock_for(
     )
     .map_err(|error| delivery_error(error.to_string()))?;
 
-    let active_path = project_root.join(".agentic/framework.lock");
+    let active_path = project_root.join(".adf/framework.lock");
     let active_text = fs::read_to_string(&active_path)
         .map_err(|error| delivery_error(format!("{}: {error}", active_path.display())))?;
     let active_lock: Value = serde_yaml::from_str(&active_text)
         .map_err(|error| delivery_error(format!("{}: {error}", active_path.display())))?;
     let active_digest =
         canonical_digest(&active_lock).map_err(|error| delivery_error(error.to_string()))?;
-    let backups_root = project_root.join(".agentic/cache/framework-lock-backups");
+    let backups_root = project_root.join(".adf/cache/framework-lock-backups");
     fs::create_dir_all(&backups_root).map_err(|error| {
         delivery_error(format!("cannot create {}: {error}", backups_root.display()))
     })?;
@@ -358,7 +356,7 @@ pub fn rollback_framework_lock(
     backup_lock_path: &Path,
 ) -> Result<SwitchReceipt, DeliveryError> {
     let project_root = canonical_project_root(project_root)?;
-    let backups_root = project_root.join(".agentic/cache/framework-lock-backups");
+    let backups_root = project_root.join(".adf/cache/framework-lock-backups");
     let backup_path = absolute_from(&project_root, backup_lock_path)
         .canonicalize()
         .map_err(|error| delivery_error(format!("{}: {error}", backup_lock_path.display())))?;

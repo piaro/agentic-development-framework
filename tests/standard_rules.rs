@@ -1,6 +1,6 @@
-use agentic::framework_lock::validate_framework_lock;
-use agentic::rules::{Assurance, compile_rule_index};
-use agentic::schema::SchemaRegistry;
+use adf::framework_lock::validate_framework_lock;
+use adf::rules::{Assurance, compile_rule_index};
+use adf::schema::SchemaRegistry;
 use serde_json::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -76,7 +76,7 @@ fn standard_evidence_requirements_are_evidence_backed() {
 
     for lock_path in [
         fixture_root.join("db-sqs/framework-lock.yaml"),
-        fixture_root.join("cli-project/.agentic/framework.lock"),
+        fixture_root.join("cli-project/.adf/framework.lock"),
     ] {
         validate_framework_lock(&read_yaml(lock_path), &rules, &index, &schemas).unwrap();
     }

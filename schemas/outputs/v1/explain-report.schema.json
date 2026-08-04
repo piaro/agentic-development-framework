@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/outputs/v1/explain-report.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/outputs/v1/explain-report.schema.json",
   "title": "Explain Report v1",
   "type": "object",
   "additionalProperties": false,

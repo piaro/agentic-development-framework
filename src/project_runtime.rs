@@ -38,7 +38,7 @@ impl LoadedProject {
             .map_err(|error| runtime_error(format!("cannot resolve project root: {error}")))?;
         let config =
             load_project_config(&root).map_err(|error| runtime_error(error.to_string()))?;
-        let framework_lock = read_yaml(root.join(".agentic/framework.lock"))?;
+        let framework_lock = read_yaml(root.join(".adf/framework.lock"))?;
         let release = resolve_verified_release(&root, &framework_lock, release_root)
             .map_err(|error| runtime_error(error.to_string()))?;
         let signal_registry =
@@ -148,8 +148,8 @@ impl LoadedProject {
         let mut paths = store
             .record_paths(change_id)
             .map_err(|error| runtime_error(error.to_string()))?;
-        paths.push(self.root.join(".agentic/config.yaml"));
-        paths.push(self.root.join(".agentic/framework.lock"));
+        paths.push(self.root.join(".adf/config.yaml"));
+        paths.push(self.root.join(".adf/framework.lock"));
         let trust_store = self.root.join(TRUST_STORE_PATH);
         if trust_store.exists() {
             paths.push(trust_store);
@@ -184,8 +184,8 @@ impl LoadedProject {
         let mut paths = store
             .all_record_paths()
             .map_err(|error| runtime_error(error.to_string()))?;
-        paths.push(self.root.join(".agentic/config.yaml"));
-        paths.push(self.root.join(".agentic/framework.lock"));
+        paths.push(self.root.join(".adf/config.yaml"));
+        paths.push(self.root.join(".adf/framework.lock"));
         let trust_store = self.root.join(TRUST_STORE_PATH);
         if trust_store.exists() {
             paths.push(trust_store);

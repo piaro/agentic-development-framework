@@ -152,11 +152,11 @@ impl AgenticMcpServer {
 impl AgenticMcpServer {
     /// Evaluate the current Project and issue its next Action.
     #[tool(
-        name = "agentic_next",
+        name = "adf_next",
         description = "Evaluate one Change and issue the next Action with generated Context.",
         annotations(title = "Agentic Next", read_only_hint = true)
     )]
-    async fn agentic_next(
+    async fn adf_next(
         &self,
         Parameters(input): Parameters<NextToolInput>,
     ) -> Result<Json<NextServiceResponse>, ServiceError> {
@@ -169,11 +169,11 @@ impl AgenticMcpServer {
 
     /// Explain the current deterministic decision without issuing an Action.
     #[tool(
-        name = "agentic_explain",
+        name = "adf_explain",
         description = "Explain the current decision for one Change without changing Project state.",
         annotations(title = "Agentic Explain", read_only_hint = true)
     )]
-    async fn agentic_explain(
+    async fn adf_explain(
         &self,
         Parameters(input): Parameters<NextToolInput>,
     ) -> Result<Json<ReportToolResponse>, ServiceError> {
@@ -191,11 +191,11 @@ impl AgenticMcpServer {
 
     /// Recompute repository-wide Contract health.
     #[tool(
-        name = "agentic_contract_health",
+        name = "adf_contract_health",
         description = "Recompute Contract clause health from current Records and repository inputs.",
         annotations(title = "Agentic Contract Health", read_only_hint = true)
     )]
-    async fn agentic_contract_health(
+    async fn adf_contract_health(
         &self,
         Parameters(input): Parameters<RepositoryToolInput>,
     ) -> Result<Json<ReportToolResponse>, ServiceError> {
@@ -213,7 +213,7 @@ impl AgenticMcpServer {
 
     /// Validate and persist the Result for an Action issued in this MCP session.
     #[tool(
-        name = "agentic_submit",
+        name = "adf_submit",
         description = "Validate and persist an issued Action Result, then return the reevaluated next Action.",
         annotations(
             title = "Agentic Submit",
@@ -221,7 +221,7 @@ impl AgenticMcpServer {
             destructive_hint = false
         )
     )]
-    async fn agentic_submit(
+    async fn adf_submit(
         &self,
         Parameters(input): Parameters<SubmitToolInput>,
     ) -> Result<Json<SubmitServiceResponse>, ServiceError> {
@@ -235,7 +235,7 @@ impl AgenticMcpServer {
 
     /// Append Evidence for an issued record-evidence Action.
     #[tool(
-        name = "agentic_add_evidence",
+        name = "adf_add_evidence",
         description = "Append an Evidence Record bound to the issued evidence Action.",
         annotations(
             title = "Agentic Add Evidence",
@@ -243,7 +243,7 @@ impl AgenticMcpServer {
             destructive_hint = false
         )
     )]
-    async fn agentic_add_evidence(
+    async fn adf_add_evidence(
         &self,
         Parameters(input): Parameters<EvidenceToolInput>,
     ) -> Result<Json<RecordWriteResponse>, ServiceError> {
@@ -257,7 +257,7 @@ impl AgenticMcpServer {
 
     /// Record a Decision bound to an issued Human-decision recording Action.
     #[tool(
-        name = "agentic_apply_decision",
+        name = "adf_apply_decision",
         description = "Apply a Decision that resolves a recorded Human answer.",
         annotations(
             title = "Agentic Apply Decision",
@@ -265,7 +265,7 @@ impl AgenticMcpServer {
             destructive_hint = true
         )
     )]
-    async fn agentic_apply_decision(
+    async fn adf_apply_decision(
         &self,
         Parameters(input): Parameters<DecisionToolInput>,
     ) -> Result<Json<RecordWriteResponse>, ServiceError> {
@@ -280,7 +280,7 @@ impl AgenticMcpServer {
 
     /// Update a Contract bound to an issued Human-decision recording Action.
     #[tool(
-        name = "agentic_apply_contract",
+        name = "adf_apply_contract",
         description = "Apply a Contract update using either whole-record or clause-scoped optimistic concurrency control.",
         annotations(
             title = "Agentic Apply Contract",
@@ -288,7 +288,7 @@ impl AgenticMcpServer {
             destructive_hint = true
         )
     )]
-    async fn agentic_apply_contract(
+    async fn adf_apply_contract(
         &self,
         Parameters(input): Parameters<ContractToolInput>,
     ) -> Result<Json<RecordWriteResponse>, ServiceError> {
@@ -309,7 +309,7 @@ impl AgenticMcpServer {
 
     /// Abandon one unsubmitted Action in local MCP session memory.
     #[tool(
-        name = "agentic_abandon_action",
+        name = "adf_abandon_action",
         description = "Forget one unsubmitted Action without changing Project Records.",
         annotations(
             title = "Agentic Abandon Action",
@@ -317,7 +317,7 @@ impl AgenticMcpServer {
             destructive_hint = false
         )
     )]
-    async fn agentic_abandon_action(
+    async fn adf_abandon_action(
         &self,
         Parameters(input): Parameters<ActionToolInput>,
     ) -> Json<AbandonActionResponse> {
@@ -328,9 +328,9 @@ impl AgenticMcpServer {
 
 #[tool_handler(
     router = self.tool_router,
-    name = "agentic",
+    name = "adf",
     version = "0.1.0",
-    instructions = "Use agentic_next before write tools. Submit only Results for Actions issued by this server session."
+    instructions = "Use adf_next before write tools. Submit only Results for Actions issued by this server session."
 )]
 impl ServerHandler for AgenticMcpServer {}
 

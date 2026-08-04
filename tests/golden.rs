@@ -1,4 +1,4 @@
-use agentic::{
+use adf::{
     verify_application_suite, verify_canonicalization_suite, verify_context_suite,
     verify_detection_suite, verify_explain_suite, verify_filesystem_project_suite,
     verify_framework_lock_suite, verify_kernel_suite, verify_persistent_application_suite,

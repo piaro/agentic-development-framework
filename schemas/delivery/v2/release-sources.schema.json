@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/release-sources.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/delivery/v2/release-sources.schema.json",
   "title": "Framework Release Sources v1",
   "type": "object",
   "additionalProperties": false,

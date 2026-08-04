@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/contract",
+  "$id": "adf://schemas/v1/contract",
   "type": "object",
   "required": ["schema_version", "id", "applies_to", "clauses"],
   "properties": {

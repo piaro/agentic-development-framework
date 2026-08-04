@@ -1,4 +1,4 @@
-//! Rust compatibility implementation for the vNext technical boundaries.
+//! Rust compatibility implementation for the technical boundaries.
 //!
 //! Each migrated module is checked against language-neutral golden data before
 //! it can be connected to the existing CLI or treated as a distribution build.
@@ -63,7 +63,7 @@ use std::path::{Path, PathBuf};
 
 pub const CANONICALIZATION_VERSION: &str = "canonical-json-v1";
 pub const APPLICATION_PROTOCOL_VERSION: &str = "1";
-const GOLDEN_SUITE_ID: &str = "agentic-vnext-golden-v1";
+const GOLDEN_SUITE_ID: &str = "adf-golden-v1";
 
 /// Serialize a JSON value using exactly the bytes hashed by the Python runtime.
 pub fn canonical_json(value: &Value) -> Result<String, CanonicalError> {
@@ -1373,8 +1373,8 @@ pub fn verify_filesystem_project_suite(
             let text = fs::read_to_string(&prose_path)
                 .map_err(|error| GoldenError::Io(error.to_string()))?;
             let updated = text.replacen(
-                "```agentic-contract\n",
-                &format!("{}\n\n```agentic-contract\n", case_set.markdown_prose),
+                "```adf-contract\n",
+                &format!("{}\n\n```adf-contract\n", case_set.markdown_prose),
                 1,
             );
             fs::write(&prose_path, updated).map_err(|error| GoldenError::Io(error.to_string()))?;
@@ -2165,10 +2165,8 @@ impl GoldenTempDir {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let sequence = SEQUENCE.fetch_add(1, Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!(
-            "agentic-vnext-{label}-{}-{sequence}",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("adf-{label}-{}-{sequence}", std::process::id()));
         if path.exists() {
             fs::remove_dir_all(&path).map_err(|error| GoldenError::Io(error.to_string()))?;
         }

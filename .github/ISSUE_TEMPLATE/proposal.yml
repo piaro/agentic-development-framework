@@ -5,7 +5,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Please read [Out of scope](https://github.com/piaro/agentic-development-kit/blob/main/CONTRIBUTING.md#out-of-scope)
+        Please read [Out of scope](https://github.com/piaro/agentic-development-framework/blob/main/CONTRIBUTING.md#out-of-scope)
         first. Some directions are deliberately not taken, and knowing that now
         saves you the work.
 

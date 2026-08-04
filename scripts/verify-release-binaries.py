@@ -30,7 +30,7 @@ DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
 def binary_name(target: str) -> str:
     suffix = ".exe" if target.endswith("-windows-msvc") else ""
-    return f"agentic-{target}{suffix}"
+    return f"adf-{target}{suffix}"
 
 
 def fail(message: str) -> "NoReturn":

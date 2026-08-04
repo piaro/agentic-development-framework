@@ -114,7 +114,7 @@ impl BindingDraftValidationReport {
         }
         if self.is_valid() {
             lines.push(
-                "Next: run agentic project promote-bindings --draft <path> to explicitly promote the reviewed Draft."
+                "Next: run adf project promote-bindings --draft <path> to explicitly promote the reviewed Draft."
                     .to_owned(),
             );
         } else {

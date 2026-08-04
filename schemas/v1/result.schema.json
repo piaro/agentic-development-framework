@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/result",
+  "$id": "adf://schemas/v1/result",
   "type": "object",
   "required": [
     "schema_version",

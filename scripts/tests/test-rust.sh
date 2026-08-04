@@ -7,7 +7,7 @@ KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 RUST_ROOT=$KIT_ROOT
 
 if ! command -v cargo >/dev/null 2>&1; then
-  echo "cargo is required for the vNext Rust prototype" >&2
+  echo "cargo is required for the Rust prototype" >&2
   exit 1
 fi
 
@@ -109,6 +109,6 @@ cargo run \
   --quiet \
   -- verify-explain "$KIT_ROOT/testdata/golden/v1"
 
-sh "$KIT_ROOT/scripts/tests/test-vnext-release-ci.sh"
-sh "$KIT_ROOT/scripts/tests/test-vnext-release-publication.sh"
-sh "$KIT_ROOT/scripts/tests/test-vnext-bootstrap.sh"
+sh "$KIT_ROOT/scripts/tests/test-release-ci.sh"
+sh "$KIT_ROOT/scripts/tests/test-release-publication.sh"
+sh "$KIT_ROOT/scripts/tests/test-bootstrap.sh"

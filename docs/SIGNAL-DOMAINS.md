@@ -87,8 +87,8 @@ methods:
 ## 確認方法
 
 ```sh
-agentic catalog signal-domains --format text
-agentic catalog signal-domains --format json
+adf catalog signal-domains --format text
+adf catalog signal-domains --format json
 ```
 
 JSON形式は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、catalog本体のcanonical digestを含みます。固定期待値は`golden/v1/signal-domain-catalog.json`です。

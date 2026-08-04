@@ -1,4 +1,4 @@
-//! Read-only inspection of a current CLI project before vNext migration.
+//! Read-only inspection of a current CLI project before migration.
 //!
 //! This module inventories mechanically observable state and prepares a
 //! reviewable work plan. It never overwrites active Project files or decides
@@ -481,18 +481,29 @@ fn inspect_migration_ignoring(
     );
     let installation = legacy_installation(&installation_path, installation_value.as_ref());
 
-    let config_path = root.join(".agentic/config.yaml");
-    let config = read_control_yaml(&root, &config_path, ".agentic/config.yaml", &mut findings);
-    let current_config = config
+    // The retired CLI kept its project under `.agentic`; this framework keeps
+    // its own under `.adf`. A project part way through migration has both, and
+    // telling them apart is what makes that state detectable rather than a
+    // config that fails to parse as either format.
+    let legacy_config_path = root.join(".agentic/config.yaml");
+    let legacy_config = read_control_yaml(
+        &root,
+        &legacy_config_path,
+        ".agentic/config.yaml",
+        &mut findings,
+    );
+    let config_path = root.join(".adf/config.yaml");
+    let config = read_control_yaml(&root, &config_path, ".adf/config.yaml", &mut findings);
+    let current_config = legacy_config
         .as_ref()
         .and_then(Value::as_object)
         .is_some_and(|object| object.contains_key("contract_roots"));
-    let vnext_config = config
+    let framework_config = config
         .as_ref()
         .and_then(Value::as_object)
         .is_some_and(|object| object.contains_key("project_sources"));
     if current_config
-        && config
+        && legacy_config
             .as_ref()
             .and_then(|value| value["schema_version"].as_u64())
             != Some(1)
@@ -504,7 +515,7 @@ fn inspect_migration_ignoring(
             "Current CLI config schema_version must be 1 before migration inspection.",
         ));
     }
-    if vnext_config
+    if framework_config
         && config
             .as_ref()
             .and_then(|value| value["schema_version"].as_str())
@@ -512,64 +523,72 @@ fn inspect_migration_ignoring(
     {
         findings.push(finding(
             "blocking",
-            "unsupported-vnext-config",
-            ".agentic/config.yaml",
-            "vNext config schema_version must be the string 1.",
+            "unsupported-framework-config",
+            ".adf/config.yaml",
+            "Framework config schema_version must be the string 1.",
         ));
     }
-    if config_path.is_file() && !current_config && !vnext_config {
+    if legacy_config_path.is_file() && !current_config {
         findings.push(finding(
             "blocking",
             "unknown-config-format",
             ".agentic/config.yaml",
-            "The project config is neither the current CLI format nor the vNext format.",
+            "The project config is not in the retired CLI format.",
+        ));
+    }
+    if config_path.is_file() && !framework_config {
+        findings.push(finding(
+            "blocking",
+            "unknown-config-format",
+            ".adf/config.yaml",
+            "The project config is not in this framework's format.",
         ));
     }
 
-    let vnext_markers = [
-        ".agentic/framework.lock",
-        ".agentic/repository-observation.yaml",
-        ".agentic/trusted-release-keys.yaml",
+    let framework_markers = [
+        ".adf/framework.lock",
+        ".adf/repository-observation.yaml",
+        ".adf/trusted-release-keys.yaml",
     ];
-    let present_vnext_markers = vnext_markers
+    let present_framework_markers = framework_markers
         .iter()
         .filter(|relative| regular_marker(&root, relative, &mut findings))
         .copied()
         .collect::<Vec<_>>();
-    let source_state = if current_config && !present_vnext_markers.is_empty() {
+    let source_state = if current_config && !present_framework_markers.is_empty() {
         findings.push(finding(
             "blocking",
             "mixed-runtime-state",
-            ".agentic",
-            "Current CLI config and vNext activation files coexist; reconcile the active runtime before preparing a migration.",
+            ".",
+            "The retired CLI config and this framework's activation files coexist; reconcile the active runtime before preparing a migration.",
         ));
         "mixed"
     } else if current_config {
         "current"
-    } else if vnext_config {
-        "vnext"
+    } else if framework_config {
+        "framework"
     } else if installation.present {
         findings.push(finding(
             "blocking",
             "missing-current-config",
-            ".agentic/config.yaml",
+            ".adf/config.yaml",
             "A current CLI installation exists but its config is missing or unreadable.",
         ));
         "current-incomplete"
-    } else if !present_vnext_markers.is_empty() {
+    } else if !present_framework_markers.is_empty() {
         findings.push(finding(
             "blocking",
-            "incomplete-vnext-project",
-            ".agentic",
-            "vNext activation files exist without a recognizable vNext config.",
+            "incomplete-framework-project",
+            ".adf",
+            "Activation files exist without a recognizable framework config.",
         ));
-        "vnext-incomplete"
+        "framework-incomplete"
     } else {
         findings.push(finding(
             "blocking",
             "uninitialized-project",
-            ".agentic",
-            "No current CLI or vNext project configuration was found.",
+            ".",
+            "Neither a retired CLI project nor a framework project configuration was found.",
         ));
         "uninitialized"
     }
@@ -613,45 +632,47 @@ fn inspect_migration_ignoring(
         }
     }
 
-    if source_state == "vnext" {
-        for marker in vnext_markers {
-            if !present_vnext_markers.contains(&marker) {
+    if source_state == "framework" {
+        for marker in framework_markers {
+            if !present_framework_markers.contains(&marker) {
                 findings.push(finding(
                     "blocking",
-                    "missing-vnext-activation-file",
+                    "missing-activation-file",
                     marker,
-                    "The vNext project is not fully activatable.",
+                    "The project is not fully activatable.",
                 ));
             }
         }
     }
 
+    // The retired CLI named its roots in its own config; this framework names
+    // them in its own. Which file to read follows from which project this is.
     let configured_contract_roots = if current_config {
-        configured_string_list(&config, "contract_roots")
+        configured_string_list(&legacy_config, "contract_roots")
     } else {
-        configured_vnext_string(&config, "contracts").map(|path| vec![path])
+        configured_framework_string(&config, "contracts").map(|path| vec![path])
     };
     let configured_decision_roots = if current_config {
-        configured_string(&config, "decision_root").map(|path| vec![path])
+        configured_string(&legacy_config, "decision_root").map(|path| vec![path])
     } else {
-        configured_vnext_string(&config, "decisions").map(|path| vec![path])
+        configured_framework_string(&config, "decisions").map(|path| vec![path])
     };
     let contract_roots = normalized_roots(
         configured_contract_roots,
         "contracts",
         "contract_roots",
-        current_config || vnext_config,
+        current_config || framework_config,
         &mut findings,
     );
     let decision_roots = normalized_roots(
         configured_decision_roots,
         "decisions",
         "decision_root",
-        current_config || vnext_config,
+        current_config || framework_config,
         &mut findings,
     );
     let evidence_roots = normalized_roots(
-        configured_string(&config, "evidence_root").map(|path| vec![path]),
+        configured_string(&legacy_config, "evidence_root").map(|path| vec![path]),
         "evidence",
         "evidence_root",
         current_config,
@@ -689,15 +710,15 @@ fn inspect_migration_ignoring(
         inventory_roots(&root, &evidence_roots, &tracked, false, &mut findings),
     );
 
-    let components = migration_components(&inventory, current_config, vnext_config);
+    let components = migration_components(&inventory, current_config, framework_config);
     findings.sort();
     let has_blocker = findings
         .iter()
         .any(|finding| finding.severity == "blocking");
     let readiness = if has_blocker {
         "blocked"
-    } else if source_state == "vnext" {
-        "already-vnext"
+    } else if source_state == "framework" {
+        "already-migrated"
     } else {
         "review-required"
     }
@@ -706,8 +727,8 @@ fn inspect_migration_ignoring(
         "blocked" => {
             "Resolve every blocking finding, then run migration inspect again. No files were changed."
         }
-        "already-vnext" => {
-            "Run the vNext validation commands; no legacy migration draft is required."
+        "already-migrated" => {
+            "Run the validation commands; no legacy migration draft is required."
         }
         _ => {
             "Review semantic components before generating a migration draft. No files were changed."
@@ -744,12 +765,12 @@ fn draft_from_inspection(
     match inspection.readiness.as_str() {
         "blocked" => {
             return Err(migration_error(
-                "migration draft is blocked; resolve the findings from `agentic migration inspect` first",
+                "migration draft is blocked; resolve the findings from `adf migration inspect` first",
             ));
         }
-        "already-vnext" => {
+        "already-migrated" => {
             return Err(migration_error(
-                "migration draft is not required because the project already uses vNext",
+                "migration draft is not required because the project already uses the framework",
             ));
         }
         "review-required" => {}
@@ -836,7 +857,9 @@ pub fn validate_migration_draft(
     let inspection = inspect_migration_ignoring(&root, &[&draft_path])?;
     if inspection.readiness != "review-required" {
         let message = match inspection.readiness.as_str() {
-            "already-vnext" => "The Project already uses vNext; migration is no longer required.",
+            "already-migrated" => {
+                "The Project already uses the framework; migration is no longer required."
+            }
             _ => {
                 "The current Project state is blocked; resolve `migration inspect` findings before validating the Draft."
             }
@@ -945,7 +968,7 @@ fn build_candidate_manifest(
 ) -> MigrationCandidateManifest {
     let generated_files = vec![
         MigrationCandidateFile {
-            path: ".agentic/config.yaml".to_owned(),
+            path: ".adf/config.yaml".to_owned(),
             digest: byte_digest(config_bytes),
         },
         MigrationCandidateFile {
@@ -969,7 +992,7 @@ fn build_candidate_manifest(
                     id: action.id.clone(),
                     decision: review.decision.clone(),
                     target_paths: Vec::new(),
-                    instruction: "Preserve the reviewed legacy material as non-active history without creating authoritative vNext Records."
+                    instruction: "Preserve the reviewed legacy material as non-active history without creating authoritative Records."
                         .to_owned(),
                 }),
                 _ => None,
@@ -997,7 +1020,7 @@ fn candidate_config_bytes() -> Vec<u8> {
         "project_sources:\n",
         "  contracts: contracts\n",
         "  decisions: decisions\n",
-        "repository_observation: .agentic/repository-observation.yaml\n"
+        "repository_observation: .adf/repository-observation.yaml\n"
     )
     .as_bytes()
     .to_vec()
@@ -1309,9 +1332,9 @@ pub fn apply_migration_candidate(
         &manifest.source_revision[..12],
         &candidate_manifest_digest["sha256:".len()..][..12]
     );
-    let application_relative = format!(".agentic/migrations/{application_id}");
+    let application_relative = format!(".adf/migrations/{application_id}");
     let application_root = safe_repository_path(&root, &application_relative)?;
-    let archive_base_relative = format!(".agentic/migration-history/{application_id}");
+    let archive_base_relative = format!(".adf/migration-history/{application_id}");
     let archive_base = safe_repository_path(&root, &archive_base_relative)?;
     if application_root.exists() || archive_base.exists() {
         return Err(migration_error(format!(
@@ -1347,7 +1370,7 @@ pub fn apply_migration_candidate(
         application_root: application_relative.clone(),
         applied_files,
         archived_paths,
-        next: "Review the archived sources and applied vNext files, git add the reviewed migration, run normal vNext validation, then commit it. Git index and commits were not changed."
+        next: "Review the archived sources and applied files, git add the reviewed migration, run normal validation, then commit it. Git index and commits were not changed."
             .to_owned(),
     };
 
@@ -1474,7 +1497,13 @@ fn application_archive_sources(
     let archived_action_ids = ["contracts", "decisions", "change-workflow", "evidence"]
         .into_iter()
         .collect::<BTreeSet<_>>();
-    let mut candidates = BTreeSet::from([".agentic/config.yaml".to_owned()]);
+    // What gets archived is what the retired CLI leaves behind, not the files
+    // this framework is about to write.
+    let mut candidates = BTreeSet::from([
+        ".agentic/config.yaml".to_owned(),
+        ".agentic/installation.yaml".to_owned(),
+        ".agentic/active-changes.yaml".to_owned(),
+    ]);
     for action in &draft.actions {
         if archived_action_ids.contains(action.id.as_str()) {
             candidates.extend(action.source_paths.iter().cloned());
@@ -1488,6 +1517,7 @@ fn application_archive_sources(
     for relative in candidates {
         if relative == "."
             || relative == ".agentic"
+            || relative == ".adf"
             || relative == ".git"
             || relative.starts_with(".git/")
             || path_is_within(candidate_relative, &relative)
@@ -1515,7 +1545,7 @@ fn application_payloads(
     candidate_root: &Path,
     manifest: &MigrationCandidateManifest,
 ) -> Result<Vec<MigrationApplicationPayload>, MigrationError> {
-    let mut paths = BTreeSet::from([".agentic/config.yaml".to_owned()]);
+    let mut paths = BTreeSet::from([".adf/config.yaml".to_owned()]);
     for action in &manifest.pending_actions {
         let completion = load_action_completion(candidate_root, &action.id)?;
         paths.extend(
@@ -1525,7 +1555,7 @@ fn application_payloads(
                 .map(|artifact| artifact.path),
         );
     }
-    let release_root = candidate_root.join(".agentic/cache/releases");
+    let release_root = candidate_root.join(".adf/cache/releases");
     if release_root.is_dir() {
         collect_regular_relative_paths(candidate_root, &release_root, &mut paths)?;
     }
@@ -1835,7 +1865,7 @@ fn verify_unclaimed_candidate_files(
     for file in files {
         if is_reserved_candidate_artifact(&file)
             || file.starts_with("migration-completions/")
-            || file.starts_with(".agentic/cache/releases/")
+            || file.starts_with(".adf/cache/releases/")
         {
             continue;
         }
@@ -2232,7 +2262,7 @@ fn is_action_id(value: &str) -> bool {
 fn is_reserved_candidate_artifact(path: &str) -> bool {
     matches!(
         path,
-        ".agentic/config.yaml"
+        ".adf/config.yaml"
             | "migration-draft.json"
             | "migration-manifest.yaml"
             | "migration-apply.lock"
@@ -2277,19 +2307,19 @@ fn validate_candidate_activation(
         Err(error) => {
             issues.push(candidate_validation_issue(
                 "invalid-candidate-config",
-                ".agentic/config.yaml",
+                ".adf/config.yaml",
                 &error.to_string(),
             ));
             return;
         }
     };
-    let lock_path = candidate_root.join(".agentic/framework.lock");
+    let lock_path = candidate_root.join(".adf/framework.lock");
     let framework_lock = match read_yaml_value(&lock_path) {
         Ok(value) => value,
         Err(error) => {
             issues.push(candidate_validation_issue(
                 "invalid-framework-lock",
-                ".agentic/framework.lock",
+                ".adf/framework.lock",
                 &error.to_string(),
             ));
             return;
@@ -2301,7 +2331,7 @@ fn validate_candidate_activation(
             Err(error) => {
                 issues.push(candidate_validation_issue(
                     "invalid-framework-release",
-                    ".agentic/cache/releases",
+                    ".adf/cache/releases",
                     &error.to_string(),
                 ));
                 return;
@@ -2546,7 +2576,7 @@ fn verify_candidate_generated_files(
     manifest: &MigrationCandidateManifest,
     issues: &mut Vec<MigrationCandidateValidationIssue>,
 ) {
-    let expected_paths = [".agentic/config.yaml", "migration-draft.json"];
+    let expected_paths = [".adf/config.yaml", "migration-draft.json"];
     let manifest_paths = manifest
         .generated_files
         .iter()
@@ -2556,7 +2586,7 @@ fn verify_candidate_generated_files(
         issues.push(candidate_validation_issue(
             "invalid-generated-file-list",
             "migration-manifest.yaml",
-            "generated_files must contain exactly the vNext config and embedded Draft.",
+            "generated_files must contain exactly the config and embedded Draft.",
         ));
     }
     for file in &manifest.generated_files {
@@ -2585,14 +2615,14 @@ fn verify_candidate_generated_files(
             )),
         }
     }
-    let config_path = candidate_root.join(".agentic/config.yaml");
+    let config_path = candidate_root.join(".adf/config.yaml");
     if let Ok(bytes) = read_regular_bytes(&config_path)
         && bytes != candidate_config_bytes()
     {
         issues.push(candidate_validation_issue(
             "modified-config-candidate",
-            ".agentic/config.yaml",
-            "Generated vNext config candidate was modified.",
+            ".adf/config.yaml",
+            "Generated config candidate was modified.",
         ));
     }
 }
@@ -2727,9 +2757,9 @@ fn candidate_location(root: &Path, relative: &Path) -> Result<(PathBuf, String),
         })
         .collect::<Option<Vec<_>>>()
         .ok_or_else(|| migration_error("migration candidate output contains an unsafe path"))?;
-    if parts.len() < 3 || parts[0] != ".agentic" || parts[1] != "migration-candidates" {
+    if parts.len() < 3 || parts[0] != ".adf" || parts[1] != "migration-candidates" {
         return Err(migration_error(
-            "migration candidate output must be under .agentic/migration-candidates/<name>",
+            "migration candidate output must be under .adf/migration-candidates/<name>",
         ));
     }
     if parts.iter().any(|part| {
@@ -2763,7 +2793,7 @@ fn write_candidate_bundle(
         migration_error(format!("cannot create migration candidate output: {error}"))
     })?;
     let result = (|| {
-        write_candidate_file(&output_root.join(".agentic/config.yaml"), config_bytes)?;
+        write_candidate_file(&output_root.join(".adf/config.yaml"), config_bytes)?;
         write_candidate_file(&output_root.join("migration-draft.json"), draft_bytes)?;
         let manifest_bytes = serde_yaml::to_string(manifest)
             .map_err(|error| migration_error(format!("cannot serialize manifest: {error}")))?;
@@ -2932,13 +2962,13 @@ fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, 
             "project-source-inventory" => (
                 "inventory-only",
                 false,
-                "Use the inventoried repository-relative roots as migration inputs; do not copy the legacy config into the vNext config.",
+                "Use the inventoried repository-relative roots as migration inputs; do not copy the legacy config into the config.",
                 &["Every configured source root is represented in the migration review."],
             ),
             "legacy-policies" => (
                 "replace-after-review",
                 true,
-                "Review each legacy policy and express only accepted semantics as vNext Rules.",
+                "Review each legacy policy and express only accepted semantics as Rules.",
                 &[
                     "Every legacy policy is mapped to a reviewed Rule or explicitly retired.",
                     "The resulting rules validate against the selected Framework Release schema.",
@@ -2947,43 +2977,43 @@ fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, 
             "contracts" => (
                 "transform-after-review",
                 true,
-                "Map each current Contract to reviewed vNext Contract clauses without inferring equivalent semantics from field names.",
+                "Map each current Contract to reviewed Contract clauses without inferring equivalent semantics from field names.",
                 &[
                     "Every source Contract is mapped or explicitly retired.",
-                    "Every generated Contract validates against the vNext Contract schema.",
+                    "Every generated Contract validates against the Contract schema.",
                 ],
             ),
             "decisions" => (
                 "transform-after-review",
                 true,
-                "Map accepted Decision outcomes and references to reviewed vNext Decisions.",
+                "Map accepted Decision outcomes and references to reviewed Decisions.",
                 &[
                     "Every source Decision is mapped or explicitly retained as history only.",
-                    "Resolution references point to existing vNext records.",
+                    "Resolution references point to existing records.",
                 ],
             ),
             "change-workflow" => (
                 "transform-after-review",
                 true,
-                "Review active and historical change state, then create only the vNext Records still required for ongoing work.",
+                "Review active and historical change state, then create only the Records still required for ongoing work.",
                 &[
                     "Every active legacy change has an explicit migration or closure decision.",
-                    "Historical workflow data is preserved outside active vNext state when required.",
+                    "Historical workflow data is preserved outside active state when required.",
                 ],
             ),
             "evidence" => (
                 "transform-after-review",
                 true,
-                "Attach accepted legacy Evidence to explicit vNext requirement instances and Contract clauses.",
+                "Attach accepted legacy Evidence to explicit requirement instances and Contract clauses.",
                 &[
-                    "Every retained Evidence item has an explicit vNext requirement and clause reference.",
+                    "Every retained Evidence item has an explicit requirement and clause reference.",
                     "Unmapped Evidence is reported before activation.",
                 ],
             ),
             "repository-observation" => (
                 "generate-from-revision",
                 true,
-                "Run the vNext Detector against the fixed source revision and review every Binding candidate.",
+                "Run the Detector against the fixed source revision and review every Binding candidate.",
                 &[
                     "Detector coverage is complete for every tracked source file.",
                     "Every Binding candidate is reviewed before promotion.",
@@ -3021,16 +3051,16 @@ fn draft_action(component: &MigrationComponent) -> Result<MigrationDraftAction, 
 fn migration_components(
     inventory: &BTreeMap<String, MigrationInventory>,
     current_config: bool,
-    vnext_config: bool,
+    framework_config: bool,
 ) -> Vec<MigrationComponent> {
-    if vnext_config {
+    if framework_config {
         return vec![component(
-            "vnext-activation",
+            "framework-activation",
             "already-present",
-            &[".agentic/config.yaml", ".agentic/framework.lock"],
+            &[".adf/config.yaml", ".adf/framework.lock"],
             &[],
             1,
-            "The active project already uses the vNext project format.",
+            "The active project already uses the project format.",
         )];
     }
     if !current_config {
@@ -3051,7 +3081,7 @@ fn migration_components(
             &[".agentic/config.yaml"],
             &["rules.yaml"],
             1,
-            "Current risk and evidence policies do not have a field-for-field vNext Rule mapping.",
+            "Current risk and evidence policies do not have a field-for-field Rule mapping.",
         ),
         component(
             "contracts",
@@ -3063,7 +3093,7 @@ fn migration_components(
                 .collect::<Vec<_>>(),
             &["contracts"],
             inventory["contracts"].files,
-            "Current Contract kinds and vNext clauses have different semantic schemas.",
+            "Current Contract kinds and clauses have different semantic schemas.",
         ),
         component(
             "decisions",
@@ -3081,9 +3111,9 @@ fn migration_components(
             "change-workflow",
             "review-required",
             &[".agentic/active-changes.yaml", ".agentic/changes"],
-            &[".agentic/changes"],
+            &[".adf/changes"],
             inventory["changes"].files,
-            "Current assessments, challenges, and resolved locks are workflow history rather than vNext Records.",
+            "Current assessments, challenges, and resolved locks are workflow history rather than Records.",
         ),
         component(
             "evidence",
@@ -3093,15 +3123,15 @@ fn migration_components(
                 .iter()
                 .map(String::as_str)
                 .collect::<Vec<_>>(),
-            &[".agentic/changes/<change-id>/evidence"],
+            &[".adf/changes/<change-id>/evidence"],
             inventory["evidence"].files,
-            "Current evidence requirements must be tied to vNext requirement instances and Contract clauses.",
+            "Current evidence requirements must be tied to requirement instances and Contract clauses.",
         ),
         component(
             "repository-observation",
             "generated",
             &[],
-            &[".agentic/repository-observation.yaml"],
+            &[".adf/repository-observation.yaml"],
             0,
             "Detector coverage and Binding candidates must be generated from the target revision, then reviewed.",
         ),
@@ -3109,10 +3139,7 @@ fn migration_components(
             "framework-release",
             "release-supplied",
             &[],
-            &[
-                ".agentic/framework.lock",
-                ".agentic/trusted-release-keys.yaml",
-            ],
+            &[".adf/framework.lock", ".adf/trusted-release-keys.yaml"],
             0,
             "Framework lock and trust roots come from a reviewed signed Release candidate, not legacy project data.",
         ),
@@ -3340,7 +3367,7 @@ fn configured_string_list(config: &Option<Value>, field: &str) -> Option<Vec<Str
         .collect()
 }
 
-fn configured_vnext_string(config: &Option<Value>, field: &str) -> Option<String> {
+fn configured_framework_string(config: &Option<Value>, field: &str) -> Option<String> {
     config
         .as_ref()?
         .get("project_sources")?
@@ -3361,7 +3388,7 @@ fn normalized_roots(
             findings.push(finding(
                 "blocking",
                 "invalid-config-field",
-                ".agentic/config.yaml",
+                ".adf/config.yaml",
                 &format!("{field} must contain repository-relative path strings."),
             ));
         }
@@ -3374,7 +3401,7 @@ fn normalized_roots(
         findings.push(finding(
             "blocking",
             "invalid-config-field",
-            ".agentic/config.yaml",
+            ".adf/config.yaml",
             &format!("{field} must contain non-empty repository-relative path strings."),
         ));
         vec![fallback.to_owned()]
@@ -3393,7 +3420,7 @@ fn regular_marker(root: &Path, relative: &str, findings: &mut Vec<MigrationFindi
                 "blocking",
                 "unreadable-activation-file",
                 relative,
-                "vNext activation file metadata cannot be read.",
+                "activation file metadata cannot be read.",
             ));
             return false;
         }
@@ -3403,7 +3430,7 @@ fn regular_marker(root: &Path, relative: &str, findings: &mut Vec<MigrationFindi
             "blocking",
             "unsafe-activation-file",
             relative,
-            "vNext activation file must be a regular file, not a symlink.",
+            "activation file must be a regular file, not a symlink.",
         ));
         return false;
     }
@@ -3539,7 +3566,7 @@ mod tests {
     fn temporary_root(label: &str) -> PathBuf {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "agentic-migration-{label}-{}-{}",
+            "adf-migration-{label}-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -3553,7 +3580,7 @@ mod tests {
         fs::write(root.join("rules.yaml"), b"legacy\n").unwrap();
         let payloads = vec![MigrationApplicationPayload {
             relative: "rules.yaml".to_owned(),
-            bytes: b"vnext\n".to_vec(),
+            bytes: b"framework\n".to_vec(),
         }];
 
         let error = preflight_application_targets(&root, &[], &payloads).unwrap_err();
@@ -3566,15 +3593,15 @@ mod tests {
     #[test]
     fn failed_application_rollback_restores_archived_sources() {
         let root = temporary_root("rollback");
-        let source = root.join(".agentic/config.yaml");
-        let archive_base = root.join(".agentic/migration-history/migration-test");
-        let archive = archive_base.join("source/.agentic/config.yaml");
-        let application_root = root.join(".agentic/migrations/migration-test");
+        let source = root.join(".adf/config.yaml");
+        let archive_base = root.join(".adf/migration-history/migration-test");
+        let archive = archive_base.join("source/.adf/config.yaml");
+        let application_root = root.join(".adf/migrations/migration-test");
         fs::create_dir_all(source.parent().unwrap()).unwrap();
         fs::write(&source, b"legacy\n").unwrap();
         fs::create_dir_all(archive.parent().unwrap()).unwrap();
         fs::rename(&source, &archive).unwrap();
-        fs::write(&source, b"partial-vnext\n").unwrap();
+        fs::write(&source, b"partial-framework\n").unwrap();
         fs::create_dir_all(&application_root).unwrap();
         fs::write(application_root.join("partial.yaml"), b"partial\n").unwrap();
 

@@ -129,32 +129,32 @@
       "document_format": "yaml",
       "contract_path": "contracts/contract.order-lifecycle.yaml",
       "initial_paths": [
-        ".agentic/changes/change.place-order/change.yaml",
+        ".adf/changes/change.place-order/change.yaml",
         "contracts/contract.order-lifecycle.yaml",
         "decisions/decision.order-model.yaml"
       ],
       "updated_paths": [
-        ".agentic/changes/change.place-order/change.yaml",
+        ".adf/changes/change.place-order/change.yaml",
         "contracts/contract.order-lifecycle.yaml",
         "decisions/decision.order-model.yaml",
         "decisions/decision.submission-result.yaml",
-        ".agentic/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
+        ".adf/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
       ]
     },
     {
       "document_format": "markdown",
       "contract_path": "contracts/contract.order-lifecycle.md",
       "initial_paths": [
-        ".agentic/changes/change.place-order/change.md",
+        ".adf/changes/change.place-order/change.md",
         "contracts/contract.order-lifecycle.md",
         "decisions/decision.order-model.md"
       ],
       "updated_paths": [
-        ".agentic/changes/change.place-order/change.md",
+        ".adf/changes/change.place-order/change.md",
         "contracts/contract.order-lifecycle.md",
         "decisions/decision.order-model.md",
         "decisions/decision.submission-result.md",
-        ".agentic/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
+        ".adf/changes/change.place-order/results/action.76c79e6f916c6355.6e1faaf1618b775c79f82b538a96dcb09b6bcfe84ef981872c5950f7c3e5b727.json"
       ]
     }
   ],
@@ -166,7 +166,7 @@
     },
     {
       "case_id": "generated-contract-root",
-      "contract_root": ".agentic/cache/contracts",
+      "contract_root": ".adf/cache/contracts",
       "error": "generated/local"
     }
   ]

@@ -13,10 +13,10 @@ BINARY_DIR=$2
 RELEASE_TAG=$3
 SOURCE_REVISION=$4
 REPOSITORY=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}
-CANDIDATE_RUN_ID=${AGENTIC_RELEASE_CANDIDATE_RUN_ID:?AGENTIC_RELEASE_CANDIDATE_RUN_ID is required}
-SOURCE_ID=${AGENTIC_RELEASE_SOURCE_ID:-remote:official}
-SIGNER_KEY_ID=${AGENTIC_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
-GH_CLI=${AGENTIC_GH_CLI:-gh}
+CANDIDATE_RUN_ID=${ADF_RELEASE_CANDIDATE_RUN_ID:?ADF_RELEASE_CANDIDATE_RUN_ID is required}
+SOURCE_ID=${ADF_RELEASE_SOURCE_ID:-remote:official}
+SIGNER_KEY_ID=${ADF_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
+GH_CLI=${ADF_GH_CLI:-gh}
 
 case "$RELEASE_TAG" in
   ''|*[!A-Za-z0-9._-]*)
@@ -52,8 +52,8 @@ if ! command -v "$GH_CLI" >/dev/null 2>&1; then
   exit 2
 fi
 
-export AGENTIC_RELEASE_TAG=$RELEASE_TAG
-export AGENTIC_RELEASE_SOURCE_REVISION=$SOURCE_REVISION
+export ADF_RELEASE_TAG=$RELEASE_TAG
+export ADF_RELEASE_SOURCE_REVISION=$SOURCE_REVISION
 METADATA=$("$SCRIPT_DIR/verify-release-candidate.sh" "$CANDIDATE_DIR")
 BINARY_METADATA=$("$SCRIPT_DIR/verify-release-binaries.sh" \
   "$BINARY_DIR" "$SOURCE_REVISION")
@@ -68,7 +68,7 @@ if [ "$MATCHING_REFS" != "0" ]; then
   exit 1
 fi
 
-WORK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-publish.XXXXXX")
+WORK_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/adf-release-publish.XXXXXX")
 cleanup() {
   rm -rf "$WORK_ROOT"
 }
@@ -156,16 +156,16 @@ PY
   "$BINARY_DIR/LICENSE-APACHE" \
   "$BINARY_DIR/LICENSE-MIT" \
   "$BINARY_DIR/THIRD-PARTY-NOTICES.md" \
-  "$BINARY_DIR/agentic-aarch64-apple-darwin" \
-  "$BINARY_DIR/agentic-aarch64-apple-darwin.build.json" \
-  "$BINARY_DIR/agentic-aarch64-unknown-linux-gnu" \
-  "$BINARY_DIR/agentic-aarch64-unknown-linux-gnu.build.json" \
-  "$BINARY_DIR/agentic-x86_64-apple-darwin" \
-  "$BINARY_DIR/agentic-x86_64-apple-darwin.build.json" \
-  "$BINARY_DIR/agentic-x86_64-pc-windows-msvc.exe" \
-  "$BINARY_DIR/agentic-x86_64-pc-windows-msvc.exe.build.json" \
-  "$BINARY_DIR/agentic-x86_64-unknown-linux-gnu" \
-  "$BINARY_DIR/agentic-x86_64-unknown-linux-gnu.build.json" \
+  "$BINARY_DIR/adf-aarch64-apple-darwin" \
+  "$BINARY_DIR/adf-aarch64-apple-darwin.build.json" \
+  "$BINARY_DIR/adf-aarch64-unknown-linux-gnu" \
+  "$BINARY_DIR/adf-aarch64-unknown-linux-gnu.build.json" \
+  "$BINARY_DIR/adf-x86_64-apple-darwin" \
+  "$BINARY_DIR/adf-x86_64-apple-darwin.build.json" \
+  "$BINARY_DIR/adf-x86_64-pc-windows-msvc.exe" \
+  "$BINARY_DIR/adf-x86_64-pc-windows-msvc.exe.build.json" \
+  "$BINARY_DIR/adf-x86_64-unknown-linux-gnu" \
+  "$BINARY_DIR/adf-x86_64-unknown-linux-gnu.build.json" \
   "$PUBLICATION_RECORD" \
   --repo "$REPOSITORY" \
   --target "$SOURCE_REVISION" \
@@ -187,16 +187,16 @@ mkdir -p "$DOWNLOADED"
   --pattern LICENSE-APACHE \
   --pattern LICENSE-MIT \
   --pattern THIRD-PARTY-NOTICES.md \
-  --pattern agentic-aarch64-apple-darwin \
-  --pattern agentic-aarch64-apple-darwin.build.json \
-  --pattern agentic-aarch64-unknown-linux-gnu \
-  --pattern agentic-aarch64-unknown-linux-gnu.build.json \
-  --pattern agentic-x86_64-apple-darwin \
-  --pattern agentic-x86_64-apple-darwin.build.json \
-  --pattern agentic-x86_64-pc-windows-msvc.exe \
-  --pattern agentic-x86_64-pc-windows-msvc.exe.build.json \
-  --pattern agentic-x86_64-unknown-linux-gnu \
-  --pattern agentic-x86_64-unknown-linux-gnu.build.json \
+  --pattern adf-aarch64-apple-darwin \
+  --pattern adf-aarch64-apple-darwin.build.json \
+  --pattern adf-aarch64-unknown-linux-gnu \
+  --pattern adf-aarch64-unknown-linux-gnu.build.json \
+  --pattern adf-x86_64-apple-darwin \
+  --pattern adf-x86_64-apple-darwin.build.json \
+  --pattern adf-x86_64-pc-windows-msvc.exe \
+  --pattern adf-x86_64-pc-windows-msvc.exe.build.json \
+  --pattern adf-x86_64-unknown-linux-gnu \
+  --pattern adf-x86_64-unknown-linux-gnu.build.json \
   --pattern publication-record.json
 
 cmp "$CANDIDATE_DIR/framework-release.tar" "$DOWNLOADED/framework-release.tar"
@@ -209,16 +209,16 @@ for asset in \
   LICENSE-APACHE \
   LICENSE-MIT \
   THIRD-PARTY-NOTICES.md \
-  agentic-aarch64-apple-darwin \
-  agentic-aarch64-apple-darwin.build.json \
-  agentic-aarch64-unknown-linux-gnu \
-  agentic-aarch64-unknown-linux-gnu.build.json \
-  agentic-x86_64-apple-darwin \
-  agentic-x86_64-apple-darwin.build.json \
-  agentic-x86_64-pc-windows-msvc.exe \
-  agentic-x86_64-pc-windows-msvc.exe.build.json \
-  agentic-x86_64-unknown-linux-gnu \
-  agentic-x86_64-unknown-linux-gnu.build.json
+  adf-aarch64-apple-darwin \
+  adf-aarch64-apple-darwin.build.json \
+  adf-aarch64-unknown-linux-gnu \
+  adf-aarch64-unknown-linux-gnu.build.json \
+  adf-x86_64-apple-darwin \
+  adf-x86_64-apple-darwin.build.json \
+  adf-x86_64-pc-windows-msvc.exe \
+  adf-x86_64-pc-windows-msvc.exe.build.json \
+  adf-x86_64-unknown-linux-gnu \
+  adf-x86_64-unknown-linux-gnu.build.json
 do
   cmp "$BINARY_DIR/$asset" "$DOWNLOADED/$asset"
 done
@@ -237,16 +237,16 @@ for asset in \
   LICENSE-APACHE \
   LICENSE-MIT \
   THIRD-PARTY-NOTICES.md \
-  agentic-aarch64-apple-darwin \
-  agentic-aarch64-apple-darwin.build.json \
-  agentic-aarch64-unknown-linux-gnu \
-  agentic-aarch64-unknown-linux-gnu.build.json \
-  agentic-x86_64-apple-darwin \
-  agentic-x86_64-apple-darwin.build.json \
-  agentic-x86_64-pc-windows-msvc.exe \
-  agentic-x86_64-pc-windows-msvc.exe.build.json \
-  agentic-x86_64-unknown-linux-gnu \
-  agentic-x86_64-unknown-linux-gnu.build.json
+  adf-aarch64-apple-darwin \
+  adf-aarch64-apple-darwin.build.json \
+  adf-aarch64-unknown-linux-gnu \
+  adf-aarch64-unknown-linux-gnu.build.json \
+  adf-x86_64-apple-darwin \
+  adf-x86_64-apple-darwin.build.json \
+  adf-x86_64-pc-windows-msvc.exe \
+  adf-x86_64-pc-windows-msvc.exe.build.json \
+  adf-x86_64-unknown-linux-gnu \
+  adf-x86_64-unknown-linux-gnu.build.json
 do
   cp "$DOWNLOADED/$asset" "$DOWNLOADED_BINARIES/$asset"
 done

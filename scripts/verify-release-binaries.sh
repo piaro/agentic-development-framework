@@ -13,17 +13,17 @@ SOURCE_REVISION=$2
 METADATA=$(python3 "$SCRIPT_DIR/verify-release-binaries.py" \
   "$BINARY_DIR" "$SOURCE_REVISION")
 
-if [ "${AGENTIC_RELEASE_REQUIRE_ATTESTATIONS:-0}" = "1" ]; then
+if [ "${ADF_RELEASE_REQUIRE_ATTESTATIONS:-0}" = "1" ]; then
   REPOSITORY=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}
-  DEFAULT_BRANCH=${AGENTIC_RELEASE_DEFAULT_BRANCH:?AGENTIC_RELEASE_DEFAULT_BRANCH is required}
-  GH_CLI=${AGENTIC_GH_CLI:-gh}
-  SIGNER_WORKFLOW=$REPOSITORY/.github/workflows/vnext-release.yml
+  DEFAULT_BRANCH=${ADF_RELEASE_DEFAULT_BRANCH:?ADF_RELEASE_DEFAULT_BRANCH is required}
+  GH_CLI=${ADF_GH_CLI:-gh}
+  SIGNER_WORKFLOW=$REPOSITORY/.github/workflows/release.yml
   for binary in \
-    agentic-aarch64-apple-darwin \
-    agentic-aarch64-unknown-linux-gnu \
-    agentic-x86_64-apple-darwin \
-    agentic-x86_64-pc-windows-msvc.exe \
-    agentic-x86_64-unknown-linux-gnu
+    adf-aarch64-apple-darwin \
+    adf-aarch64-unknown-linux-gnu \
+    adf-x86_64-apple-darwin \
+    adf-x86_64-pc-windows-msvc.exe \
+    adf-x86_64-unknown-linux-gnu
   do
     "$GH_CLI" attestation verify "$BINARY_DIR/$binary" \
       --repo "$REPOSITORY" \
@@ -32,8 +32,8 @@ if [ "${AGENTIC_RELEASE_REQUIRE_ATTESTATIONS:-0}" = "1" ]; then
       --source-ref "refs/heads/$DEFAULT_BRANCH" \
       --deny-self-hosted-runners >/dev/null
   done
-elif [ "${AGENTIC_RELEASE_REQUIRE_ATTESTATIONS:-0}" != "0" ]; then
-  echo "AGENTIC_RELEASE_REQUIRE_ATTESTATIONS must be 0 or 1" >&2
+elif [ "${ADF_RELEASE_REQUIRE_ATTESTATIONS:-0}" != "0" ]; then
+  echo "ADF_RELEASE_REQUIRE_ATTESTATIONS must be 0 or 1" >&2
   exit 2
 fi
 

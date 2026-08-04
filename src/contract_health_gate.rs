@@ -231,7 +231,7 @@ mod tests {
                 schema_version: "1".to_owned(),
                 fail_on: states.into_iter().map(str::to_owned).collect(),
             };
-            let report = ContractHealthGateReport::build(".agentic/health.yaml", &policy, health());
+            let report = ContractHealthGateReport::build(".adf/health.yaml", &policy, health());
             assert!(!report.passed());
             assert_eq!(report.blocking_clause_refs, expected);
         }
@@ -251,8 +251,7 @@ mod tests {
             ..health()
         };
         assert!(
-            ContractHealthGateReport::build(".agentic/health.yaml", &policy, verified_only)
-                .passed()
+            ContractHealthGateReport::build(".adf/health.yaml", &policy, verified_only).passed()
         );
     }
 

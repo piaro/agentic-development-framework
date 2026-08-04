@@ -40,19 +40,19 @@ if [ "$ACTUAL_TARGET" != "$EXPECTED_TARGET" ]; then
   exit 1
 fi
 
-AGENTIC_BUILD_SOURCE_REVISION=$SOURCE_REVISION cargo build \
+ADF_BUILD_SOURCE_REVISION=$SOURCE_REVISION cargo build \
   --manifest-path "$RUST_ROOT/Cargo.toml" \
   --release \
   --locked
 
 case "$EXPECTED_TARGET" in
   *-windows-msvc)
-    SOURCE_BINARY=$RUST_ROOT/target/release/agentic.exe
-    BINARY_NAME=agentic-$EXPECTED_TARGET.exe
+    SOURCE_BINARY=$RUST_ROOT/target/release/adf.exe
+    BINARY_NAME=adf-$EXPECTED_TARGET.exe
     ;;
   *)
-    SOURCE_BINARY=$RUST_ROOT/target/release/agentic
-    BINARY_NAME=agentic-$EXPECTED_TARGET
+    SOURCE_BINARY=$RUST_ROOT/target/release/adf
+    BINARY_NAME=adf-$EXPECTED_TARGET
     ;;
 esac
 if [ ! -f "$SOURCE_BINARY" ]; then

@@ -168,9 +168,9 @@ impl FrameworkCatalog {
         let parsed: ReleaseCatalogSource = serde_json::from_value(source.clone())
             .map_err(|error| catalog_error(format!("invalid Framework Catalog: {error}")))?;
         validate_identifier(&parsed.namespace, "Framework Catalog namespace", true)?;
-        if parsed.namespace == "agentic" || parsed.namespace.starts_with("agentic.") {
+        if parsed.namespace == "adf" || parsed.namespace.starts_with("adf.") {
             return Err(catalog_error(
-                "Framework Catalog namespace agentic is reserved for built-in rules",
+                "Framework Catalog namespace adf is reserved for built-in rules",
             ));
         }
         if parsed.schema_version != "1" {
@@ -2138,7 +2138,7 @@ mod tests {
     fn release_catalog_rejects_reserved_namespaces_and_duplicate_matches() {
         let reserved = serde_json::json!({
             "schema_version": "1",
-            "namespace": "agentic",
+            "namespace": "adf",
             "rules": []
         });
         assert!(

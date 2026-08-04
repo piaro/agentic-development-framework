@@ -57,7 +57,7 @@ jobs:
       # Formatting, lint, unit and integration tests, the detector quality
       # corpus, the golden suites, and the signed release and install flows.
       - name: Run regression tests
-        run: sh scripts/tests/test-vnext-rust.sh
+        run: sh scripts/tests/test-rust.sh
 
   third-party-notices:
     name: Third-party notices stay generatable

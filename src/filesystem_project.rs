@@ -24,11 +24,11 @@ pub const DEFAULT_DECISION_ROOT: &str = "decisions";
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const DISALLOWED_SOURCE_ROOTS: [&str; 5] = [
-    ".agentic/cache",
-    ".agentic/bundles",
-    ".agentic/local",
-    ".agentic/logs",
-    ".agentic/tmp",
+    ".adf/cache",
+    ".adf/bundles",
+    ".adf/local",
+    ".adf/logs",
+    ".adf/tmp",
 ];
 pub const FILESYSTEM_PROJECT_PROTOCOL_VERSION: &str = "3";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
@@ -99,7 +99,7 @@ impl<'a> FileProjectStore<'a> {
         }
         let contract_root = source_root(&root, contract_root)?;
         let decision_root = source_root(&root, decision_root)?;
-        let change_root = root.join(".agentic").join("changes");
+        let change_root = root.join(".adf").join("changes");
         Ok(Self {
             project_root: root,
             contract_root,
@@ -463,11 +463,7 @@ impl<'a> FileProjectStore<'a> {
     }
 
     fn acquire_contract_update_lock(&self) -> Result<File, FileProjectError> {
-        let directory = self
-            .project_root
-            .join(".agentic")
-            .join("cache")
-            .join("locks");
+        let directory = self.project_root.join(".adf").join("cache").join("locks");
         fs::create_dir_all(&directory).map_err(|error| {
             file_error(format!("cannot create {}: {error}", directory.display()))
         })?;
@@ -943,7 +939,7 @@ fn serialize_record(
                     "# {title}\n\n\
                      This document is owned by the project. Human-readable rationale, \
                      examples, and diagrams may be added outside the structured block.\n\n\
-                     ```agentic-{record_kind}\n{payload}```\n"
+                     ```adf-{record_kind}\n{payload}```\n"
                 ))
             }
         }
@@ -959,14 +955,14 @@ fn markdown_payload_range(
     record_kind: &str,
 ) -> Result<std::ops::Range<usize>, FileProjectError> {
     let expression = Regex::new(&format!(
-        r"(?ms)^```agentic-{}[ \t]*\n(?P<payload>.*?)^```[ \t]*$",
+        r"(?ms)^```adf-{}[ \t]*\n(?P<payload>.*?)^```[ \t]*$",
         regex::escape(record_kind)
     ))
     .expect("Framework-owned Markdown expression is valid");
     let matches = expression.captures_iter(text).collect::<Vec<_>>();
     if matches.len() != 1 {
         return Err(file_error(format!(
-            "{record_kind} Markdown must contain exactly one agentic-{record_kind} block"
+            "{record_kind} Markdown must contain exactly one adf-{record_kind} block"
         )));
     }
     let payload = matches[0]

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/benchmarks/v1/detector-corpus",
+  "$id": "adf://schemas/benchmarks/v1/detector-corpus",
   "type": "object",
   "required": ["schema_version", "id", "minimum_scores", "projects"],
   "properties": {

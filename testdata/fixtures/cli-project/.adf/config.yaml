@@ -2,4 +2,4 @@ schema_version: "1"
 project_sources:
   contracts: contracts
   decisions: decisions
-repository_observation: .agentic/repository-observation.yaml
+repository_observation: .adf/repository-observation.yaml

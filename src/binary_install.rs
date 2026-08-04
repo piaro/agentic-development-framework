@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 const POINTER_SCHEMA_VERSION: &str = "1";
-const LAUNCHER_MARKER: &str = "agentic-vnext-managed-launcher";
+const LAUNCHER_MARKER: &str = "adf-managed-launcher";
 const ACTIVATION_FILE: &str = "active";
 static INSTALL_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
@@ -106,7 +106,7 @@ pub fn published_binary_name(target: &str) -> String {
     } else {
         ""
     };
-    format!("agentic-{target}{suffix}")
+    format!("adf-{target}{suffix}")
 }
 
 /// Verify the native binary and the complete project bootstrap candidate.
@@ -420,11 +420,11 @@ fn write_managed_launcher(
     let path = launcher_path(install_root);
     let content = if cfg!(windows) {
         format!(
-            "@echo off\r\nrem {LAUNCHER_MARKER}\r\nset /p AGENTIC_VERSION=<\"%~dp0..\\{ACTIVATION_FILE}\"\r\n\"%~dp0..\\releases\\%AGENTIC_VERSION%\\{binary_name}\" %*\r\n"
+            "@echo off\r\nrem {LAUNCHER_MARKER}\r\nset /p ADF_VERSION=<\"%~dp0..\\{ACTIVATION_FILE}\"\r\n\"%~dp0..\\releases\\%ADF_VERSION%\\{binary_name}\" %*\r\n"
         )
     } else {
         format!(
-            "#!/bin/sh\n# {LAUNCHER_MARKER}\nset -eu\nBIN_DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nINSTALL_ROOT=$(CDPATH= cd -- \"$BIN_DIR/..\" && pwd)\nIFS= read -r AGENTIC_VERSION < \"$INSTALL_ROOT/{ACTIVATION_FILE}\"\nexec \"$INSTALL_ROOT/releases/$AGENTIC_VERSION/{binary_name}\" \"$@\"\n"
+            "#!/bin/sh\n# {LAUNCHER_MARKER}\nset -eu\nBIN_DIR=$(CDPATH= cd -- \"$(dirname -- \"$0\")\" && pwd)\nINSTALL_ROOT=$(CDPATH= cd -- \"$BIN_DIR/..\" && pwd)\nIFS= read -r ADF_VERSION < \"$INSTALL_ROOT/{ACTIVATION_FILE}\"\nexec \"$INSTALL_ROOT/releases/$ADF_VERSION/{binary_name}\" \"$@\"\n"
         )
     };
     if path.exists() {
@@ -456,11 +456,9 @@ fn write_managed_launcher(
 }
 
 fn launcher_path(install_root: &Path) -> PathBuf {
-    install_root.join("bin").join(if cfg!(windows) {
-        "agentic.cmd"
-    } else {
-        "agentic"
-    })
+    install_root
+        .join("bin")
+        .join(if cfg!(windows) { "adf.cmd" } else { "adf" })
 }
 
 fn reject_filesystem_root(path: &Path) -> Result<(), BinaryInstallError> {
@@ -679,7 +677,7 @@ fn copy_new_file(source: &Path, target: &Path) -> Result<(), BinaryInstallError>
     if source
         .file_name()
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.starts_with("agentic-") && !name.ends_with(".json"))
+        .is_some_and(|name| name.starts_with("adf-") && !name.ends_with(".json"))
     {
         use std::os::unix::fs::PermissionsExt;
         fs::set_permissions(target, fs::Permissions::from_mode(0o755))

@@ -62,9 +62,9 @@ pub fn initialize_project(
     }
     assert_git_root(&project_root)?;
     for relative in [
-        ".agentic",
-        ".agentic/cache",
-        ".agentic/changes",
+        ".adf",
+        ".adf/cache",
+        ".adf/changes",
         "contracts",
         "decisions",
     ] {
@@ -103,11 +103,11 @@ pub fn initialize_project(
         .to_owned();
 
     let targets = [
-        project_root.join(".agentic/config.yaml"),
-        project_root.join(".agentic/framework.lock"),
-        project_root.join(".agentic/repository-observation.yaml"),
-        project_root.join(".agentic/trusted-release-keys.yaml"),
-        project_root.join(".agentic/cache/.gitignore"),
+        project_root.join(".adf/config.yaml"),
+        project_root.join(".adf/framework.lock"),
+        project_root.join(".adf/repository-observation.yaml"),
+        project_root.join(".adf/trusted-release-keys.yaml"),
+        project_root.join(".adf/cache/.gitignore"),
     ];
     let asset_targets = planned_assets
         .iter()
@@ -126,7 +126,7 @@ pub fn initialize_project(
         )));
     }
 
-    fs::create_dir_all(project_root.join(".agentic/changes"))
+    fs::create_dir_all(project_root.join(".adf/changes"))
         .and_then(|()| fs::create_dir_all(project_root.join("contracts")))
         .and_then(|()| fs::create_dir_all(project_root.join("decisions")))
         .map_err(|error| setup_error(format!("cannot create project directories: {error}")))?;
@@ -147,7 +147,7 @@ pub fn initialize_project(
         "project_sources:\n",
         "  contracts: contracts\n",
         "  decisions: decisions\n",
-        "repository_observation: .agentic/repository-observation.yaml\n"
+        "repository_observation: .adf/repository-observation.yaml\n"
     );
     let observation = serde_yaml::to_string(&json!({
         "schema_version": "5",
@@ -243,7 +243,7 @@ fn merge_agents_block(
                 merged.push('\n');
             }
             merged.push_str(block);
-            let staged = agents_path.with_extension("md.agentic-init");
+            let staged = agents_path.with_extension("md.adf-init");
             write_new(&staged, merged.as_bytes())?;
             if let Err(error) = replace_file(&staged, agents_path) {
                 let _ = fs::remove_file(&staged);
@@ -284,23 +284,23 @@ pub fn initialize_change(
     assert_git_root(&root)?;
     reject_symlink_components(
         &root,
-        &Path::new(".agentic/changes")
+        &Path::new(".adf/changes")
             .join(change_id)
             .join("change.yaml"),
     )?;
     if title.trim().is_empty() || intent.trim().is_empty() {
         return Err(setup_error("Change title and intent must not be empty"));
     }
-    let config = root.join(".agentic/config.yaml");
+    let config = root.join(".adf/config.yaml");
     if !config.is_file() {
         return Err(setup_error(format!(
-            "Project is not initialized: {} is missing.\nNext: agentic project init --project {}",
+            "Project is not initialized: {} is missing.\nNext: adf project init --project {}",
             config.display(),
             root.display()
         )));
     }
     let path = root
-        .join(".agentic/changes")
+        .join(".adf/changes")
         .join(change_id)
         .join("change.yaml");
     let value = json!({
@@ -636,7 +636,7 @@ fn framework_catalog(root: &Path) -> Result<FrameworkCatalog, ProjectSetupError>
         root,
         &["ls-files", "--cached", "--others", "--exclude-standard"],
     )?;
-    let lock_path = root.join(".agentic/framework.lock");
+    let lock_path = root.join(".adf/framework.lock");
     let mut catalog = if lock_path.is_file() {
         let framework_lock = read_yaml(&lock_path)?;
         resolve_verified_release(root, &framework_lock, None)
@@ -821,7 +821,7 @@ fn configured_observation_path(root: &Path) -> Result<PathBuf, ProjectSetupError
 }
 
 fn observation_base_digest(root: &Path) -> Result<String, ProjectSetupError> {
-    match fs::symlink_metadata(root.join(".agentic/config.yaml")) {
+    match fs::symlink_metadata(root.join(".adf/config.yaml")) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
             // Observation-only use remains available before Project initialization.
             // Such a Draft cannot be promoted because promotion requires a configured

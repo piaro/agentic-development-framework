@@ -5,7 +5,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 KIT_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)
 RELEASE_CI=$KIT_ROOT/scripts/release-ci.sh
-TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/agentic-release-ci-test.XXXXXX")
+TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/adf-release-ci-test.XXXXXX")
 cleanup() {
   rm -rf "$TEST_ROOT"
 }
@@ -17,11 +17,11 @@ PUBLIC_KEY=ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c
 run_release_ci() {
   output=$1
   public_key=$2
-  AGENTIC_RELEASE_SIGNING_KEY_HEX=$SEED \
-    AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$public_key \
-    AGENTIC_RELEASE_SOURCE_ID=remote:test-fixture \
-    AGENTIC_RELEASE_SIGNER_KEY_ID=test.framework.release \
-    AGENTIC_RELEASE_OUTPUT_DIR=$output \
+  ADF_RELEASE_SIGNING_KEY_HEX=$SEED \
+    ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$public_key \
+    ADF_RELEASE_SOURCE_ID=remote:test-fixture \
+    ADF_RELEASE_SIGNER_KEY_ID=test.framework.release \
+    ADF_RELEASE_OUTPUT_DIR=$output \
     sh "$RELEASE_CI"
 }
 
@@ -56,9 +56,9 @@ test ! -e "$WRONG_OUTPUT/publish-receipt.json"
 # key or an unsigned artifact.
 MISSING_OUTPUT=$TEST_ROOT/missing-secret
 if (
-  unset AGENTIC_RELEASE_SIGNING_KEY_HEX
-  AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
-    AGENTIC_RELEASE_OUTPUT_DIR=$MISSING_OUTPUT \
+  unset ADF_RELEASE_SIGNING_KEY_HEX
+  ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+    ADF_RELEASE_OUTPUT_DIR=$MISSING_OUTPUT \
     sh "$RELEASE_CI"
 ) >/dev/null 2>&1; then
   echo "Release CI accepted a missing signing secret" >&2
@@ -66,4 +66,4 @@ if (
 fi
 test ! -e "$MISSING_OUTPUT/framework-release.tar"
 
-echo "vNext Release CI tests passed"
+echo "Release CI tests passed"

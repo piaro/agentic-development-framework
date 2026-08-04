@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "suite_id": "agentic-vnext-golden-v1",
+  "suite_id": "adf-golden-v1",
   "cases": [
     {
       "kind": "canonicalization",

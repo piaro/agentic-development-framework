@@ -1,5 +1,5 @@
-use agentic::detector_benchmark::run_detector_benchmark;
-use agentic::schema::validate_json_document;
+use adf::detector_benchmark::run_detector_benchmark;
+use adf::schema::validate_json_document;
 use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -73,7 +73,7 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
         .unwrap()
         .corpus_digest;
     let temporary =
-        std::env::temp_dir().join(format!("agentic-detector-benchmark-{}", std::process::id()));
+        std::env::temp_dir().join(format!("adf-detector-benchmark-{}", std::process::id()));
     if temporary.exists() {
         fs::remove_dir_all(&temporary).unwrap();
     }
@@ -82,7 +82,7 @@ fn cli_returns_a_structured_nonzero_report_for_a_detector_regression() {
     let source = fs::read_to_string(&source_path).unwrap();
     fs::write(source_path, format!("{source}    audit.insert(order)\n")).unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .arg("benchmark")
         .arg(&temporary)
         .args(["--format", "json"])

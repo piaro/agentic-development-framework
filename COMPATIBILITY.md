@@ -25,8 +25,8 @@ A change here is a break and needs a minor release.
 **Stored records**
 
 The shapes of Change, Contract, Decision, Result, and Evidence records, and the
-project files `.agentic/config.yaml`, `.agentic/framework.lock`, and
-`.agentic/repository-observation.yaml`. A project written by one release must
+project files `.adf/config.yaml`, `.adf/framework.lock`, and
+`.adf/repository-observation.yaml`. A project written by one release must
 keep loading in later ones.
 
 **Machine-readable output**

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/result-payloads/risk-signal-review",
+  "$id": "adf://schemas/v1/result-payloads/risk-signal-review",
   "x-result-schema": "result.risk-signal-review",
   "x-allowed-roles": ["Analyst"],
   "type": "object",

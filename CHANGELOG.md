@@ -7,6 +7,19 @@ change, is written down in `COMPATIBILITY.md`.
 
 ## Unreleased
 
+### Changed
+
+- The project is the Agentic Development Framework. The binary is `adf`,
+  projects keep their records in `.adf/`, the MCP tools are `adf_*`, the skills
+  are `adf-analyst`, `adf-builder`, and `adf-challenger`, and the release
+  environment variables use the `ADF_` prefix. Renaming after the first release
+  would have broken the asset names this promises to keep stable, so it
+  happened before there was anything to break.
+- Migration now reads the retired CLI's project from `.agentic/` and writes this
+  framework's project to `.adf/`. They used to be the same directory, so a
+  project part way through migration is a state that can now be recognized
+  rather than a config that parses as neither format.
+
 ### Added
 
 - English documentation: the README is the entry point, `docs/limits.md` states
@@ -18,7 +31,7 @@ change, is written down in `COMPATIBILITY.md`.
   `THIRD-PARTY-NOTICES.md` alongside the binaries. The binaries link their
   dependencies statically, and several of those require their terms to travel
   with the binary.
-- `agentic release public-key` derives the public key of a signing seed, which
+- `adf release public-key` derives the public key of a signing seed, which
   publishing pins so a wrong or rotated key stops the build. There was
   previously no way to obtain it.
 - `docs/publishing.md` is the runbook for whoever holds the signing key.
@@ -50,9 +63,9 @@ change, is written down in `COMPATIBILITY.md`.
   refused as `ACTION_NOT_CURRENT` and names the action to work on instead.
 - The three agent skills are organised by the role the control plane assigns -
   analyst, builder, challenger - rather than by the command an agent used to
-  run. The order of work comes from `agentic next`, not from the skills.
+  run. The order of work comes from `adf next`, not from the skills.
 - The Rust implementation is the repository root, so `cargo build` and
-  `cargo test` run at the top level. The published binary is named `agentic`.
+  `cargo test` run at the top level. The published binary is named `adf`.
 
 ### Removed
 

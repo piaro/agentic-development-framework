@@ -1,6 +1,6 @@
 ---
-name: agentic-builder
-description: Implement a change the control plane has cleared for building, and record the evidence that each governing contract clause is met. Use when `agentic next` issues an action whose role is Builder, or when a change is in ready-to-build or needs-evidence. Do not use it to decide what the change should do - that is settled before the build starts.
+name: adf-builder
+description: Implement a change the control plane has cleared for building, and record the evidence that each governing contract clause is met. Use when `adf next` issues an action whose role is Builder, or when a change is in ready-to-build or needs-evidence. Do not use it to decide what the change should do - that is settled before the build starts.
 ---
 
 # Agentic Builder
@@ -11,8 +11,8 @@ not to decide anything further.
 
 ## Get the assigned work
 
-Through MCP, call `agentic_next` with the change id. Without MCP, run
-`agentic next <change-id>`. Stop if `role` is not `Builder`.
+Through MCP, call `adf_next` with the change id. Without MCP, run
+`adf next <change-id>`. Stop if `role` is not `Builder`.
 
 The action's `context` holds the change, the contracts that govern it, the decisions
 behind them, and the affected code. Read every contract in that context before writing
@@ -41,7 +41,7 @@ This is the most common way the control plane gets bypassed. Resist it.
 ## `record-evidence`
 
 Show that each requirement instance in the action actually holds. For each one, call
-`agentic_add_evidence` with what you observed, then submit an `outcomes` entry:
+`adf_add_evidence` with what you observed, then submit an `outcomes` entry:
 
 - `instance_key` and `definition_digest` copied from the action verbatim
 - `status`: `satisfied`, `unsatisfied`, or `inconclusive`
@@ -58,9 +58,9 @@ Every residual risk needs someone who accepts it and a date by which it is revis
 
 ## Submit and continue
 
-Call `agentic_submit` with the action id, the context digest from the action, and the
+Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it and returns the next action - usually a
 challenge run from a context independent of yours.
 
-If submission is rejected as stale, the inputs moved under you. Call `agentic_next`
+If submission is rejected as stale, the inputs moved under you. Call `adf_next`
 again and work from the fresh action rather than retrying the old payload.

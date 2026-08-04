@@ -1,8 +1,8 @@
-# vNext MCP Adapter 実装設計
+# MCP Adapter 実装設計
 
 ## 1. Status
 
-この文書は、Rust vNext PrototypeへAgent用の書込み経路を接続するための実装設計です。
+この文書は、Rust PrototypeへAgent用の書込み経路を接続するための実装設計です。
 MCPを通常のAgent経路、CLIをCI・診断・配布・復旧用の補助経路とします。
 
 local stdio server、発行済みAction管理、Result／Evidence／Decision／Contract書込みToolは
@@ -56,7 +56,7 @@ Rust版へ実装済みです。本書は引き続きTool契約と信頼境界の
 Agent / MCP Host
        │ MCP over stdio
        ▼
-agentic mcp --project <root>
+adf mcp --project <root>
        │
        ▼
 McpProjectSession
@@ -81,7 +81,7 @@ McpProjectSession
 追加する起動形式は次のとおりです。
 
 ```sh
-agentic mcp \
+adf mcp \
   --project /path/to/project \
   [--release /path/to/offline-release]
 ```
@@ -165,7 +165,7 @@ Action IDはAction本体のdigest、Context digestはその生成元入力のdig
 再起動やMCP接続断のあとに未提出Actionを提出した場合、serverは現在の正本から再評価します。
 
 - 再評価が同じActionを返すなら、そのActionは今も現在のものなので受理する。再起動前に行った作業はやり直さない。
-- 再評価が別のActionを返すなら、`ACTION_NOT_CURRENT`で拒否し、現在のAction IDとContext digestを示す。Agentは`agentic_next`から現在のActionに対してやり直す。
+- 再評価が別のActionを返すなら、`ACTION_NOT_CURRENT`で拒否し、現在のAction IDとContext digestを示す。Agentは`adf_next`から現在のActionに対してやり直す。
 - 同じActionとContextに対するResultが既にあるなら、二重提出として冪等に再生し、Resultを二重に書かない。内容が違えば`WRITE_CONFLICT`にする。
 - 既に書いたContract、Decision、Evidence、コードは削除やrollbackをせず、現在入力として再評価する。
 
@@ -179,16 +179,16 @@ Tool名は広いMCP client互換性を優先し、ASCII英数字とunderscoreだ
 
 | Tool | 種別 | 役割 |
 |---|---|---|
-| `agentic_next` | read | 現在State、Next Action、Contextを発行する |
-| `agentic_explain` | read | 現在の判定理由を説明する |
-| `agentic_contract_health` | read | Repository全体のContract healthを表示する |
-| `agentic_submit` | write | 発行済みActionのResultを検証・保存し、再評価する |
-| `agentic_add_evidence` | write | 発行済みEvidence ActionへEvidenceを追記する |
-| `agentic_apply_decision` | write | Human回答を解決するDecisionを保存する |
-| `agentic_apply_contract` | write | Decisionを反映したContractを楽観的lock付きで更新する |
-| `agentic_abandon_action` | local state | 未提出Actionをsession内で明示的に破棄する |
+| `adf_next` | read | 現在State、Next Action、Contextを発行する |
+| `adf_explain` | read | 現在の判定理由を説明する |
+| `adf_contract_health` | read | Repository全体のContract healthを表示する |
+| `adf_submit` | write | 発行済みActionのResultを検証・保存し、再評価する |
+| `adf_add_evidence` | write | 発行済みEvidence ActionへEvidenceを追記する |
+| `adf_apply_decision` | write | Human回答を解決するDecisionを保存する |
+| `adf_apply_contract` | write | Decisionを反映したContractを楽観的lock付きで更新する |
+| `adf_abandon_action` | local state | 未提出Actionをsession内で明示的に破棄する |
 
-`agentic_contract_health`は診断用Reportを返し、CIの成否を決めません。Repository全体を停止する運用policyはproject所有fileとしてGit管理し、CLIの`contract-health --policy`だけがprocess終了codeへ反映します。
+`adf_contract_health`は診断用Reportを返し、CIの成否を決めません。Repository全体を停止する運用policyはproject所有fileとしてGit管理し、CLIの`contract-health --policy`だけがprocess終了codeへ反映します。
 
 MCP Tool annotationはHost向けhintとして設定しますが、認可には使用しません。
 
@@ -202,7 +202,7 @@ MCP Tool annotationはHost向けhintとして設定しますが、認可には�
 全Toolは`inputSchema`と`outputSchema`を公開し、成功時は`structuredContent`を返します。
 保存Record Schemaとは別に、MCP I/O Schemaを`schemas/mcp/v1/`へ置きます。
 
-### 10.1 `agentic_next`
+### 10.1 `adf_next`
 
 Input:
 
@@ -231,7 +231,7 @@ Output:
 - AgentへRegistry内部値や秘密値を返さない。
 - `next_response`は既存Next Response v1を再利用する。
 
-### 10.2 `agentic_submit`
+### 10.2 `adf_submit`
 
 Input:
 
@@ -265,7 +265,7 @@ Output:
 - 同じ内容のtransport retryは、Registry消費後でも既存Resultと提出内容が一致すれば成功として返せるようにする。
 - 同じAction／Contextに異なる内容が既にあれば競合として拒否する。
 
-### 10.3 `agentic_add_evidence`
+### 10.3 `adf_add_evidence`
 
 Input:
 
@@ -282,9 +282,9 @@ Input:
 - Evidenceの`change_id`がActionと一致しなければ拒否する。
 - Evidenceの`requirement_instances`が発行ActionのInstance集合を逸脱した場合は拒否する。
 - 同じEvidence IDは上書きしない。
-- 成功時にEvidence IDを返し、Agentは後続`agentic_submit.output_refs`と`basis_refs`へ含める。
+- 成功時にEvidence IDを返し、Agentは後続`adf_submit.output_refs`と`basis_refs`へ含める。
 
-### 10.4 `agentic_apply_decision`
+### 10.4 `adf_apply_decision`
 
 - 発行Actionが`record-human-decision`でなければ拒否する。
 - Decisionの`change_id`がActionと一致しなければ拒否する。
@@ -293,7 +293,7 @@ Input:
 - Contractと同様に`expected_digest`を必須とし、既存Decision更新は楽観的lock付きでatomic replaceする。
 - 新規Decisionは`expected_digest: null`を明示し、同じIDが既に存在すれば拒否する。
 
-### 10.5 `agentic_apply_contract`
+### 10.5 `adf_apply_contract`
 
 InputにはContract Recordと`expected_digest`を必須とし、条項単位で更新する場合は
 `expected_digest: null`と`expected_clause_digests`を渡します。後者は
@@ -308,7 +308,7 @@ InputにはContract Recordと`expected_digest`を必須とし、条項単位で�
 - 新規Contractは`expected_digest: null`を明示し、同じIDが既に存在すれば拒否する。
 - Agentが任意のShared Contractを汎用編集するToolにはしない。
 
-### 10.6 `agentic_abandon_action`
+### 10.6 `adf_abandon_action`
 
 - session memoryからexact action keyだけを削除する。
 - Project Recordやコードを変更しない。
@@ -336,10 +336,10 @@ InputにはContract Recordと`expected_digest`を必須とし、条項単位で�
 ### 12.1 Analyst
 
 ```text
-agentic_next
+adf_next
   → review-risk-signals Actionを発行
 AgentがコードとContextを確認
-agentic_submit
+adf_submit
   → Result検証・追記
   → 次のActionを返す
 ```
@@ -347,14 +347,14 @@ agentic_submit
 ### 12.2 Human Authority
 
 ```text
-agentic_next
+adf_next
   → Human Action
 MCP HostがHumanへ質問
-Human回答をAgentがagentic_submit
+Human回答をAgentがadf_submit
   → record-human-decisionを返してsessionへ登録
-agentic_apply_decision
-agentic_apply_contract
-agentic_submit(output_refs = [Decision, Contract])
+adf_apply_decision
+adf_apply_contract
+adf_submit(output_refs = [Decision, Contract])
 ```
 
 HumanはJSONやContractを直接編集せず、回答だけを行います。
@@ -362,13 +362,13 @@ HumanはJSONやContractを直接編集せず、回答だけを行います。
 ### 12.3 BuildとEvidence
 
 ```text
-agentic_next
+adf_next
   → implement-change
 Agentがworkspaceのコードを変更
-agentic_submit(output_refs = changed artifact refs)
+adf_submit(output_refs = changed artifact refs)
   → needs-evidence Actionを返してsessionへ登録
-agentic_add_evidence
-agentic_submit(
+adf_add_evidence
+adf_submit(
   output_refs = [evidence ref],
   payload.outcomes[].basis_refs = [evidence ref, ...]
 )
@@ -421,7 +421,7 @@ Agentが入力を修正できるSchema・domain errorと、server再起動が必
 
 - v1はlocal stdioだけを許可する。
 - serverのProject rootを起動引数で固定し、Toolからpathを受け取らない。
-- symlink、Repository外path、`.agentic/cache`を正本rootに指定することを既存Storeと同様に拒否する。
+- symlink、Repository外path、`.adf/cache`を正本rootに指定することを既存Storeと同様に拒否する。
 - Tool annotationを認可根拠にしない。
 - write Toolは発行Action、Role、Result Schema、許可output kindをserver側で照合する。
 - secret、Agent会話、Generated Context全文をlogへ出さない。
@@ -490,8 +490,8 @@ Schemaとし、生成差分をtestで検査します。
 
 1. initialize
 2. tools/list
-3. `agentic_next`
-4. `agentic_submit`
+3. `adf_next`
+4. `adf_submit`
 5. 再評価後の次Action
 6. lifecycle全体を`ready-to-merge`まで実行
 7. stdoutへJSON-RPC以外を出さない
@@ -510,7 +510,7 @@ Schemaとし、生成差分をtestで検査します。
 
 1. `Application`のissued keyをAction ID＋Context digestへ変更する。
 2. 現在Projectを毎回読み直す`ProjectApplicationService`を追加する。
-3. `agentic_next`、`agentic_submit`だけでrisk reviewを一段進める。
+3. `adf_next`、`adf_submit`だけでrisk reviewを一段進める。
 4. MCP subprocess integration testを追加する。
 5. Human回答、Decision、Contract Toolを追加する。
 6. Evidence Toolとbuild後flowを追加する。

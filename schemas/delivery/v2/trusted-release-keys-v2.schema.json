@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/trusted-release-keys-v2.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/delivery/v2/trusted-release-keys-v2.schema.json",
   "title": "Trusted Framework Release Keys v2",
   "type": "object",
   "additionalProperties": false,

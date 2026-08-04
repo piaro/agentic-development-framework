@@ -1,10 +1,10 @@
 
-<!-- agentic-development:start -->
+<!-- adf:start -->
 ## Agentic Development
 
-- 現在有効な規範は`contracts/`、判断履歴は`decisions/`、検証事実は`evidence/`、利用案内と索引は`docs/agentic/`に置く。
-- 変更の進め方は`agentic next <change-id>`が決める。次にやることは常にそこから受け取り、手順を記憶や慣習で組み立てない。
-- 受け取った作業の役割でSkillを使い分ける。分析は`$agentic-analyst`、実装は`$agentic-builder`、反証は`$agentic-challenger`。
+- 現在有効な規範は`contracts/`、判断履歴は`decisions/`、検証事実は`evidence/`、利用案内と索引は`docs/adf/`に置く。
+- 変更の進め方は`adf next <change-id>`が決める。次にやることは常にそこから受け取り、手順を記憶や慣習で組み立てない。
+- 受け取った作業の役割でSkillを使い分ける。分析は`$adf-analyst`、実装は`$adf-builder`、反証は`$adf-challenger`。
 - 実装後の反証は、実装した文脈から独立した文脈で行う。同じ文脈での見直しを反証として記録しない。
 - 仕様を決めてよい根拠は、既存のaccepted Contract、依頼に明示された要求、記録された人の判断、accepted Decisionだけとする。エージェントの推論、反証で見つけた指摘、Contractの不足、コード、テストは証拠であり、仕様を決める権限にはならない。
 - 権限のある根拠で決められない場合は、選択肢、影響、推奨、必要な決定者を添えて人へ戻す。実装の中で暗黙に決めない。
@@ -14,4 +14,4 @@
 - 外部Platformの能力を推測で確定せず、probeまたは公式仕様で検証する。
 - 上位Contractから逸脱する場合は、理由をDecision、現在の例外をFeature Contractへ記録する。
 - 高リスクな未確定判断だけを人へ上げ、包括的レビューを正しさの代替にしない。
-<!-- agentic-development:end -->
+<!-- adf:end -->

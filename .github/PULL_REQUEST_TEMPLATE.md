@@ -9,7 +9,7 @@
 
 ## Checks
 
-- [ ] `sh scripts/tests/test-vnext-rust.sh` passes
+- [ ] `sh scripts/tests/test-rust.sh` passes
 - [ ] Tests added that would fail without this change
 - [ ] Documentation, schemas, and skills updated in the same change
 - [ ] Golden expectations under `testdata/golden/` are unchanged, or the change

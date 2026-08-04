@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/ci/v1/contract-health-policy",
+  "$id": "adf://schemas/ci/v1/contract-health-policy",
   "type": "object",
   "required": ["schema_version", "fail_on"],
   "properties": {

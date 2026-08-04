@@ -8,16 +8,16 @@ param(
     [string]$Tag,
 
     [ValidatePattern('^[^/]+/[^/]+$')]
-    [string]$Repository = 'piaro/agentic-development-kit',
+    [string]$Repository = 'piaro/agentic-development-framework',
 
-    [string]$InstallRoot = $(if ($env:AGENTIC_INSTALL_ROOT) {
-        $env:AGENTIC_INSTALL_ROOT
+    [string]$InstallRoot = $(if ($env:ADF_INSTALL_ROOT) {
+        $env:ADF_INSTALL_ROOT
     } else {
         Join-Path $env:LOCALAPPDATA 'Agentic'
     }),
 
-    [string]$GitHubCli = $(if ($env:AGENTIC_GH_CLI) {
-        $env:AGENTIC_GH_CLI
+    [string]$GitHubCli = $(if ($env:ADF_GH_CLI) {
+        $env:ADF_GH_CLI
     } else {
         'gh'
     })
@@ -38,7 +38,7 @@ if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne
 }
 
 $target = 'x86_64-pc-windows-msvc'
-$binary = "agentic-$target.exe"
+$binary = "adf-$target.exe"
 $buildRecord = "$binary.build.json"
 $sourceRevision = (& $GitHubCli release view $Tag `
     --repo $Repository `
@@ -63,7 +63,7 @@ if ($LASTEXITCODE -ne 0 -or
 }
 
 $staging = Join-Path ([IO.Path]::GetTempPath()) (
-    'agentic-bootstrap-' + [Guid]::NewGuid().ToString('N')
+    'adf-bootstrap-' + [Guid]::NewGuid().ToString('N')
 )
 [IO.Directory]::CreateDirectory($staging) | Out-Null
 try {
@@ -86,7 +86,7 @@ try {
     # bootstrap trust root because an attacker could replace both files.
     & $GitHubCli attestation verify (Join-Path $staging $binary) `
         --repo $Repository `
-        --signer-workflow "$Repository/.github/workflows/vnext-release.yml" `
+        --signer-workflow "$Repository/.github/workflows/release.yml" `
         --source-digest $sourceRevision `
         --source-ref "refs/heads/$defaultBranch" `
         --deny-self-hosted-runners | Out-Null
@@ -95,7 +95,7 @@ try {
     }
     & $GitHubCli attestation verify (Join-Path $staging 'distribution-trust.json') `
         --repo $Repository `
-        --signer-workflow "$Repository/.github/workflows/vnext-release.yml" `
+        --signer-workflow "$Repository/.github/workflows/release.yml" `
         --source-digest $sourceRevision `
         --source-ref "refs/heads/$defaultBranch" `
         --deny-self-hosted-runners | Out-Null
@@ -116,5 +116,5 @@ try {
     }
 }
 
-Write-Output "Add $(Join-Path $InstallRoot 'bin') to PATH to invoke agentic."
-Write-Output 'Then run: agentic project init --project C:\path\to\project'
+Write-Output "Add $(Join-Path $InstallRoot 'bin') to PATH to invoke adf."
+Write-Output 'Then run: adf project init --project C:\path\to\project'

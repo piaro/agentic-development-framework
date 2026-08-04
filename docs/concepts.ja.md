@@ -1,12 +1,12 @@
 # 考え方と使い方
 
-Agentic Development Kitの考え方、Contractの階層、データ整合性の扱い、日々の進め方を日本語で説明します。
+Agentic Development Frameworkの考え方、Contractの階層、データ整合性の扱い、日々の進め方を日本語で説明します。
 
 入口は英語の[`README.md`](../README.md)です。対応範囲と制限は[`docs/limits.md`](limits.md)、約束する範囲は[`COMPATIBILITY.md`](../COMPATIBILITY.md)、実装の詳細は[`implementation.md`](implementation.md)にあります。内容が食い違う場合は英語版を正とします。
 
 ## 目的
 
-Agentic Development Kitは、エージェントへ実装を依頼する前に「何が正しいか」「誰が決めたか」「何を証拠に完了とするか」を明示し、変更中に見つかった未決定事項を安全に人へ戻すための仕組みです。
+Agentic Development Frameworkは、エージェントへ実装を依頼する前に「何が正しいか」「誰が決めたか」「何を証拠に完了とするか」を明示し、変更中に見つかった未決定事項を安全に人へ戻すための仕組みです。
 
 主に次を実現します。
 
@@ -28,31 +28,31 @@ Challengerは不足・矛盾・反例を指摘できますが、新しいプロ�
 Issue・依頼・既存Docs
         │
         ▼
-   agentic change init
+   adf change init
         │
         ▼
-┌─▶ agentic next ─── 次にやること1件を返す
+┌─▶ adf next ─── 次にやること1件を返す
 │       │
 │       ├─ Analyst   ─▶ 検出候補の確認、影響範囲と操作境界の確定、Contract記入
 │       │                 └─ 未決定 ─▶ 人の判断 ─▶ Decision・Contractへ記録
 │       ├─ Builder   ─▶ 実装、Contract条項に対応する証拠の記録
 │       └─ Challenger ─▶ 実装前・実装後の反証（独立した文脈）
 │       │
-└───────┴─ agentic submit ─── 結果を検証・保存し、再評価する
+└───────┴─ adf submit ─── 結果を検証・保存し、再評価する
         │
         ▼
      完了判定
 ```
 
-エージェントがSkillの実行順を覚えるのではなく、`agentic next`が変更の状態から次の1件を決めます。エージェントはそれを実行して結果を提出し、また次を受け取ります。
+エージェントがSkillの実行順を覚えるのではなく、`adf next`が変更の状態から次の1件を決めます。エージェントはそれを実行して結果を提出し、また次を受け取ります。
 
 役割ごとに使うSkillは3つです。
 
 | 役割 | Skill | 担当する作業 |
 |---|---|---|
-| Analyst | `$agentic-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contract記入、人への判断依頼、回答の記録 |
-| Builder | `$agentic-builder` | 実装と証拠の記録 |
-| Challenger | `$agentic-challenger` | 実装前と実装後の反証 |
+| Analyst | `$adf-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contract記入、人への判断依頼、回答の記録 |
+| Builder | `$adf-builder` | 実装と証拠の記録 |
+| Challenger | `$adf-challenger` | 実装前と実装後の反証 |
 
 実装後の反証は、実装した文脈から独立した文脈で行います。同じ文脈での見直しを反証として記録しません。
 
@@ -69,7 +69,7 @@ Issue・依頼・既存Docs
 | `needs-post-build-challenge` | 実装後の反証 | 各要件の判定と、見つけた反例 |
 | `ready-to-merge` | なし | — |
 
-変更ごとの記録は`.agentic/changes/<id>/`に残ります。現在有効な規範の正本は`contracts/`、判断履歴の正本は`decisions/`です。
+変更ごとの記録は`.adf/changes/<id>/`に残ります。現在有効な規範の正本は`contracts/`、判断履歴の正本は`decisions/`です。
 
 ## 動作の前提となるDocsと情報源
 
@@ -82,7 +82,7 @@ Kitは、エージェントの推論だけを仕様の根拠にはしません�
 | `contracts/` | 現在有効な規範 | acceptedな明示clauseは`accepted-contract`として可 |
 | `decisions/` | 判断理由と変更履歴 | accepted Decisionは`accepted-decision`として可 |
 | 記録された人の判断 | 選択された仕様と判断者 | `human-decision`として可 |
-| `docs/agentic/source-of-truth.md` | 既存文書とContractの対応、正本の所在 | 索引。参照先のauthorityを置き換えない |
+| `docs/adf/source-of-truth.md` | 既存文書とContractの対応、正本の所在 | 索引。参照先のauthorityを置き換えない |
 | コード・テスト | 現在の実装事実、回帰証拠 | 単独では不可 |
 | `evidence/`・`probes/` | Platform能力と検証結果 | 事実の証拠。単独では新仕様のauthorityにしない |
 
@@ -92,9 +92,9 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 
 | Docs | 内容 |
 |---|---|
-| `docs/agentic/README.md` | 導入先Repositoryでの運用入口 |
-| `docs/agentic/source-of-truth.md` | 現在の正本と既存文書の対応表 |
-| `docs/agentic/adoption-report.md` | 既存実装の調査結果、差異、移行候補、未確認事項 |
+| `docs/adf/README.md` | 導入先Repositoryでの運用入口 |
+| `docs/adf/source-of-truth.md` | 現在の正本と既存文書の対応表 |
+| `docs/adf/adoption-report.md` | 既存実装の調査結果、差異、移行候補、未確認事項 |
 
 `docs/`は利用案内と索引です。現在有効な規範を`docs/`だけに閉じ込めず、`contracts/`へ昇格します。
 
@@ -102,8 +102,8 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 
 ### 基本フロー: 通常の機能変更
 
-1. `agentic change init <id>`で変更を作る。
-2. `agentic next <id>`が次にやること1件を返す。以降はこれを繰り返す。
+1. `adf change init <id>`で変更を作る。
+2. `adf next <id>`が次にやること1件を返す。以降はこれを繰り返す。
 3. Analystが、検出された候補を実際のコードと突き合わせて採用または除外し、影響するデータと操作境界を確定する。必要な規範が無ければContractへ記入する。
 4. 既存の権限ある根拠で決められない判断が出たら、選択肢、影響、推奨、必要な決定者を添えて人へ戻す。人が答えたら、理由をDecisionへ、現在の規範をContractへ記録する。
 5. Challengerが実装前に、依頼、権限、判断、提案されたContractを反証する。
@@ -112,7 +112,7 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 8. Challengerが実装後に、変更差分、データ不変条件、テスト、証拠を使って独立に反証する。
 9. すべて満たされると完了できる状態になる。
 
-判定の理由は`agentic explain <id>`で確認できます。
+判定の理由は`adf explain <id>`で確認できます。
 
 検出された候補の一致は、意味上の適用を自動確定しません。名前が似ているという理由で採用せず、実際のコードを読んで判断します。
 
@@ -121,8 +121,8 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 既存の権限ある根拠から一意に決められない場合、問い、選択肢、影響、推奨、必要な判断者を判断依頼としてまとめます。変更は`needs-human-decision`で止まり、人が答えるまで先へ進みません。
 
 ```sh
-agentic next <change-id>
-agentic explain <change-id>
+adf next <change-id>
+adf explain <change-id>
 ```
 
 人の判断後は、判断の理由を`decisions/`へ、そこから決まった現在の規範を`contracts/`へ記録します。判断依頼は一時的な情報であり、以降の実装やContractから参照し続けません。
@@ -143,7 +143,7 @@ Challengerのfindingは再検討の入口にはなりますが、authorityには
 
 操作順序に依存せず守る条件をData Invariantへ、各writeの振る舞いをOperation Contractへ記録します。書込みの検出は`project observe`が出した候補を人がレビューした対応付けに基づきます。
 
-影響の大きい変更では、作成・更新・削除・再試行、並行実行、順序逆転、commit前後の停止、event重複、migration混在といった順序を試し、各操作後にInvariantを検査します。反証の観点は`agentic-challenger`のSkillにある参照文書にまとめてあります。
+影響の大きい変更では、作成・更新・削除・再試行、並行実行、順序逆転、commit前後の停止、event重複、migration混在といった順序を試し、各操作後にInvariantを検査します。反証の観点は`adf-challenger`のSkillにある参照文書にまとめてあります。
 
 ### ユースケース: 既存Repositoryへ導入する
 
@@ -233,7 +233,7 @@ Data Integrityは、個別APIのテストだけでなく、同じデータへ到
 
 同じEntityへ書き込む経路を並べ、単体では正しくても組み合わせでInvariantを破る順序を探します。通常順だけでなく、重複、逆順、並行、timeout、部分失敗、cancel、移行中の新旧混在を試します。
 
-反証で新しい意味を推測で追加することはしません。反例が示すContractの不足は、分析へ戻して判断依頼にします。観点は`agentic-challenger`のSkillにある参照文書にまとめてあります。
+反証で新しい意味を推測で追加することはしません。反例が示すContractの不足は、分析へ戻して判断依頼にします。観点は`adf-challenger`のSkillにある参照文書にまとめてあります。
 
 ## Repository内の情報配置
 
@@ -241,13 +241,13 @@ Data Integrityは、個別APIのテストだけでなく、同じデータへ到
 |---|---|
 | `contracts/` | 現在有効な規範（What） |
 | `decisions/` | 規範を決めた理由と変更履歴（Why） |
-| `docs/agentic/` | 利用方法、既存正本との対応、導入報告（How / Index） |
+| `docs/adf/` | 利用方法、既存正本との対応、導入報告（How / Index） |
 | `probes/` | 外部Platformを実証する実行物 |
 | `evidence/` | Contract clauseに対応するテスト、probe、反証、残存リスク |
-| `.agentic/changes/<id>/` | 変更ごとの記録、発行された作業の結果、判断依頼 |
-| `.agentic/config.yaml` | 正本の場所と観測結果の位置 |
-| `.agentic/framework.lock` | 使用するFramework Releaseの固定 |
-| `.agentic/repository-observation.yaml` | コード上の物理識別子と論理IDの対応付け |
+| `.adf/changes/<id>/` | 変更ごとの記録、発行された作業の結果、判断依頼 |
+| `.adf/config.yaml` | 正本の場所と観測結果の位置 |
+| `.adf/framework.lock` | 使用するFramework Releaseの固定 |
+| `.adf/repository-observation.yaml` | コード上の物理識別子と論理IDの対応付け |
 | `.agents/skills/` | エージェント向けSkill。`project init`が配置する |
 
 ## Shell・CLI・エージェント・人の責務

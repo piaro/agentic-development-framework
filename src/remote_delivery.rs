@@ -16,7 +16,7 @@ use std::path::{Component, Path};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-pub const RELEASE_SOURCES_PATH: &str = ".agentic/release-sources.yaml";
+pub const RELEASE_SOURCES_PATH: &str = ".adf/release-sources.yaml";
 pub const RELEASE_SOURCES_SCHEMA_VERSION: &str = "1";
 pub const MAX_ARCHIVE_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_EXTRACTED_BYTES: u64 = 256 * 1024 * 1024;
@@ -91,7 +91,7 @@ fn install_archive_bytes(
     let project_root = project_root
         .canonicalize()
         .map_err(|error| remote_error(format!("{}: {error}", project_root.display())))?;
-    let fetch_root = project_root.join(".agentic/cache/fetch");
+    let fetch_root = project_root.join(".adf/cache/fetch");
     fs::create_dir_all(&fetch_root).map_err(|error| {
         remote_error(format!("cannot create {}: {error}", fetch_root.display()))
     })?;
@@ -231,7 +231,7 @@ fn download_archive(url: &str) -> Result<Vec<u8>, RemoteDeliveryError> {
         .timeout_recv_body(Some(Duration::from_secs(30)))
         // A redirect could silently change the reviewed source host or scheme.
         .max_redirects(0)
-        .user_agent("agentic/0.1")
+        .user_agent("adf/0.1")
         .build()
         .into();
     let mut response = agent
@@ -467,9 +467,9 @@ mod tests {
 
     #[test]
     fn remote_sources_require_https_except_for_loopback_tests() {
-        assert!(validate_base_url("https://releases.example.test/agentic").is_ok());
+        assert!(validate_base_url("https://releases.example.test/adf").is_ok());
         assert!(validate_base_url("http://127.0.0.1:8080/releases").is_ok());
-        assert!(validate_base_url("http://releases.example.test/agentic").is_err());
+        assert!(validate_base_url("http://releases.example.test/adf").is_err());
     }
 
     #[test]

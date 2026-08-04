@@ -22,7 +22,7 @@ use std::io::{Cursor, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-const SIGNING_KEY_ENV: &str = "AGENTIC_RELEASE_SIGNING_KEY_HEX";
+const SIGNING_KEY_ENV: &str = "ADF_RELEASE_SIGNING_KEY_HEX";
 const MAX_PORTABLE_TAR_PATH_BYTES: usize = 100;
 static PUBLISH_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 

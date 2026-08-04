@@ -1,7 +1,7 @@
-use agentic::application::{ApplicationResponse, InMemoryApplication};
-use agentic::git_repository::GitRepositoryAdapter;
-use agentic::schema::SchemaRegistry;
-use agentic::submission::ResultSubmission;
+use adf::application::{ApplicationResponse, InMemoryApplication};
+use adf::git_repository::GitRepositoryAdapter;
+use adf::schema::SchemaRegistry;
+use adf::submission::ResultSubmission;
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
 use std::fs;
@@ -311,7 +311,7 @@ impl TestRepository {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "agentic-vnext-security-lifecycle-{}-{}",
+            "adf-security-lifecycle-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));

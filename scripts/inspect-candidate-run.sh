@@ -9,8 +9,8 @@ fi
 
 RUN_ID=$1
 REPOSITORY=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is required}
-DEFAULT_BRANCH=${AGENTIC_RELEASE_DEFAULT_BRANCH:?AGENTIC_RELEASE_DEFAULT_BRANCH is required}
-GH_CLI=${AGENTIC_GH_CLI:-gh}
+DEFAULT_BRANCH=${ADF_RELEASE_DEFAULT_BRANCH:?ADF_RELEASE_DEFAULT_BRANCH is required}
+GH_CLI=${ADF_GH_CLI:-gh}
 
 case "$RUN_ID" in
   ''|*[!0-9]*)
@@ -28,7 +28,7 @@ repository, default_branch = sys.argv[1:3]
 run = json.load(sys.stdin)
 checks = {
     "workflow path": str(run.get("path", "")).split("@", 1)[0]
-        == ".github/workflows/vnext-release.yml",
+        == ".github/workflows/release.yml",
     "event": run.get("event") == "workflow_dispatch",
     "status": run.get("status") == "completed",
     "conclusion": run.get("conclusion") == "success",

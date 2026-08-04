@@ -1,4 +1,0 @@
-interface:
-  display_name: "Agentic Challenger"
-  short_description: "Try to falsify a change before and after implementation"
-  default_prompt: "Use $agentic-challenger to work the next Challenger action for this change, in the phase its state indicates, from an independent context."

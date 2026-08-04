@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/result-payloads/human-answer",
+  "$id": "adf://schemas/v1/result-payloads/human-answer",
   "x-result-schema": "result.human-answer",
   "x-allowed-roles": ["Human"],
   "type": "object",

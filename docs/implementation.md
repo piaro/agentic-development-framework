@@ -1,6 +1,6 @@
-# vNext shadow prototype
+# shadow prototype
 
-`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成します。Completion Record、Framework Release署名、vNext Schemaを検証し、有効な候補を明示操作で既存Projectへ適用する経路まで接続しています。
+`FRAMEWORK-REVIEW.md` 14章のThin Kernel仮説を検証する実験実装です。公開APIや現行CLIの標準経路にはまだ切り替えていません。現行Projectを変更せずに移行対象を調べ、Migration Draftのレビュー検証後に隔離された候補を生成します。Completion Record、Framework Release署名、Schemaを検証し、有効な候補を明示操作で既存Projectへ適用する経路まで接続しています。
 
 ## 検証できること
 
@@ -46,7 +46,7 @@ Project Snapshot
 - Shared Contract・Decisionの新規既定rootを`contracts/`・`decisions/`へ分離
 - Resultの排他的追記とContract・Decisionの原子的更新
 - 読取り時digestと排他lockによるShared Contractのstale更新拒否、および別条項の安全な並行更新
-- 削除・破損から再生成できる`.agentic/cache/`へのwrite-through
+- 削除・破損から再生成できる`.adf/cache/`へのwrite-through
 - cleanな実Git cloneからの`ready-to-merge`再現
 - Git revision、tracked artifact、未commit変更を検査するCI Evaluator
 - 人向け本文を保持するChange・Contract・DecisionのMarkdown Record
@@ -97,8 +97,8 @@ EvidenceはAction発行後に`Application::add_evidence`で追記し、Resultの
 組込みCatalog v3は、標準Signalを`data-persistence`、`distributed-integration`、`security-boundary`の3 domainに整理します。domainは分類用metadataであり、Ruleは従来どおり個別のSignal IDを指定します。domainを指定した一括適用や、domain名からの意味推測は行いません。
 
 ```sh
-agentic catalog signal-domains --format text
-agentic catalog signal-domains --format json
+adf catalog signal-domains --format text
+adf catalog signal-domains --format json
 ```
 
 `db_write`／`message_publish`／`external_call`／`object_write`からSignalへの変換も同じCatalogで表駆動にし、Detector本体の言語・framework別分岐から分離しました。組込み定義は所有型の`SignalCatalogRegistry`へ読み込み、Git Repository Adapter、Rule Compiler、Detectorは実Projectが保持する同じRegistry instanceを参照します。JSON出力は`schemas/catalog/v1/signal-domain-catalog.schema.json`に従い、canonical digestを含みます。対応表、Registry境界、追加条件、意図的に未収録の候補は[`SIGNAL-DOMAINS.md`](SIGNAL-DOMAINS.md)に記載しています。
@@ -128,14 +128,14 @@ Contractへ状態を書き戻さず、未検証を合格扱いしません。
 Applicationは、現在選択されたRequirementのsubjectと一致する`stale`／`failed`条項だけに、組込みの`contract-clause-revalidated` Requirementを追加します。これは`before-merge`の`evidence-backed`なBuilder作業です。Contextには対象条項とhealth findingを含め、無関係な条項と`unverified`条項はこの経路ではChangeを停止しません。現在入力に対する成功Evidenceを提出すると再検証は解決します。
 
 ```sh
-agentic contract-health --project . --format text
-agentic contract-health --project . --format json --require-clean
+adf contract-health --project . --format text
+adf contract-health --project . --format json --require-clean
 ```
 
 通常の`contract-health`は診断用なので、状態にかかわらず終了code 0です。Repository全体の定期CIでは、停止対象をproject所有のpolicyへ明示し、`--policy`でゲートを有効にします。
 
 ```yaml
-# .agentic/contract-health-policy.yaml
+# .adf/contract-health-policy.yaml
 schema_version: "1"
 fail_on:
   - failed
@@ -143,16 +143,16 @@ fail_on:
 ```
 
 ```sh
-agentic contract-health \
+adf contract-health \
   --project . \
-  --policy .agentic/contract-health-policy.yaml \
+  --policy .adf/contract-health-policy.yaml \
   --format json \
   --require-clean
 ```
 
 `fail_on`に指定できるのは`failed`、`stale`、`unverified`です。該当条項があれば、固定形式のGate Reportをstdoutへ出したうえで終了code 1、なければ0を返します。`verified`は停止対象ではなく、空のpolicyや未知状態も受理しません。`--require-clean`ではpolicyもGit追跡済みでなければなりません。入力Schemaは`schemas/ci/v1/contract-health-policy.schema.json`、出力Schemaは`schemas/outputs/v1/contract-health-gate-report.schema.json`です。
 
-検証済みの`agentic` binaryをrunnerへ導入済みなら、GitHub Actionsでは通常のChange CIと分離して次のように定期実行できます。
+検証済みの`adf` binaryをrunnerへ導入済みなら、GitHub Actionsでは通常のChange CIと分離して次のように定期実行できます。
 
 ```yaml
 name: Contract Health
@@ -168,9 +168,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: >-
-          agentic contract-health
+          adf contract-health
           --project .
-          --policy .agentic/contract-health-policy.yaml
+          --policy .adf/contract-health-policy.yaml
           --format json
           --require-clean
 ```
@@ -184,11 +184,11 @@ jobs:
 `real-projects-v1`は、django-oscar、Prisma Examples、NATS Go、Godot Demo Projectsから、ライセンスを保持した代表sourceと依存manifestを固定Git revisionで収録したoffline corpusです。8 sourceに含まれる31 receiver callと9 framework candidateを人が原文と照合し、期待値として固定しています。候補だけをreviewするcaseは`reviewed_outputs: [framework_candidates]`を明示し、未reviewの全receiver callをprecision／recallへ混ぜません。Djangoの明示的なcollection更新と、Prismaを使わないService Worker・Drizzle・TypeORM sourceをnegative caseとして含めます。
 
 ```sh
-agentic benchmark \
+adf benchmark \
   testdata/benchmarks/major-frameworks-v1 \
   --format text
 
-agentic benchmark \
+adf benchmark \
   testdata/benchmarks/real-projects-v1 \
   --format text
 ```
@@ -202,9 +202,9 @@ corpus入力は`schemas/benchmarks/v1/detector-corpus.schema.json`、JSON Report
 `detector-audit`は、Git管理下にある登録済み拡張子のsourceをRepository全体で走査します。言語別・file別にparse結果、`db_write`、`message_publish`、未分類receiver call、framework candidate、明示method Bindingが必要な候補、空のsuggestionを集計します。JSONの`candidate_records`には、候補ごとのpath、symbol、resource、method、根拠、提案kindを保持し、人手review対象を再現できます。
 
 ```sh
-agentic detector-audit /path/to/repository --format text --require-clean
+adf detector-audit /path/to/repository --format text --require-clean
 
-agentic detector-audit-check /path/to/repository \
+adf detector-audit-check /path/to/repository \
   --baseline testdata/benchmarks/repository-audits-v1/django-oscar.yaml \
   --format text
 ```
@@ -237,11 +237,11 @@ Repository rootで実行します。実装と受入テストはRust版だけで�
 現行CLIを導入済みのRepositoryでは、初期化やfile変換の前に次のcommandを実行します。Gitのtop-levelを対象とし、固定revisionで比較できるようcleanなworktreeを要求します。
 
 ```sh
-agentic migration inspect \
+adf migration inspect \
   --project /path/to/current-project \
   --format text
 
-agentic migration inspect \
+adf migration inspect \
   --project /path/to/current-project \
   --format json
 ```
@@ -252,20 +252,20 @@ agentic migration inspect \
 - `review-required`: Contract、Decision、Policy、Evidenceなど、人が意味を対応付ける情報
 - `generated`: 対象revisionからDetectorで生成し、reviewする情報
 - `release-supplied`: 署名済みFramework Releaseから導入する情報
-- `already-present`: vNext形式で既に存在する情報
+- `already-present`: the framework形式で既に存在する情報
 
-`readiness`は`review-required`、`blocked`、`already-vnext`のいずれかです。現行configとvNext activation fileが混在する場合、worktreeがdirtyな場合、必要なroot・metadataが読めない場合は`blocked`になります。診断Reportを生成できた場合は、`blocked`でもcommand自体は成功します。Gitまたはfilesystemを安全に読めずReportを生成できない場合だけ非0で終了します。
+`readiness`は`review-required`、`blocked`、`already-vnext`のいずれかです。現行configとactivation fileが混在する場合、worktreeがdirtyな場合、必要なroot・metadataが読めない場合は`blocked`になります。診断Reportを生成できた場合は、`blocked`でもcommand自体は成功します。Gitまたはfilesystemを安全に読めずReportを生成できない場合だけ非0で終了します。
 
 診断はProject fileを作成・更新・削除せず、stageやcommitも行いません。JSON形式は`schemas/outputs/v1/migration-inspection-report.schema.json`に従います。
 
 診断結果が`review-required`の場合は、同じclean revisionからMigration Draftを生成できます。
 
 ```sh
-agentic migration draft \
+adf migration draft \
   --project /path/to/current-project \
   --format text
 
-agentic migration draft \
+adf migration draft \
   --project /path/to/current-project \
   --format json
 ```
@@ -273,7 +273,7 @@ agentic migration draft \
 Migration Draft v2は、移行対象ごとに元のpath、移行先、処理区分、人のreviewが必要か、完了確認を示す作業票です。現行configやContractの意味を自動変換せず、次の処理区分を使います。
 
 - `inventory-only`: 移行入力を列挙するだけで、fileを変換しない
-- `replace-after-review`: 現行の意味をreviewし、vNextの別形式へ置き換える
+- `replace-after-review`: 現行の意味をreviewし、the frameworkの別形式へ置き換える
 - `transform-after-review`: 対応関係を人が決めた後で変換する
 - `generate-from-revision`: 固定revisionからDetector出力を生成してreviewする
 - `install-from-release`: review済みの署名済みFramework Releaseから導入する
@@ -290,44 +290,44 @@ Migration Draft v2は、移行対象ごとに元のpath、移行先、処理区�
 記入後は、生成済みフィールドとsource revisionを変更していないことを検証します。
 
 ```sh
-agentic migration validate-draft \
+adf migration validate-draft \
   --project /path/to/current-project \
-  --draft .agentic/migration-draft.json \
+  --draft .adf/migration-draft.json \
   --format text
 ```
 
 検証結果は`valid`、`invalid`、`blocked`のいずれかです。`valid`になるには、必要なreviewがすべてそろい、生成時とGitのHEADが一致し、Draft以外のworktreeがcleanでなければなりません。DraftをRepository内へ保存した場合、指定したDraft fileだけはdirty判定から除外します。それ以外の変更は除外しません。検証もfileを変更せず、JSON形式は`schemas/outputs/v1/migration-draft-validation-report.schema.json`に従います。
 
-`valid`なDraftから、既存Projectとは別のdirectoryへ候補Bundleを生成できます。出力先は`.agentic/migration-candidates/<name>`配下に限定され、既存のfileやdirectoryがある場合は上書きしません。
+`valid`なDraftから、既存Projectとは別のdirectoryへ候補Bundleを生成できます。出力先は`.adf/migration-candidates/<name>`配下に限定され、既存のfileやdirectoryがある場合は上書きしません。
 
 ```sh
-agentic migration generate-candidate \
+adf migration generate-candidate \
   --project /path/to/current-project \
-  --draft .agentic/migration-draft.json \
-  --output .agentic/migration-candidates/review-1 \
+  --draft .adf/migration-draft.json \
+  --output .adf/migration-candidates/review-1 \
   --format text
 ```
 
 候補Bundleには次の3 fileを生成します。
 
-- `.agentic/config.yaml`: vNextの標準pathを使う設定候補
+- `.adf/config.yaml`: the frameworkの標準pathを使う設定候補
 - `migration-draft.json`: 検証済みDraftの正規化した写し
 - `migration-manifest.yaml`: source revision、Draft digest、生成fileのdigest、未完了作業
 
-Migration DraftだけではContractやDecisionの具体的な変換内容、Detector出力、署名済みFramework Releaseを確定できません。これらを自動生成せず、`proceed`と判断された項目をManifestの`pending_actions`へ残します。`preserve-history`も履歴保存が終わるまで未完了です。`retire`は生成対象にしません。そのため、生成直後の候補は常に`incomplete`であり、vNext Projectとして適用できるとは扱いません。
+Migration DraftだけではContractやDecisionの具体的な変換内容、Detector出力、署名済みFramework Releaseを確定できません。これらを自動生成せず、`proceed`と判断された項目をManifestの`pending_actions`へ残します。`preserve-history`も履歴保存が終わるまで未完了です。`retire`は生成対象にしません。そのため、生成直後の候補は常に`incomplete`であり、Projectとして適用できるとは扱いません。
 
-Manifest v2は`schemas/outputs/v1/migration-candidate-manifest.schema.json`に従います。候補生成では、指定した新規directoryと不足している親directoryだけを作成します。現行の`.agentic/config.yaml`、Contract、Decision、Git index、commitは変更しません。
+Manifest v2は`schemas/outputs/v1/migration-candidate-manifest.schema.json`に従います。候補生成では、指定した新規directoryと不足している親directoryだけを作成します。現行の`.adf/config.yaml`、Contract、Decision、Git index、commitは変更しません。
 
 候補生成後は、次のcommandで生成時の整合性と未完了作業を検証できます。
 
 ```sh
-agentic migration validate-candidate \
+adf migration validate-candidate \
   --project /path/to/current-project \
-  --candidate .agentic/migration-candidates/review-1 \
+  --candidate .adf/migration-candidates/review-1 \
   --format text
 ```
 
-この検証では、source revision、埋め込まれたDraftのdigestとレビュー、Manifestの生成済みフィールド、vNext設定候補とDraft fileのbyte digestを確認します。候補directoryと、同じDraft digestを持つ生成元Draftだけをworktreeのdirty判定から除外します。それ以外の変更があれば`blocked`です。
+この検証では、source revision、埋め込まれたDraftのdigestとレビュー、Manifestの生成済みフィールド、the framework設定候補とDraft fileのbyte digestを確認します。候補directoryと、同じDraft digestを持つ生成元Draftだけをworktreeのdirty判定から除外します。それ以外の変更があれば`blocked`です。
 
 生成直後の結果は、整合性に問題がなければ`incomplete`です。`pending_actions`が残るためcommandは非0で終了します。生成fileやManifestの改変は`invalid`、source側の検証を妨げる状態は`blocked`です。JSON Report v2は`schemas/outputs/v1/migration-candidate-validation-report.schema.json`に従います。
 
@@ -360,14 +360,14 @@ artifacts:
 3. `rules.yaml`が選択した署名済みReleaseのRule sourceと一致することを確認する
 4. Repository Observationを元Projectの固定revisionに対して再実行し、source coverageとBinding authorityを確認する
 5. Completion Recordが申告した有効Recordの一覧と、実際に読み込めるRecordの一覧を照合する
-6. Contract、Decision、Change、Evidence、Resultを選択したReleaseのvNext Schemaで検証する
+6. Contract、Decision、Change、Evidence、Resultを選択したReleaseのSchemaで検証する
 
 すべて成功すると結果は`valid`になり、commandは終了コード0を返します。署名改変、Schema違反、未承認のBinding authorityなどがあれば`invalid`です。`valid`になった候補だけを、次の明示操作で既存Projectへ適用できます。
 
 ```sh
-agentic migration apply-candidate \
+adf migration apply-candidate \
   --project /path/to/current-project \
-  --candidate .agentic/migration-candidates/review-1 \
+  --candidate .adf/migration-candidates/review-1 \
   --format text
 ```
 
@@ -375,35 +375,35 @@ agentic migration apply-candidate \
 
 1. Manifestのdigestとsource revisionから一意なapplication IDを作り、同じ適用の重複実行を拒否する
 2. 適用先を事前検査し、移行元として退避するpath以外に異なる内容のfileがあれば上書きせず終了する
-3. 現行config、Contract、Decision、Change workflow、Evidenceを`.agentic/migration-history/<application-id>/source/`へ元の相対pathのまま退避する
+3. 現行config、Contract、Decision、Change workflow、Evidenceを`.adf/migration-history/<application-id>/source/`へ元の相対pathのまま退避する
 4. Candidateの設定、review済み成果物、署名済みFramework ReleaseをProjectの有効pathへ配置する
-5. Manifest、Draft、Completion Record、適用結果を`.agentic/migrations/<application-id>/`へ保存する
+5. Manifest、Draft、Completion Record、適用結果を`.adf/migrations/<application-id>/`へ保存する
 
-途中で失敗した場合は、作成したfileを削除し、退避した移行元を元のpathへ戻します。自動復元にも失敗した場合は、エラーに復元失敗を明記します。Candidate自体は削除しません。Git indexとcommitも変更しないため、適用後は差分と退避内容を確認し、対象fileを`git add`してから通常のvNext検証を実行します。検証に成功した場合だけcommitしてください。
+途中で失敗した場合は、作成したfileを削除し、退避した移行元を元のpathへ戻します。自動復元にも失敗した場合は、エラーに復元失敗を明記します。Candidate自体は削除しません。Git indexとcommitも変更しないため、適用後は差分と退避内容を確認し、対象fileを`git add`してから通常のthe framework検証を実行します。検証に成功した場合だけcommitしてください。
 
 text出力とJSON出力には、適用したfileのdigest、退避元と退避先、次の操作を含めます。JSON形式は`schemas/outputs/v1/migration-application.schema.json`に従い、同じ内容を`<application-root>/application.yaml`へ保存します。
 
-適用後の標準確認手順は次のとおりです。stage前に差分と`.agentic/migration-history/<application-id>/`の退避内容を確認してください。最初のBinding検証はstage済みfileを対象に実行し、commit後は`--require-clean`でもう一度確認します。
+適用後の標準確認手順は次のとおりです。stage前に差分と`.adf/migration-history/<application-id>/`の退避内容を確認してください。最初のBinding検証はstage済みfileを対象に実行し、commit後は`--require-clean`でもう一度確認します。
 
 ```sh
 git add <reviewed-migration-paths>
-agentic project validate-bindings --project /path/to/current-project --format json
-git commit -m "migrate project to vNext"
-agentic project validate-bindings --project /path/to/current-project --require-clean --format json
-agentic next change.example --project /path/to/current-project --require-clean --format json
+adf project validate-bindings --project /path/to/current-project --format json
+git commit -m "migrate project to the framework"
+adf project validate-bindings --project /path/to/current-project --require-clean --format json
+adf next change.example --project /path/to/current-project --require-clean --format json
 ```
 
-旧EvidenceがYAMLで保存されている場合も、vNextへ`proceed`するEvidence成果物は`.json`へ変換します。Filesystem Storeが有効Recordとして読み込むEvidenceはJSON fileであり、Completion Recordのartifact pathとdigestも変換後の`.json`を参照させます。旧YAMLは移行元としてApplication archiveに残ります。
+旧EvidenceがYAMLで保存されている場合も、the frameworkへ`proceed`するEvidence成果物は`.json`へ変換します。Filesystem Storeが有効Recordとして読み込むEvidenceはJSON fileであり、Completion Recordのartifact pathとdigestも変換後の`.json`を参照させます。旧YAMLは移行元としてApplication archiveに残ります。
 
 公開済みbinaryをbootstrapした後、新しいGit Repositoryは次の順に初期化します。`project init`は既存fileを上書きせず、attestation検証済みbinaryと同じdirectoryに保存された候補から、config、Framework lock、Trust Store、Release cache、空のRepository Observationを作ります。解析rootを省略した場合はRepository全体を表す`.`です。
 
-あわせて、binaryへ同梱したエージェント向けSkillを`.agents/skills/`へ、進め方の案内を`docs/agentic/README.md`へ配置し、`AGENTS.md`へ管理ブロックを追記します。`AGENTS.md`が既にある場合は末尾へ追記し、管理ブロックが既にあれば触れません。追記は一時fileを経由した置換で行うため、途中で失敗してもProject自身の記述は残ります。利用者はbinary 1つで一周できます。
+あわせて、binaryへ同梱したエージェント向けSkillを`.agents/skills/`へ、進め方の案内を`docs/adf/README.md`へ配置し、`AGENTS.md`へ管理ブロックを追記します。`AGENTS.md`が既にある場合は末尾へ追記し、管理ブロックが既にあれば触れません。追記は一時fileを経由した置換で行うため、途中で失敗してもProject自身の記述は残ります。利用者はbinary 1つで一周できます。
 
 旧Python CLI用のContract雛形とLevel別overlayは配置しません。Record形式が現在の制御基盤と異なるため、置くと`contracts/`が読み込めないProjectになります。Levelの選択は、雛形ではなく署名済みFramework Releaseが持つRule集合の選択として設計し直す必要があり、初版では扱いません。
 
 ```sh
-agentic project init --project /path/to/project
-agentic change init change.example \
+adf project init --project /path/to/project
+adf change init change.example \
   --title "変更タイトル" \
   --intent "変更の意図" \
   --project /path/to/project
@@ -414,11 +414,11 @@ agentic change init change.example \
 `project init`の完了時、Binding不足による`next`の停止時、および`project validate-bindings`の`invalid`時には、英語のhuman-readable出力で`project observe`からreview・再検証へ進む`Next:`を表示します。JSON出力は機械処理用Schemaを維持し、この案内を混入させません。候補が自動適用されないことも明記します。
 
 ```sh
-agentic project observe \
+adf project observe \
   --project /path/to/project \
   --analysis-root src \
   --format yaml \
-  --output .agentic/repository-observation.draft.yaml
+  --output .adf/repository-observation.draft.yaml
 ```
 
 この出力はRepository Observation Draft v6であり、Binding Recordの下書きです。`--output`はProject相対pathだけを受理し、既存file・symlinkを上書きしません。省略時は従来どおり標準出力へ返します。sourceごとのSHA-256を`source_digests`へ、生成時点の正式ObservationのSHA-256を`base_observation_digest`へ固定し、反映前のfreshness検査に使います。論理ID、owner、`authority_ref`を作りません。主要8 ORM・8 messaging frameworkに加え、Requests、HTTPX、明示receiver付きFetch、Axios、Java HttpClient、Spring WebClient、Go `net/http`、.NET HttpClientと、Amazon S3、Google Cloud Storage、Azure Blob Storageについて、project manifest・import・型名・receiver形状を根拠に`framework_candidates`を提示します。署名済み公式ReleaseのFramework Detection Catalogを使う場合は、TypeORMも候補化します。候補は常に`review_status: required`で、`suggested_fact_kinds`も非authoritativeです。明確なObject Storage uploadは、永続書込みと外部system呼出しの両面を表す`[external_call, object_write]`を提示します。
@@ -428,25 +428,25 @@ Draft v6の`binding_artifacts`は、Observation Schema v5の`artifacts`へ反映
 編集したDraftは、正式Observationへ反映する前に検査できます。Draft検査は未記入、物理名・論理ID・fact kindの不整合、未承認Decision、生成後のsource変更を停止対象にします。text出力だけを提供し、正式Observationやその他のProject fileは変更しません。
 
 ```sh
-agentic project validate-bindings \
+adf project validate-bindings \
   --project /path/to/project \
-  --draft .agentic/repository-observation.draft.yaml
+  --draft .adf/repository-observation.draft.yaml
 ```
 
 検査に成功したDraftだけを、明示commandで正式Observationへ反映できます。反映直前にも同じ検査を行い、source、accepted Decision、生成元Observationのいずれかが変わっていれば何も変更しません。成功時は現在の`phase`を保ち、`analysis_roots`とreview済み`binding_artifacts`だけからObservation Schema v5を作り、設定済みfileを原子的に置換します。Draft自体は削除しません。
 
 ```sh
-agentic project promote-bindings \
+adf project promote-bindings \
   --project /path/to/project \
-  --draft .agentic/repository-observation.draft.yaml
+  --draft .adf/repository-observation.draft.yaml
 ```
 
-反映後は`git diff`と`agentic project validate-bindings`で正式Observationを確認し、Observationとaccepted Decisionを一緒にcommitします。
+反映後は`git diff`と`adf project validate-bindings`で正式Observationを確認し、Observationとaccepted Decisionを一緒にcommitします。
 
 転記・review後は、通常評価の前にBindingだけを検査できます。`invalid`は不足・曖昧・不正なBindingまたは未承認authority、`blocked`は未対応言語や構文エラーなど、完全なBinding検査を妨げるcoverage gapです。どちらも終了codeは非0です。`--require-clean`はCIで使用します。
 
 ```sh
-agentic project validate-bindings \
+adf project validate-bindings \
   --project /path/to/project \
   --format json
 ```
@@ -506,20 +506,20 @@ bindings:
 Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナリを`mcp` subcommandで起動すると、`next`、`submit`、`explain`、`contract-health`と、発行Actionに限定されたEvidence、Decision、Contract書込みToolを利用できます。Tool契約と信頼境界は[`MCP-DESIGN.md`](MCP-DESIGN.md)、固定I/O Schemaは`schemas/mcp/v1/`にあります。既存CLIは人向け診断、CI、Release・binary管理の補助経路として残します。
 
 ```sh
-agentic mcp --project .
+adf mcp --project .
 ```
 
-MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`agentic_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`agentic_next`を再実行してください。
+MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`adf_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`adf_next`を再実行してください。
 
 ```sh
-sh scripts/tests/test-vnext-rust.sh
+sh scripts/tests/test-rust.sh
 ```
 
 Rust互換実装はContributor向けに別途実行します。通常のKit利用者へRust
 toolchainを要求するものではありません。
 
 ```sh
-sh scripts/tests/test-vnext-rust.sh
+sh scripts/tests/test-rust.sh
 ```
 
 Rust CLIの個別確認は次のとおりです。
@@ -553,7 +553,7 @@ cargo run --locked -- \
   verify-explain testdata/golden/v1
 ```
 
-実際の導入Projectに対しては、Framework lockの`framework_release`に対応するReleaseを`.agentic/cache/releases/<release-id>/`から自動解決します。
+実際の導入Projectに対しては、Framework lockの`framework_release`に対応するReleaseを`.adf/cache/releases/<release-id>/`から自動解決します。
 
 ```sh
 cargo run --locked -- \
@@ -577,9 +577,9 @@ framework-catalog.yaml  # 任意。署名済みRelease v2だけが指定可能
 schemas/v1/
 ```
 
-署名済みRelease manifest v2は、Release ID、取得元ID、assetの相対path、全fileのSHA-256、署名鍵ID、Ed25519署名を持ちます。Framework lock v2はmanifestの署名対象部分のdigest、取得元ID、署名鍵IDを固定します。導入Projectは公開鍵と、その鍵に許可する取得元IDを`.agentic/trusted-release-keys.yaml`でGit管理します。`source_id`はURLやlocal pathではなく、配布経路を表す安定した論理IDです。
+署名済みRelease manifest v2は、Release ID、取得元ID、assetの相対path、全fileのSHA-256、署名鍵ID、Ed25519署名を持ちます。Framework lock v2はmanifestの署名対象部分のdigest、取得元ID、署名鍵IDを固定します。導入Projectは公開鍵と、その鍵に許可する取得元IDを`.adf/trusted-release-keys.yaml`でGit管理します。`source_id`はURLやlocal pathではなく、配布経路を表す安定した論理IDです。
 
-Framework Releaseの開発者は、`framework-catalog.yaml`でFramework固有のmethod候補を追加できます。各ruleにはnamespace、対象言語、method、manifestまたはsourceの根拠、候補のfact kind、説明を記述します。外部Framework IDは`namespace/name`になるため、組込みruleとは衝突しません。`agentic` namespaceは組込みrule専用です。
+Framework Releaseの開発者は、`framework-catalog.yaml`でFramework固有のmethod候補を追加できます。各ruleにはnamespace、対象言語、method、manifestまたはsourceの根拠、候補のfact kind、説明を記述します。外部Framework IDは`namespace/name`になるため、組込みruleとは衝突しません。`adf` namespaceは組込みrule専用です。
 
 導入先の開発者がProject内に任意のCatalogを追加する仕組みではありません。`project observe`が読むのは、activeなFramework lockから解決し、署名と全file digestを検証したRelease内のCatalogだけです。Catalogが生成するのは`review_status: required`の候補であり、Binding Recordへ自動反映されません。Catalogを書き換えたReleaseへ切り替える場合も、Release全体のinstallとlockのswitchが必要です。rollbackでは以前のlockとReleaseに含まれるCatalogへ戻ります。
 
@@ -590,50 +590,50 @@ Framework Releaseの開発者は、`framework-catalog.yaml`でFramework固有の
 新しいReleaseは、候補lockを有効化する前に導入します。
 
 ```sh
-AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
-agentic release build /path/to/release-source \
+ADF_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
+adf release build /path/to/release-source \
   --lock /path/to/base-framework.lock \
   --source-id remote:official \
   --key-id framework.release.2026 \
   --expected-public-key <64-character-ed25519-public-key> \
   --framework-catalog framework-catalog.yaml \
-  --output /path/to/prototype-vnext-dev.tar \
+  --output /path/to/adf-dev.tar \
   --lock-output /path/to/candidate-framework.lock \
   --format json
 
-agentic release fetch /path/to/candidate-framework.lock \
+adf release fetch /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic release install /path/to/offline-bundle \
+adf release install /path/to/offline-bundle \
   --lock /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic release install-archive /path/to/prototype-vnext-dev.tar \
+adf release install-archive /path/to/adf-dev.tar \
   --lock /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic release switch /path/to/candidate-framework.lock \
+adf release switch /path/to/candidate-framework.lock \
   --project /path/to/project
 
-agentic release rollback /path/to/project/.agentic/cache/framework-lock-backups/<digest>.yaml \
+adf release rollback /path/to/project/.adf/cache/framework-lock-backups/<digest>.yaml \
   --project /path/to/project
 ```
 
 `build`は入力directoryを変更せず、既存の`release.yaml`を除いた全fileを列挙して署名済みmanifestを生成します。`--framework-catalog`を指定した場合は、Schema、namespace、言語、重複rule、fact kindを出力前に検証します。file順、tar metadata、mtime、uid、gid、modeを固定するため、同じ入力・base lock・署名鍵・取得元ID・鍵IDから同じtarと候補lockを生成します。出力済みfileは上書きしません。
 
-秘密鍵seedは固定名の環境変数`AGENTIC_RELEASE_SIGNING_KEY_HEX`からだけ読み、CLI引数、manifest、Framework lock、標準出力へ記録しません。`--expected-public-key`を指定すると、秘密鍵から導出した公開鍵が事前登録値と異なる場合は出力前に停止します。JSON receiptはRelease ID、manifestのartifact digest、tar全体のarchive digest、公開鍵、出力pathを返します。
+秘密鍵seedは固定名の環境変数`ADF_RELEASE_SIGNING_KEY_HEX`からだけ読み、CLI引数、manifest、Framework lock、標準出力へ記録しません。`--expected-public-key`を指定すると、秘密鍵から導出した公開鍵が事前登録値と異なる場合は出力前に停止します。JSON receiptはRelease ID、manifestのartifact digest、tar全体のarchive digest、公開鍵、出力pathを返します。
 
 Release候補のCIは次のように実行します。
 
 ```sh
-AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
-AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX=<64-character-ed25519-public-key> \
-AGENTIC_RELEASE_SOURCE_ID=remote:official \
-AGENTIC_RELEASE_SIGNER_KEY_ID=framework.release.2026 \
+ADF_RELEASE_SIGNING_KEY_HEX=<64-character-ed25519-seed> \
+ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=<64-character-ed25519-public-key> \
+ADF_RELEASE_SOURCE_ID=remote:official \
+ADF_RELEASE_SIGNER_KEY_ID=framework.release.2026 \
 sh scripts/release-ci.sh
 ```
 
-このscriptは同じ入力を独立に二度buildしてtarと候補lockをbyte単位で比較し、それぞれを`release install-archive`で再検証します。その後に最終成果物を`dist/vnext/`へ作り、同じ検査をもう一度通します。`.github/workflows/vnext-release.yml`は手動起動だけを許可し、秘密鍵をRepository secret、対応する公開鍵をRepository variableから読み、検証済みFramework候補を14日間のCI Artifactとして保存します。外部Releaseへの公開や導入先lockの更新は行いません。
+このscriptは同じ入力を独立に二度buildしてtarと候補lockをbyte単位で比較し、それぞれを`release install-archive`で再検証します。その後に最終成果物を`dist/framework/`へ作り、同じ検査をもう一度通します。`.github/workflows/release.yml`は手動起動だけを許可し、秘密鍵をRepository secret、対応する公開鍵をRepository variableから読み、検証済みFramework候補を14日間のCI Artifactとして保存します。外部Releaseへの公開や導入先lockの更新は行いません。
 
 同じworkflowの秘密鍵を持たないmatrix jobは、次のnative binaryを同一commitからbuildします。
 
@@ -645,11 +645,11 @@ sh scripts/release-ci.sh
 | macOS Apple Silicon | `aarch64-apple-darwin` |
 | Windows x64 | `x86_64-pc-windows-msvc` |
 
-各binaryには、source revision、target、Rust version、size、SHA-256を持つ`<binary>.build.json`を付けます。全5件が揃った場合だけ、決定的な`SHA256SUMS`とともに`agentic-vnext-release-binaries` Artifactへまとめます。各実行binaryにはGitHub Artifact Attestationも生成し、workflow、Repository、source revisionとbinary digestを結び付けます。
+各binaryには、source revision、target、Rust version、size、SHA-256を持つ`<binary>.build.json`を付けます。全5件が揃った場合だけ、決定的な`SHA256SUMS`とともに`adf-release-binaries` Artifactへまとめます。各実行binaryにはGitHub Artifact Attestationも生成し、workflow、Repository、source revisionとbinary digestを結び付けます。
 
-正式公開は別の`.github/workflows/vnext-publish-release.yml`を手動起動し、候補workflowのrun IDと`framework-<release_id>`形式のtagを指定します。このworkflowは候補runが同一Repository・既定branch・候補生成workflowの成功runであることを確認し、Artifactを公開前と承認後の二回downloadして再検証します。公開jobだけが`contents: write`を持ち、署名秘密鍵は受け取りません。
+正式公開は別の`.github/workflows/publish-release.yml`を手動起動し、候補workflowのrun IDと`framework-<release_id>`形式のtagを指定します。このworkflowは候補runが同一Repository・既定branch・候補生成workflowの成功runであることを確認し、Artifactを公開前と承認後の二回downloadして再検証します。公開jobだけが`contents: write`を持ち、署名秘密鍵は受け取りません。
 
-Repositoryには`vnext-release` Environmentを作成し、required reviewer、self-review禁止、既定branchだけを許可するdeployment branch ruleを設定してください。`AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX`、`AGENTIC_RELEASE_SOURCE_ID`、`AGENTIC_RELEASE_SIGNER_KEY_ID`はRepository variableとして管理します。Environment保護が設定されていなければ、workflowファイルに`environment`と書くだけでは人手承認を強制できません。
+Repositoryには`vnext-release` Environmentを作成し、required reviewer、self-review禁止、既定branchだけを許可するdeployment branch ruleを設定してください。`ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX`、`ADF_RELEASE_SOURCE_ID`、`ADF_RELEASE_SIGNER_KEY_ID`はRepository variableとして管理します。Environment保護が設定されていなければ、workflowファイルに`environment`と書くだけでは人手承認を強制できません。
 
 公開jobはFramework候補と5種類のbinary候補を同じrun IDから取得します。binaryについてはSHA-256、build record、source revisionに加え、候補生成workflowがGitHub-hosted runnerで作ったattestationであることを検証します。その後GitHub Releaseをdraftとして作成し、全assetを再downloadしてbyte単位で照合してから公開します。
 
@@ -659,8 +659,8 @@ candidate-framework.lock
 distribution-trust.json
 publish-receipt.json
 SHA256SUMS
-agentic-<target>[.exe]
-agentic-<target>[.exe].build.json
+adf-<target>[.exe]
+adf-<target>[.exe].build.json
 publication-record.json
 ```
 
@@ -669,9 +669,9 @@ publication-record.json
 利用者はchecksumに加え、GitHub CLIでbinaryのprovenanceを検証できます。
 
 ```sh
-gh attestation verify agentic-x86_64-unknown-linux-gnu \
+gh attestation verify adf-x86_64-unknown-linux-gnu \
   --repo <owner>/<repository> \
-  --signer-workflow <owner>/<repository>/.github/workflows/vnext-release.yml
+  --signer-workflow <owner>/<repository>/.github/workflows/release.yml
 ```
 
 公開済みbinaryの初回導入は、Release tagを明示してbootstrapを実行します。POSIX環境では次のとおりです。
@@ -680,7 +680,7 @@ gh attestation verify agentic-x86_64-unknown-linux-gnu \
 sh bootstrap/install.sh \
   --repo <owner>/<repository> \
   --tag framework-<release-id> \
-  --install-root "$HOME/.local/share/agentic"
+  --install-root "$HOME/.local/share/adf"
 ```
 
 WindowsではPowerShell版を使います。
@@ -694,28 +694,28 @@ WindowsではPowerShell版を使います。
 
 どちらもGitHub CLIを必要とします。Releaseのsource revisionと既定branchを取得し、Repository、候補生成workflow、source revision、source ref、GitHub-hosted runnerを固定して、実行binaryと`distribution-trust.json`のArtifact Attestationをそれぞれ検証してからbinaryを実行します。checksumやRelease内の公開鍵だけを信頼するmode、検証省略optionはありません。
 
-検証済みbinaryは、導入先の`releases/<tag>/`へ不変のassetを保存し、`active`という2行の機械管理fileに現在tagと直前tagを記録します。`bin/agentic`または`bin/agentic.cmd`は現在tagのbinaryを起動します。CLI binaryの更新とProjectごとのFramework Release更新は別操作です。
+検証済みbinaryは、導入先の`releases/<tag>/`へ不変のassetを保存し、`active`という2行の機械管理fileに現在tagと直前tagを記録します。`bin/adf`または`bin/adf.cmd`は現在tagのbinaryを起動します。CLI binaryの更新とProjectごとのFramework Release更新は別操作です。
 
 ```sh
-agentic binary status --install-root /path/to/agentic
+adf binary status --install-root /path/to/adf
 
-agentic binary update /path/to/downloaded-assets \
+adf binary update /path/to/downloaded-assets \
   --tag framework-<new-release-id> \
   --source-revision <40-character-git-sha> \
-  --install-root /path/to/agentic
+  --install-root /path/to/adf
 
-agentic binary rollback --install-root /path/to/agentic
+adf binary rollback --install-root /path/to/adf
 ```
 
 bootstrapは公開assetの取得とattestation検証を含みます。`binary update`または`project init --candidate-dir`へdirectoryを直接渡す場合は、呼出し側がbinaryと`distribution-trust.json`のattestation検証を済ませる必要があります。binary manager自身はdirectoryのfile間整合性、Trust BundleとPublication Recordの一致を再検証しますが、GitHubへ接続してattestationを取得しません。
 
-remote取得元は`.agentic/release-sources.yaml`でGit管理します。
+remote取得元は`.adf/release-sources.yaml`でGit管理します。
 
 ```yaml
 schema_version: "1"
 sources:
   - id: remote:official
-    base_url: https://releases.example.com/agentic
+    base_url: https://releases.example.com/adf
 ```
 
 `fetch`は候補lockの`source_id`からbase URLを選び、`<base_url>/<release-id>.tar`を取得します。通常はHTTPSだけを許可し、HTTPはlocal test用のloopback addressに限定します。redirectは追跡せず、downloadを64 MiB、展開後を256 MiB、archive entryを4096件に制限します。tar内の絶対path、`..`、symlink、hard link、特殊file、重複pathを拒否します。
@@ -805,4 +805,4 @@ sources:
 
 ## 配布実装との関係
 
-広く配布するvNextでは、KernelとCLIをRustのbuild済みバイナリとして提供し、通常利用者にはPythonもRust toolchainも要求しない案を第一候補とします。現在は決定的な署名済みRelease生成、実Projectに対する`next`と`explain`、offline・remote Releaseの検証、atomic install、lock切替・rollback、5 Platformのnative binary、checksum・attestation、候補Artifact保存、承認付きGitHub Release公開まで接続済みです。Publisherの秘密鍵利用は候補生成CIに限定し、公開jobと通常利用者は公開鍵だけを保持します。詳細は`FRAMEWORK-REVIEW.md` 14.12、14.21、14.22を参照してください。
+広く配布するthe frameworkでは、KernelとCLIをRustのbuild済みバイナリとして提供し、通常利用者にはPythonもRust toolchainも要求しない案を第一候補とします。現在は決定的な署名済みRelease生成、実Projectに対する`next`と`explain`、offline・remote Releaseの検証、atomic install、lock切替・rollback、5 Platformのnative binary、checksum・attestation、候補Artifact保存、承認付きGitHub Release公開まで接続済みです。Publisherの秘密鍵利用は候補生成CIに限定し、公開jobと通常利用者は公開鍵だけを保持します。詳細は`FRAMEWORK-REVIEW.md` 14.12、14.21、14.22を参照してください。

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/mcp/v1/next-output",
-  "title": "agentic_next output v1",
+  "$id": "adf://schemas/mcp/v1/next-output",
+  "title": "adf_next output v1",
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/mcp/v1/tool-error",
+  "$id": "adf://schemas/mcp/v1/tool-error",
   "title": "Agentic MCP Tool Error v1",
   "type": "object",
   "additionalProperties": false,

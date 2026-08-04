@@ -8,10 +8,10 @@
 set -eu
 umask 077
 
-REPOSITORY=piaro/agentic-development-kit
+REPOSITORY=piaro/agentic-development-framework
 RELEASE_TAG=
-INSTALL_ROOT=${AGENTIC_INSTALL_ROOT:-${XDG_DATA_HOME:-"$HOME/.local/share"}/agentic}
-GH_CLI=${AGENTIC_GH_CLI:-gh}
+INSTALL_ROOT=${ADF_INSTALL_ROOT:-${XDG_DATA_HOME:-"$HOME/.local/share"}/adf}
+GH_CLI=${ADF_GH_CLI:-gh}
 
 usage() {
   echo "usage: install.sh --tag <framework-release-tag> [--repo <owner/name>] [--install-root <path>]" >&2
@@ -99,7 +99,7 @@ case "$(uname -s):$(uname -m)" in
     exit 1
     ;;
 esac
-BINARY=agentic-$TARGET
+BINARY=adf-$TARGET
 BUILD_RECORD=$BINARY.build.json
 
 SOURCE_REVISION=$("$GH_CLI" release view "$RELEASE_TAG" \
@@ -134,7 +134,7 @@ case "$DEFAULT_BRANCH" in
     ;;
 esac
 
-STAGING=$(mktemp -d "${TMPDIR:-/tmp}/agentic-bootstrap.XXXXXX")
+STAGING=$(mktemp -d "${TMPDIR:-/tmp}/adf-bootstrap.XXXXXX")
 cleanup() {
   rm -rf "$STAGING"
 }
@@ -156,13 +156,13 @@ trap cleanup EXIT HUP INT TERM
 # revision prevents a checksum and binary replaced together from being trusted.
 "$GH_CLI" attestation verify "$STAGING/$BINARY" \
   --repo "$REPOSITORY" \
-  --signer-workflow "$REPOSITORY/.github/workflows/vnext-release.yml" \
+  --signer-workflow "$REPOSITORY/.github/workflows/release.yml" \
   --source-digest "$SOURCE_REVISION" \
   --source-ref "refs/heads/$DEFAULT_BRANCH" \
   --deny-self-hosted-runners >/dev/null
 "$GH_CLI" attestation verify "$STAGING/distribution-trust.json" \
   --repo "$REPOSITORY" \
-  --signer-workflow "$REPOSITORY/.github/workflows/vnext-release.yml" \
+  --signer-workflow "$REPOSITORY/.github/workflows/release.yml" \
   --source-digest "$SOURCE_REVISION" \
   --source-ref "refs/heads/$DEFAULT_BRANCH" \
   --deny-self-hosted-runners >/dev/null
@@ -173,5 +173,5 @@ chmod 755 "$STAGING/$BINARY"
   --source-revision "$SOURCE_REVISION" \
   --install-root "$INSTALL_ROOT"
 
-echo "Add $INSTALL_ROOT/bin to PATH to invoke agentic."
-echo "Then run: agentic project init --project /path/to/project"
+echo "Add $INSTALL_ROOT/bin to PATH to invoke adf."
+echo "Then run: adf project init --project /path/to/project"

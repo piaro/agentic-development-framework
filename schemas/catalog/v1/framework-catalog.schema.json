@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/catalogs/v1/framework-catalog.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/catalogs/v1/framework-catalog.schema.json",
   "title": "Framework Detection Catalog v1",
   "description": "Non-authoritative framework method hints distributed only as a signed Framework Release asset.",
   "type": "object",
@@ -18,7 +18,7 @@
       "type": "string",
       "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
       "not": {
-        "pattern": "^agentic(?:\\.|$)"
+        "pattern": "^adf(?:\\.|$)"
       }
     },
     "rules": {

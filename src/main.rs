@@ -1,33 +1,33 @@
-use agentic::binary_install::{
+use adf::binary_install::{
     BinaryInstallReceipt, binary_install_status, install_binary_candidate, rollback_binary_install,
 };
-use agentic::binding_draft_validation::{
+use adf::binding_draft_validation::{
     BindingDraftValidationReport, analysis_roots as draft_analysis_roots,
 };
-use agentic::cli_output::{next_response_value, render_next_text};
-use agentic::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
-use agentic::delivery::{
+use adf::cli_output::{next_response_value, render_next_text};
+use adf::contract_health_gate::{ContractHealthGateReport, ContractHealthPolicy};
+use adf::delivery::{
     install_release, read_framework_lock, rollback_framework_lock, switch_framework_lock,
 };
-use agentic::detector_audit::run_repository_detector_audit;
-use agentic::detector_audit_baseline::check_repository_detector_audit_baseline;
-use agentic::detector_benchmark::run_detector_benchmark;
-use agentic::mcp_server::run_stdio_server;
-use agentic::migration::{
+use adf::detector_audit::run_repository_detector_audit;
+use adf::detector_audit_baseline::check_repository_detector_audit_baseline;
+use adf::detector_benchmark::run_detector_benchmark;
+use adf::mcp_server::run_stdio_server;
+use adf::migration::{
     apply_migration_candidate, draft_migration, generate_migration_candidate, inspect_migration,
     validate_migration_candidate, validate_migration_draft,
 };
-use agentic::project_runtime::LoadedProject;
-use agentic::project_setup::{
+use adf::project_runtime::LoadedProject;
+use adf::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
     observation_draft, promote_observation_draft, read_observation_draft, write_observation_draft,
 };
-use agentic::release_publisher::{
+use adf::release_publisher::{
     PublishOptions, publish_release, signer_public_key, signing_seed_from_environment,
 };
-use agentic::remote_delivery::{fetch_release, install_release_archive};
-use agentic::signal_catalog::SignalCatalogRegistry;
-use agentic::{
+use adf::remote_delivery::{fetch_release, install_release_archive};
+use adf::signal_catalog::SignalCatalogRegistry;
+use adf::{
     verify_application_suite, verify_canonicalization_suite, verify_context_suite,
     verify_detection_suite, verify_explain_suite, verify_filesystem_project_suite,
     verify_framework_lock_suite, verify_kernel_suite, verify_persistent_application_suite,
@@ -50,9 +50,9 @@ fn main() -> ExitCode {
     }
     if matches!(command, "--version" | "-V" | "version") {
         println!(
-            "agentic {} (revision {})",
+            "adf {} (revision {})",
             env!("CARGO_PKG_VERSION"),
-            option_env!("AGENTIC_BUILD_SOURCE_REVISION").unwrap_or("unknown")
+            option_env!("ADF_BUILD_SOURCE_REVISION").unwrap_or("unknown")
         );
         return ExitCode::SUCCESS;
     }
@@ -1490,7 +1490,7 @@ fn run_project_management_command(
                 .join(", ");
             Ok(ProjectManagementResponse {
                 output: format!(
-                    "Project initialized with Framework Release {}.\nCreated: {}\n{}Next: review the generated files, then git add and commit them.\nNext: if source code already exists, run agentic project observe --output .agentic/repository-observation.draft.yaml --project {} and complete the reviewed bindings and accepted Decisions.\nThen: agentic project validate-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project promote-bindings --draft .agentic/repository-observation.draft.yaml --project {}\nThen: agentic project validate-bindings --project {}\nNext: agentic change init <change-id> --title <title> --intent <intent> --project {}\n",
+                    "Project initialized with Framework Release {}.\nCreated: {}\n{}Next: review the generated files, then git add and commit them.\nNext: if source code already exists, run adf project observe --output .adf/repository-observation.draft.yaml --project {} and complete the reviewed bindings and accepted Decisions.\nThen: adf project validate-bindings --draft .adf/repository-observation.draft.yaml --project {}\nThen: adf project promote-bindings --draft .adf/repository-observation.draft.yaml --project {}\nThen: adf project validate-bindings --project {}\nNext: adf change init <change-id> --title <title> --intent <intent> --project {}\n",
                     receipt.release_id,
                     files,
                     if receipt.agents_block_appended {
@@ -1528,7 +1528,7 @@ fn run_project_management_command(
                     write_observation_draft(&options.project_root, relative, serialized.as_bytes())
                         .map_err(|error| error.to_string())?;
                 format!(
-                    "Observation draft written to: {}\nNext: review binding_artifacts and complete their logical refs, owners, fact kinds, and authority refs.\nThen: agentic project validate-bindings --draft {} --project {}\nThen: agentic project promote-bindings --draft {} --project {}\nOnly the requested draft file was created. Binding candidates were not applied automatically.\n",
+                    "Observation draft written to: {}\nNext: review binding_artifacts and complete their logical refs, owners, fact kinds, and authority refs.\nThen: adf project validate-bindings --draft {} --project {}\nThen: adf project promote-bindings --draft {} --project {}\nOnly the requested draft file was created. Binding candidates were not applied automatically.\n",
                     path.display(),
                     relative,
                     options.project_root.display(),
@@ -1608,7 +1608,7 @@ fn run_project_management_command(
                 .map_err(|error| error.to_string())?;
             Ok(ProjectManagementResponse {
                 output: format!(
-                    "Binding Draft promoted successfully.\nRepository Observation: {}\nArtifacts: {}\nDraft retained: {}\nNext: review the Repository Observation diff.\nThen: run agentic project validate-bindings --project {}\nThen: git add the reviewed Repository Observation and accepted Decisions, and commit them.\n",
+                    "Binding Draft promoted successfully.\nRepository Observation: {}\nArtifacts: {}\nDraft retained: {}\nNext: review the Repository Observation diff.\nThen: run adf project validate-bindings --project {}\nThen: git add the reviewed Repository Observation and accepted Decisions, and commit them.\n",
                     receipt.observation_path.display(),
                     receipt.artifacts,
                     draft,
@@ -1667,7 +1667,7 @@ fn run_change_management_command(options: &ChangeManagementCommand) -> Result<St
     )
     .map_err(|error| error.to_string())?;
     Ok(format!(
-        "Change {} initialized at {}\nNext: review, git add, and commit the Change.\nNext: agentic next {} --project {}",
+        "Change {} initialized at {}\nNext: review, git add, and commit the Change.\nNext: adf next {} --project {}",
         options.change_id,
         path.display(),
         options.change_id,
@@ -2069,12 +2069,12 @@ fn run_catalog(options: &CatalogCommand) -> Result<String, String> {
 }
 
 fn ensure_project_initialized(project_root: &std::path::Path) -> Result<(), String> {
-    let config = project_root.join(".agentic/config.yaml");
+    let config = project_root.join(".adf/config.yaml");
     if config.is_file() {
         Ok(())
     } else {
         Err(format!(
-            "Project is not initialized: {} is missing.\nNext: agentic project init --project {}",
+            "Project is not initialized: {} is missing.\nNext: adf project init --project {}",
             config.display(),
             project_root.display()
         ))
@@ -2083,7 +2083,7 @@ fn ensure_project_initialized(project_root: &std::path::Path) -> Result<(), Stri
 
 fn actionable_project_error(error: &str, change_id: &str) -> String {
     if error.contains("unknown change:") {
-        format!("{error}\nNext: agentic change init {change_id} --title <title> --intent <intent>")
+        format!("{error}\nNext: adf change init {change_id} --title <title> --intent <intent>")
     } else {
         error.to_owned()
     }
@@ -2094,82 +2094,82 @@ fn usage() {
 }
 
 fn usage_text() -> &'static str {
-    "Agentic Development Kit\n\
+    "Agentic Development Framework\n\
 \n\
 usage:\n\
-  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
-  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
-  agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
-  agentic project promote-bindings --draft <path> [--project <root>]\n\
-  agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
-  agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
-  agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
-  agentic mcp [--project <root>] [--release <root>]\n\
-  agentic release <public-key|build|fetch|install|install-archive|switch|rollback> ...\n\
-  agentic binary <install|update|status|rollback> ...\n\
-  agentic --help\n\
-  agentic --version\n\
+  adf project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
+  adf project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
+  adf project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
+  adf project promote-bindings --draft <path> [--project <root>]\n\
+  adf change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
+  adf <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  adf contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
+  adf mcp [--project <root>] [--release <root>]\n\
+  adf release <public-key|build|fetch|install|install-archive|switch|rollback> ...\n\
+  adf binary <install|update|status|rollback> ...\n\
+  adf --help\n\
+  adf --version\n\
 \n\
 experimental, may change in any release - see COMPATIBILITY.md:\n\
-  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
-  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n\
-  agentic migration generate-candidate --draft <path> --output <path> [--project <root>] [--format <text|json>]\n\
-  agentic migration validate-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
-  agentic migration apply-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
-  agentic benchmark <corpus-root> [--format <text|json>]\n\
-  agentic detector-audit <repository-root> [--format <text|json>] [--require-clean]\n\
-  agentic detector-audit-check <repository-root> --baseline <path> [--format <text|json>]\n\
-  agentic catalog signal-domains [--format <text|json>]\n"
+  adf migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
+  adf migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n\
+  adf migration generate-candidate --draft <path> --output <path> [--project <root>] [--format <text|json>]\n\
+  adf migration validate-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
+  adf migration apply-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
+  adf benchmark <corpus-root> [--format <text|json>]\n\
+  adf detector-audit <repository-root> [--format <text|json>] [--require-clean]\n\
+  adf detector-audit-check <repository-root> --baseline <path> [--format <text|json>]\n\
+  adf catalog signal-domains [--format <text|json>]\n"
 }
 
 fn mcp_usage() {
     eprintln!(
-        "usage:\n  agentic mcp \
+        "usage:\n  adf mcp \
          [--project <root>] [--release <root>]"
     );
 }
 
 fn migration_usage() {
     eprintln!(
-        "usage:\n  agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n  agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n  agentic migration generate-candidate --draft <path> --output .agentic/migration-candidates/<name> [--project <root>] [--format <text|json>]\n  agentic migration validate-candidate --candidate .agentic/migration-candidates/<name> [--project <root>] [--format <text|json>]\n  agentic migration apply-candidate --candidate .agentic/migration-candidates/<name> [--project <root>] [--format <text|json>]"
+        "usage:\n  adf migration <inspect|draft> [--project <root>] [--format <text|json>]\n  adf migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n  adf migration generate-candidate --draft <path> --output .adf/migration-candidates/<name> [--project <root>] [--format <text|json>]\n  adf migration validate-candidate --candidate .adf/migration-candidates/<name> [--project <root>] [--format <text|json>]\n  adf migration apply-candidate --candidate .adf/migration-candidates/<name> [--project <root>] [--format <text|json>]"
     );
 }
 
 fn binary_usage() {
     eprintln!(
-        "usage:\n  agentic binary <install|update> <candidate-directory> \
+        "usage:\n  adf binary <install|update> <candidate-directory> \
          --tag <release-tag> --source-revision <git-sha> \
          --install-root <path> [--format <text|json>]\n  \
-         agentic binary <status|rollback> \
+         adf binary <status|rollback> \
          --install-root <path> [--format <text|json>]"
     );
 }
 
 fn release_usage() {
     eprintln!(
-        "usage:\n  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> agentic release public-key\n\
-  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
-         agentic release build <source-root> \
+        "usage:\n  ADF_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> adf release public-key\n\
+  ADF_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
+         adf release build <source-root> \
          --lock <base-lock> --source-id <id> --key-id <id> \
          [--expected-public-key <64-hex-public-key>] \
          --output <archive> --lock-output <candidate-lock> \
          [--rules <path>] [--schemas <path>] [--framework-catalog <path>] \
          [--format <text|json>] \
          [--project <root>]\n  \
-         agentic release fetch <candidate-lock> \
+         adf release fetch <candidate-lock> \
          [--project <root>]\n  \
-         agentic release install <bundle-root> \
+         adf release install <bundle-root> \
          --lock <candidate-lock> [--project <root>]\n  \
-         agentic release install-archive <archive> \
+         adf release install-archive <archive> \
          --lock <candidate-lock> [--project <root>]\n  \
-         agentic release switch <candidate-lock> [--project <root>]\n  \
-         agentic release rollback <backup-lock> [--project <root>]"
+         adf release switch <candidate-lock> [--project <root>]\n  \
+         adf release rollback <backup-lock> [--project <root>]"
     );
 }
 
 fn project_usage(command: &str) {
     eprintln!(
-        "usage: agentic {command} <change-id> \
+        "usage: adf {command} <change-id> \
          [--project <root>] [--release <root>] \
          [--format <text|json>] [--require-clean]"
     );
@@ -2177,40 +2177,40 @@ fn project_usage(command: &str) {
 
 fn repository_usage(command: &str) {
     eprintln!(
-        "usage: agentic {command} \
+        "usage: adf {command} \
          [--project <root>] [--release <root>] \
          [--policy <path>] [--format <text|json>] [--require-clean]"
     );
 }
 
 fn benchmark_usage() {
-    eprintln!("usage: agentic benchmark <corpus-root> [--format <text|json>]");
+    eprintln!("usage: adf benchmark <corpus-root> [--format <text|json>]");
 }
 
 fn detector_audit_usage() {
     eprintln!(
-        "usage: agentic detector-audit <repository-root> [--format <text|json>] [--require-clean]"
+        "usage: adf detector-audit <repository-root> [--format <text|json>] [--require-clean]"
     );
 }
 
 fn detector_audit_check_usage() {
     eprintln!(
-        "usage: agentic detector-audit-check <repository-root> --baseline <path> [--format <text|json>]"
+        "usage: adf detector-audit-check <repository-root> --baseline <path> [--format <text|json>]"
     );
 }
 
 fn catalog_usage() {
-    eprintln!("usage: agentic catalog signal-domains [--format <text|json>]");
+    eprintln!("usage: adf catalog signal-domains [--format <text|json>]");
 }
 
 fn project_management_usage() {
     eprintln!(
-        "usage:\n  agentic project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n  agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n  agentic project promote-bindings --draft <path> [--project <root>]"
+        "usage:\n  adf project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n  adf project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n  adf project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n  adf project promote-bindings --draft <path> [--project <root>]"
     );
 }
 
 fn change_management_usage() {
     eprintln!(
-        "usage: agentic change init <change-id> --title <title> --intent <intent> [--project <root>]"
+        "usage: adf change init <change-id> --title <title> --intent <intent> [--project <root>]"
     );
 }

@@ -1,4 +1,4 @@
-name: vNext Release candidate
+name: Release candidate
 
 on:
   workflow_dispatch:
@@ -26,11 +26,11 @@ jobs:
       contents: read
       id-token: write
     env:
-      AGENTIC_RELEASE_SIGNING_KEY_HEX: ${{ secrets.AGENTIC_RELEASE_SIGNING_KEY_HEX }}
-      AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
-      AGENTIC_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
-      AGENTIC_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
-      AGENTIC_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/vnext
+      ADF_RELEASE_SIGNING_KEY_HEX: ${{ secrets.ADF_RELEASE_SIGNING_KEY_HEX }}
+      ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
+      ADF_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
+      ADF_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
+      ADF_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/framework
 
     steps:
       - name: Check out reviewed source
@@ -42,7 +42,7 @@ jobs:
           rustup default 1.89.0
 
       - name: Run regression tests
-        run: sh scripts/tests/test-vnext-rust.sh
+        run: sh scripts/tests/test-rust.sh
 
       - name: Build and verify signed Release candidate
         run: sh scripts/release-ci.sh
@@ -50,15 +50,15 @@ jobs:
       - name: Attest distribution trust provenance
         uses: actions/attest@v4
         with:
-          subject-path: dist/vnext/distribution-trust.json
+          subject-path: dist/framework/distribution-trust.json
 
       # This workflow deliberately stops at a reviewable CI artifact. Publishing
       # to an external Release endpoint belongs to a separately approved job.
       - name: Upload reviewable Release candidate
         uses: actions/upload-artifact@v7
         with:
-          name: agentic-vnext-release-candidate
-          path: dist/vnext/
+          name: adf-release-candidate
+          path: dist/framework/
           if-no-files-found: error
           retention-days: 14
 
@@ -70,19 +70,19 @@ jobs:
         include:
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            binary: agentic-x86_64-unknown-linux-gnu
+            binary: adf-x86_64-unknown-linux-gnu
           - runner: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
-            binary: agentic-aarch64-unknown-linux-gnu
+            binary: adf-aarch64-unknown-linux-gnu
           - runner: macos-15-intel
             target: x86_64-apple-darwin
-            binary: agentic-x86_64-apple-darwin
+            binary: adf-x86_64-apple-darwin
           - runner: macos-15
             target: aarch64-apple-darwin
-            binary: agentic-aarch64-apple-darwin
+            binary: adf-aarch64-apple-darwin
           - runner: windows-2025
             target: x86_64-pc-windows-msvc
-            binary: agentic-x86_64-pc-windows-msvc.exe
+            binary: adf-x86_64-pc-windows-msvc.exe
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
     permissions:
@@ -131,7 +131,7 @@ jobs:
       - name: Upload binary candidate
         uses: actions/upload-artifact@v7
         with:
-          name: agentic-vnext-binary-${{ matrix.target }}
+          name: adf-binary-${{ matrix.target }}
           path: dist/binaries/${{ matrix.target }}/
           if-no-files-found: error
           retention-days: 14
@@ -151,7 +151,7 @@ jobs:
       - name: Download all native binary candidates
         uses: actions/download-artifact@v5
         with:
-          pattern: agentic-vnext-binary-*
+          pattern: adf-binary-*
           path: dist/release-binaries
           merge-multiple: true
 
@@ -191,7 +191,7 @@ jobs:
       - name: Upload complete binary candidate set
         uses: actions/upload-artifact@v7
         with:
-          name: agentic-vnext-release-binaries
+          name: adf-release-binaries
           path: dist/release-binaries/
           if-no-files-found: error
           retention-days: 14

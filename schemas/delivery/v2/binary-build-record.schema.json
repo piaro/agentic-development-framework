@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://agentic-development-kit.dev/schemas/delivery/v2/binary-build-record.schema.json",
+  "$id": "https://agentic-development-framework.dev/schemas/delivery/v2/binary-build-record.schema.json",
   "title": "Framework Release Binary Build Record v1",
   "type": "object",
   "additionalProperties": false,
@@ -19,7 +19,7 @@
     },
     "binary_name": {
       "type": "string",
-      "pattern": "^agentic-[A-Za-z0-9._-]+(?:\\.exe)?$"
+      "pattern": "^adf-[A-Za-z0-9._-]+(?:\\.exe)?$"
     },
     "target": {
       "enum": [

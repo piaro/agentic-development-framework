@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "agentic://schemas/v1/result-payloads/challenge",
+  "$id": "adf://schemas/v1/result-payloads/challenge",
   "x-result-schema": "result.challenge",
   "x-allowed-roles": ["Challenger"],
   "type": "object",

@@ -1,21 +1,21 @@
 [package]
-name = "agentic-development-kit"
+name = "agentic-development-framework"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "MIT OR Apache-2.0"
 description = "Control plane that connects specifications, decisions, implementation, and evidence in a repository worked on by AI agents"
-repository = "https://github.com/piaro/agentic-development-kit"
+repository = "https://github.com/piaro/agentic-development-framework"
 readme = "README.md"
 # Distribution happens through signed native binaries, not crates.io.
 publish = false
 
 [lib]
-name = "agentic"
+name = "adf"
 path = "src/lib.rs"
 
 [[bin]]
-name = "agentic"
+name = "adf"
 path = "src/main.rs"
 
 [dependencies]

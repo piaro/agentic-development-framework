@@ -1,4 +1,4 @@
 interface:
   display_name: "Agentic Builder"
   short_description: "Implement a cleared change and record its evidence"
-  default_prompt: "Use $agentic-builder to work the next Builder action for this change."
+  default_prompt: "Use $adf-builder to work the next Builder action for this change."

@@ -241,7 +241,7 @@
     },
     "framework_lock": {
       "schema_version": "1",
-      "framework_release": "prototype-vnext-dev",
+      "framework_release": "adf-dev",
       "protocols": {
         "application": "1",
         "canonicalization": "canonical-json-v1",
@@ -257,7 +257,7 @@
       },
       "schema_bundle": {
         "version": "2",
-        "digest": "sha256:636c28a4f16fba78a170df7b67d9427fb8a68a0454fb366fd76a756c2a397888"
+        "digest": "sha256:276b6ab5a101521471660f859ee4bad68f09e7cb1ef3ad106b39a006fcbc9556"
       },
       "rule_set": {
         "source_digest": "sha256:6fe7e6252e94c44901203395e6ac00ead20173dc857e0e630fe986c878af5855",
@@ -268,7 +268,7 @@
   "expected": {
     "snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
     "rule_index_digest": "sha256:175099cb33658a88160e59f31a600157f0d5b64cb046199efbae4b3a117adcbe",
-    "framework_lock_digest": "sha256:f46a33f0a5bf94262e7989ba99af8d0dd6d1fcce511624d4e6824629805b519e",
+    "framework_lock_digest": "sha256:1993a9e9a000756b14e048c1942946e5c56437e198f462163f9c5b5455a74320",
     "decision": {
       "state": "needs-analysis",
       "action": {

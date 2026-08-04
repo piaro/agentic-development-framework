@@ -1,4 +1,4 @@
-use agentic::binary_install::{
+use adf::binary_install::{
     binary_install_status, current_platform_target, install_binary_candidate,
     published_binary_name, rollback_binary_install,
 };
@@ -173,7 +173,7 @@ fn cli_and_managed_launcher_observe_the_same_installation() {
 
     #[cfg(unix)]
     {
-        let launched = Command::new(fixture.install_root.join("bin/agentic"))
+        let launched = Command::new(fixture.install_root.join("bin/adf"))
             .args([
                 "binary",
                 "status",
@@ -196,9 +196,9 @@ fn install_never_overwrites_an_unmanaged_launcher() {
     let revision = "4".repeat(40);
     let candidate = fixture.candidate("framework-test-v4", &revision);
     let launcher = fixture.install_root.join(if cfg!(windows) {
-        "bin/agentic.cmd"
+        "bin/adf.cmd"
     } else {
-        "bin/agentic"
+        "bin/adf"
     });
     fs::create_dir_all(launcher.parent().unwrap()).unwrap();
     fs::write(&launcher, "user-owned launcher\n").unwrap();
@@ -255,7 +255,7 @@ impl BinaryFixture {
     fn new() -> Self {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let root = std::env::temp_dir().join(format!(
-            "agentic-vnext-binary-install-{}-{}",
+            "adf-binary-install-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -275,7 +275,7 @@ impl BinaryFixture {
         let target = current_platform_target().unwrap();
         let binary_name = published_binary_name(target);
         let binary = candidate.join(&binary_name);
-        fs::copy(env!("CARGO_BIN_EXE_agentic"), &binary).unwrap();
+        fs::copy(env!("CARGO_BIN_EXE_adf"), &binary).unwrap();
         let binary_digest = digest(&binary);
         let build_name = format!("{binary_name}.build.json");
         let build = json!({
@@ -396,7 +396,7 @@ fn fake_digest(character: char) -> String {
 }
 
 fn run_cli(arguments: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_agentic"))
+    Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(arguments)
         .output()
         .unwrap()

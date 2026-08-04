@@ -1,5 +1,5 @@
-use agentic::schema::validate_json_document;
-use agentic::{canonical_digest, canonical_json};
+use adf::schema::validate_json_document;
+use adf::{canonical_digest, canonical_json};
 use ed25519_dalek::{Signer, SigningKey};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -13,35 +13,35 @@ use std::thread;
 
 #[test]
 fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
-    let help = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let help = Command::new(env!("CARGO_BIN_EXE_adf"))
         .arg("--help")
         .output()
         .unwrap();
     assert_success(&help);
     assert!(help.stderr.is_empty());
     let help = String::from_utf8_lossy(&help.stdout);
-    assert!(help.contains("agentic project init"));
+    assert!(help.contains("adf project init"));
     // A command that may change without notice has to say so where it is read.
     let (stable, experimental) = help
         .split_once("experimental, may change in any release")
         .expect("usage separates the experimental commands");
-    assert!(stable.contains("agentic <next|explain>"));
-    assert!(!stable.contains("agentic migration"));
-    assert!(experimental.contains("agentic migration"));
-    assert!(experimental.contains("agentic detector-audit"));
+    assert!(stable.contains("adf <next|explain>"));
+    assert!(!stable.contains("adf migration"));
+    assert!(experimental.contains("adf migration"));
+    assert!(experimental.contains("adf detector-audit"));
 
-    let version = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let version = Command::new(env!("CARGO_BIN_EXE_adf"))
         .arg("--version")
         .output()
         .unwrap();
     assert_success(&version);
     assert!(version.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&version.stdout).starts_with("agentic 0.1.0"));
+    assert!(String::from_utf8_lossy(&version.stdout).starts_with("adf 0.1.0"));
 
     let root = temporary_test_root("uninitialized");
     fs::create_dir_all(&root).unwrap();
     run_git(&root, &["init", "--quiet"]);
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let next = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["next", "change.example", "--project"])
         .arg(&root)
         .output()
@@ -49,7 +49,7 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
     assert!(!next.status.success());
     let stderr = String::from_utf8_lossy(&next.stderr);
     assert!(stderr.contains("Project is not initialized"));
-    assert!(stderr.contains("agentic project init"));
+    assert!(stderr.contains("adf project init"));
     let _ = fs::remove_dir_all(root);
 }
 
@@ -61,7 +61,7 @@ fn migration_inspect_reports_current_project_without_writing() {
         &["status", "--porcelain=v1", "--untracked-files=all"],
     );
     assert!(before.is_empty());
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "inspect", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -102,24 +102,22 @@ fn migration_inspect_reports_current_project_without_writing() {
 }
 
 #[test]
-fn migration_inspect_distinguishes_vnext_and_mixed_projects() {
-    let vnext = TestProject::new();
-    let output = vnext.run(&["migration", "inspect", "--format", "json"]);
+fn migration_inspect_distinguishes_framework_and_mixed_projects() {
+    let migrated = TestProject::new();
+    let output = migrated.run(&["migration", "inspect", "--format", "json"]);
     assert_success(&output);
     let report: Value = serde_json::from_slice(&output.stdout).unwrap();
     validate_output_schema(&report, "migration-inspection-report.schema.json");
-    assert_eq!(report["source_state"], "vnext");
-    assert_eq!(report["readiness"], "already-vnext");
+    assert_eq!(report["source_state"], "framework");
+    assert_eq!(report["readiness"], "already-migrated");
 
+    // A legacy project that also carries this framework's activation files.
     let mixed = legacy_migration_project("migration-mixed");
-    fs::write(
-        mixed.join(".agentic/framework.lock"),
-        "schema_version: '2'\n",
-    )
-    .unwrap();
-    run_git(&mixed, &["add", ".agentic/framework.lock"]);
+    fs::create_dir_all(mixed.join(".adf")).unwrap();
+    fs::write(mixed.join(".adf/framework.lock"), "schema_version: '2'\n").unwrap();
+    run_git(&mixed, &["add", ".adf/framework.lock"]);
     run_git(&mixed, &["commit", "--quiet", "-m", "add mixed marker"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "inspect", "--format", "json", "--project"])
         .arg(&mixed)
         .output()
@@ -146,7 +144,7 @@ fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
         "not part of the fixed revision\n",
     )
     .unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "inspect", "--format", "text", "--project"])
         .arg(&root)
         .output()
@@ -163,7 +161,7 @@ fn migration_inspect_blocks_a_dirty_revision_but_still_returns_the_report() {
 fn migration_draft_describes_reviewed_actions_without_writing() {
     let root = legacy_migration_project("migration-draft");
     let revision = git_output(&root, &["rev-parse", "HEAD"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -210,7 +208,7 @@ fn migration_draft_describes_reviewed_actions_without_writing() {
 fn migration_draft_requires_a_clean_migratable_current_project() {
     let dirty = legacy_migration_project("migration-draft-dirty");
     fs::write(dirty.join("untracked.txt"), "dirty\n").unwrap();
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--project"])
         .arg(&dirty)
         .output()
@@ -218,20 +216,20 @@ fn migration_draft_requires_a_clean_migratable_current_project() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr)
-            .contains("resolve the findings from `agentic migration inspect` first")
+            .contains("resolve the findings from `adf migration inspect` first")
     );
 
     let vnext = TestProject::new();
     let output = vnext.run(&["migration", "draft"]);
     assert!(!output.status.success());
-    assert!(String::from_utf8_lossy(&output.stderr).contains("project already uses vNext"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("project already uses the framework"));
     let _ = fs::remove_dir_all(dirty);
 }
 
 #[test]
 fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft() {
     let root = legacy_migration_project("migration-validate-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -240,20 +238,22 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
     let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     complete_migration_reviews(&mut draft);
     validate_output_schema(&draft, "migration-draft.schema.json");
-    let draft_path = root.join(".agentic/migration-draft.json");
+    let draft_path = root.join(".adf/migration-draft.json");
+    // A legacy project has no .adf yet; the draft is where the reviewer puts it.
+    fs::create_dir_all(draft_path.parent().unwrap()).unwrap();
     fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
     let before = git_output(
         &root,
         &["status", "--porcelain=v1", "--untracked-files=all"],
     );
-    assert!(before.contains(".agentic/migration-draft.json"));
+    assert!(before.contains(".adf/migration-draft.json"));
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-draft",
             "--draft",
-            ".agentic/migration-draft.json",
+            ".adf/migration-draft.json",
             "--format",
             "json",
             "--project",
@@ -275,12 +275,12 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
     );
 
     fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
-    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let blocked = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-draft",
             "--draft",
-            ".agentic/migration-draft.json",
+            ".adf/migration-draft.json",
             "--format",
             "json",
             "--project",
@@ -298,7 +298,7 @@ fn migration_validate_draft_accepts_explicit_reviews_and_ignores_only_the_draft(
 #[test]
 fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes() {
     let root = legacy_migration_project("migration-invalid-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -307,7 +307,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
     let mut draft: Value = serde_json::from_slice(&output.stdout).unwrap();
     let draft_path = root.join("migration-draft.json");
     fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
-    let incomplete = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let incomplete = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-draft",
@@ -334,7 +334,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
     complete_migration_reviews(&mut draft);
     draft["actions"][0]["instruction"] = json!("tampered");
     fs::write(&draft_path, serde_json::to_vec_pretty(&draft).unwrap()).unwrap();
-    let tampered = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let tampered = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-draft",
@@ -363,7 +363,7 @@ fn migration_validate_draft_rejects_missing_reviews_and_generated_field_changes(
 #[test]
 fn migration_validate_draft_rejects_a_stale_source_revision() {
     let root = legacy_migration_project("migration-stale-draft");
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -380,7 +380,7 @@ fn migration_validate_draft_rejects_a_stale_source_revision() {
     run_git(&root, &["add", "new-source.py"]);
     run_git(&root, &["commit", "--quiet", "-m", "advance source"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-draft",
@@ -410,7 +410,7 @@ fn migration_validate_draft_rejects_a_stale_source_revision() {
 fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     let root = legacy_migration_project("migration-candidate");
     let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -430,8 +430,8 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     )
     .unwrap();
 
-    let output_relative = ".agentic/migration-candidates/review-1";
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output_relative = ".adf/migration-candidates/review-1";
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -482,7 +482,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     let candidate = root.join(output_relative);
     let stored_manifest = read_yaml(&candidate.join("migration-manifest.yaml"));
     assert_eq!(stored_manifest, manifest);
-    let config = read_yaml(&candidate.join(".agentic/config.yaml"));
+    let config = read_yaml(&candidate.join(".adf/config.yaml"));
     assert_eq!(config["schema_version"], "1");
     assert_eq!(config["project_sources"]["contracts"], "contracts");
     let stored_draft = read_yaml(&candidate.join("migration-draft.json"));
@@ -494,14 +494,14 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
             format!("sha256:{:x}", Sha256::digest(bytes))
         );
     }
-    assert!(!candidate.join(".agentic/framework.lock").exists());
+    assert!(!candidate.join(".adf/framework.lock").exists());
     assert!(!candidate.join("contracts").exists());
     assert_eq!(
         fs::read(root.join(".agentic/config.yaml")).unwrap(),
         legacy_config
     );
 
-    let validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let validation = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -566,7 +566,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         &completion,
     );
 
-    let completed = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let completed = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -600,7 +600,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
         b"tampered contract candidate\n",
     )
     .unwrap();
-    let tampered_completion = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let tampered_completion = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -627,7 +627,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::write(candidate.join("contracts/migrated.yaml"), reviewed_contract).unwrap();
 
     fs::write(candidate.join("unclaimed.txt"), "not reviewed\n").unwrap();
-    let unclaimed = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let unclaimed = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -654,7 +654,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::remove_file(candidate.join("unclaimed.txt")).unwrap();
 
     fs::write(root.join("unrelated.txt"), "dirty\n").unwrap();
-    let blocked = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let blocked = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -674,7 +674,7 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     fs::remove_file(root.join("unrelated.txt")).unwrap();
 
     let manifest_before = fs::read(candidate.join("migration-manifest.yaml")).unwrap();
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -695,11 +695,11 @@ fn migration_generate_candidate_writes_only_an_isolated_incomplete_bundle() {
     );
 
     fs::write(
-        candidate.join(".agentic/config.yaml"),
+        candidate.join(".adf/config.yaml"),
         "schema_version: tampered\n",
     )
     .unwrap();
-    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let invalid = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -742,7 +742,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
             "add representative project source",
         ],
     );
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -756,8 +756,8 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     )
     .unwrap();
 
-    let output_relative = ".agentic/migration-candidates/activation-ready";
-    let generated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output_relative = ".adf/migration-candidates/activation-ready";
+    let generated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -778,22 +778,18 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     let release_project = TestProject::new();
 
     fs::copy(
-        release_project.root.join(".agentic/framework.lock"),
-        candidate.join(".agentic/framework.lock"),
+        release_project.root.join(".adf/framework.lock"),
+        candidate.join(".adf/framework.lock"),
     )
     .unwrap();
     fs::copy(
-        release_project
-            .root
-            .join(".agentic/trusted-release-keys.yaml"),
-        candidate.join(".agentic/trusted-release-keys.yaml"),
+        release_project.root.join(".adf/trusted-release-keys.yaml"),
+        candidate.join(".adf/trusted-release-keys.yaml"),
     )
     .unwrap();
     copy_tree(
         &release_project.release_root,
-        &candidate
-            .join(".agentic/cache/releases")
-            .join("prototype-vnext-dev"),
+        &candidate.join(".adf/cache/releases").join("adf-dev"),
     );
     fs::copy(
         release_project.release_root.join("rules.yaml"),
@@ -809,11 +805,11 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         &candidate.join("decisions"),
     );
     copy_tree(
-        &fixture_root.join(".agentic/changes"),
-        &candidate.join(".agentic/changes"),
+        &fixture_root.join(".adf/changes"),
+        &candidate.join(".adf/changes"),
     );
-    let evidence_relative = ".agentic/changes/change.place-order/evidence/evidence.migration.json";
-    fs::create_dir_all(candidate.join(".agentic/changes/change.place-order/evidence")).unwrap();
+    let evidence_relative = ".adf/changes/change.place-order/evidence/evidence.migration.json";
+    fs::create_dir_all(candidate.join(".adf/changes/change.place-order/evidence")).unwrap();
     fs::write(
         candidate.join(evidence_relative),
         serde_json::to_vec_pretty(&json!({
@@ -831,8 +827,8 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     )
     .unwrap();
     fs::copy(
-        fixture_root.join(".agentic/repository-observation.yaml"),
-        candidate.join(".agentic/repository-observation.yaml"),
+        fixture_root.join(".adf/repository-observation.yaml"),
+        candidate.join(".adf/repository-observation.yaml"),
     )
     .unwrap();
 
@@ -848,19 +844,16 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         ),
         (
             "change-workflow",
-            vec![".agentic/changes/change.place-order/change.yaml"],
+            vec![".adf/changes/change.place-order/change.yaml"],
         ),
         ("evidence", vec![evidence_relative]),
         (
             "repository-observation",
-            vec![".agentic/repository-observation.yaml"],
+            vec![".adf/repository-observation.yaml"],
         ),
         (
             "framework-release",
-            vec![
-                ".agentic/framework.lock",
-                ".agentic/trusted-release-keys.yaml",
-            ],
+            vec![".adf/framework.lock", ".adf/trusted-release-keys.yaml"],
         ),
     ]);
     for (action_id, artifacts) in &action_artifacts {
@@ -908,8 +901,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         "contracts",
         &action_artifacts["contracts"],
     );
-    let release_manifest =
-        candidate.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml");
+    let release_manifest = candidate.join(".adf/cache/releases/adf-dev/release.yaml");
     let mut tampered_release = read_yaml(&release_manifest);
     tampered_release["signature"] = Value::String(format!("ed25519:{}", "0".repeat(128)));
     write_yaml(&release_manifest, &tampered_release);
@@ -935,7 +927,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
 
     let source_revision = git_output(&root, &["rev-parse", "HEAD"]);
     let legacy_config = fs::read(root.join(".agentic/config.yaml")).unwrap();
-    let applied = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let applied = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "apply-candidate",
@@ -986,14 +978,14 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         );
     }
     assert_eq!(
-        read_yaml(&root.join(".agentic/config.yaml"))["schema_version"],
+        read_yaml(&root.join(".adf/config.yaml"))["schema_version"],
         "1"
     );
-    assert!(read_yaml(&root.join(".agentic/config.yaml"))["project_sources"].is_object());
+    assert!(read_yaml(&root.join(".adf/config.yaml"))["project_sources"].is_object());
     assert_eq!(git_output(&root, &["rev-parse", "HEAD"]), source_revision);
     assert!(git_output(&root, &["diff", "--cached", "--name-only"]).is_empty());
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "apply-candidate",
@@ -1009,7 +1001,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     assert!(!candidate.join("migration-apply.lock").exists());
 
     run_git(&root, &["add", "."]);
-    let staged_validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let staged_validation = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "validate-bindings",
@@ -1028,7 +1020,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
 
     run_git(
         &root,
-        &["commit", "--quiet", "-m", "apply reviewed vNext migration"],
+        &["commit", "--quiet", "-m", "apply reviewed migration"],
     );
     assert!(
         git_output(
@@ -1037,7 +1029,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
         )
         .is_empty()
     );
-    let clean_validation = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let clean_validation = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "validate-bindings",
@@ -1053,7 +1045,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
     let validation: Value = serde_json::from_slice(&clean_validation.stdout).unwrap();
     assert_eq!(validation["status"], "valid");
 
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let next = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "next",
             "change.place-order",
@@ -1075,7 +1067,7 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
 #[test]
 fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project() {
     let root = legacy_migration_project("migration-apply-incomplete");
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -1088,8 +1080,8 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
         serde_json::to_vec_pretty(&draft).unwrap(),
     )
     .unwrap();
-    let candidate_relative = ".agentic/migration-candidates/incomplete";
-    let generated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let candidate_relative = ".adf/migration-candidates/incomplete";
+    let generated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -1109,7 +1101,7 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
         &root,
         &["status", "--porcelain=v1", "--untracked-files=all"],
     );
-    let applied = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let applied = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "apply-candidate",
@@ -1136,8 +1128,8 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
         ),
         status_before
     );
-    assert!(!root.join(".agentic/migrations").exists());
-    assert!(!root.join(".agentic/migration-history").exists());
+    assert!(!root.join(".adf/migrations").exists());
+    assert!(!root.join(".adf/migration-history").exists());
     assert!(
         !root
             .join(candidate_relative)
@@ -1150,7 +1142,7 @@ fn migration_apply_rejects_an_incomplete_candidate_without_mutating_the_project(
 #[test]
 fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     let root = legacy_migration_project("migration-candidate-invalid");
-    let draft_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let draft_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["migration", "draft", "--format", "json", "--project"])
         .arg(&root)
         .output()
@@ -1163,7 +1155,7 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     )
     .unwrap();
 
-    let unsafe_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let unsafe_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -1179,12 +1171,12 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
     assert!(!unsafe_output.status.success());
     assert!(
         String::from_utf8_lossy(&unsafe_output.stderr)
-            .contains("must be under .agentic/migration-candidates")
+            .contains("must be under .adf/migration-candidates")
     );
     assert!(!root.join("migration-candidate").exists());
 
-    let output_relative = ".agentic/migration-candidates/unreviewed";
-    let unreviewed = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output_relative = ".adf/migration-candidates/unreviewed";
+    let unreviewed = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "generate-candidate",
@@ -1207,7 +1199,7 @@ fn migration_generate_candidate_rejects_unreviewed_drafts_and_unsafe_outputs() {
 
 #[test]
 fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
-    let json_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let json_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["catalog", "signal-domains", "--format", "json"])
         .output()
         .unwrap();
@@ -1264,7 +1256,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     let golden: Value = serde_json::from_slice(&fs::read(golden_path).unwrap()).unwrap();
     assert_eq!(catalog, golden);
 
-    let text_output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let text_output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["catalog", "signal-domains"])
         .output()
         .unwrap();
@@ -1278,7 +1270,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     assert!(text.contains("authorization_change -> authorization-control-change"));
     assert!(text.contains("sensitive_data_access -> sensitive-data-access"));
 
-    let invalid = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let invalid = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["catalog", "unknown"])
         .output()
         .unwrap();
@@ -1295,7 +1287,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     let candidate = release.root.join("bootstrap-candidate");
     fs::create_dir(&candidate).unwrap();
     fs::copy(
-        release.root.join(".agentic/framework.lock"),
+        release.root.join(".adf/framework.lock"),
         candidate.join("candidate-framework.lock"),
     )
     .unwrap();
@@ -1307,7 +1299,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
     let trust = json!({
         "schema_version": "1",
-        "release_id": "prototype-vnext-dev",
+        "release_id": "adf-dev",
         "keys": [{
             "id": "test.framework.release",
             "algorithm": "ed25519",
@@ -1331,7 +1323,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
         &root,
         &["commit", "--quiet", "--allow-empty", "-m", "initial"],
     );
-    let initialized = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let initialized = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["project", "init", "--project"])
         .arg(&root)
         .arg("--candidate-dir")
@@ -1341,39 +1333,39 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     assert_success(&initialized);
     let initialized_stdout = String::from_utf8_lossy(&initialized.stdout);
     assert!(initialized_stdout.contains("Next: if source code already exists"));
-    assert!(initialized_stdout.contains("agentic project observe"));
-    assert!(initialized_stdout.contains("agentic project validate-bindings"));
-    assert!(root.join(".agentic/config.yaml").is_file());
-    assert!(root.join(".agentic/framework.lock").is_file());
-    assert!(root.join(".agentic/repository-observation.yaml").is_file());
+    assert!(initialized_stdout.contains("adf project observe"));
+    assert!(initialized_stdout.contains("adf project validate-bindings"));
+    assert!(root.join(".adf/config.yaml").is_file());
+    assert!(root.join(".adf/framework.lock").is_file());
+    assert!(root.join(".adf/repository-observation.yaml").is_file());
     assert_eq!(
-        read_yaml(&root.join(".agentic/repository-observation.yaml"))["schema_version"],
+        read_yaml(&root.join(".adf/repository-observation.yaml"))["schema_version"],
         "5"
     );
-    assert!(root.join(".agentic/trusted-release-keys.yaml").is_file());
+    assert!(root.join(".adf/trusted-release-keys.yaml").is_file());
     assert!(
-        root.join(".agentic/cache/releases/prototype-vnext-dev/release.yaml")
+        root.join(".adf/cache/releases/adf-dev/release.yaml")
             .is_file()
     );
-    for skill in ["agentic-analyst", "agentic-builder", "agentic-challenger"] {
+    for skill in ["adf-analyst", "adf-builder", "adf-challenger"] {
         assert!(
             root.join(format!(".agents/skills/{skill}/SKILL.md"))
                 .is_file(),
             "{skill} was not placed"
         );
     }
-    assert!(root.join("docs/agentic/README.md").is_file());
+    assert!(root.join("docs/adf/README.md").is_file());
     assert!(
-        root.join(".agents/skills/agentic-challenger/references/challenge-method.md")
+        root.join(".agents/skills/adf-challenger/references/challenge-method.md")
             .is_file()
     );
     // Records shaped for the retired CLI would leave contracts/ unable to load.
     assert!(!root.join("contracts/catalog.yaml").exists());
     let agents = fs::read_to_string(root.join("AGENTS.md")).unwrap();
-    assert!(agents.contains("<!-- agentic-development:start -->"));
-    assert!(agents.contains("$agentic-analyst"));
+    assert!(agents.contains("<!-- adf:start -->"));
+    assert!(agents.contains("$adf-analyst"));
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["project", "init", "--project"])
         .arg(&root)
         .arg("--candidate-dir")
@@ -1383,7 +1375,7 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     assert!(!repeated.status.success());
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("would overwrite"));
 
-    let change = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let change = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "change",
             "init",
@@ -1401,9 +1393,9 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     // Initialization now also places the skills, the templates, and AGENTS.md,
     // so the whole tree is staged rather than a fixed list of files.
     run_git(&root, &["add", "-A"]);
-    run_git(&root, &["commit", "--quiet", "-m", "initialize agentic"]);
+    run_git(&root, &["commit", "--quiet", "-m", "initialize adf"]);
 
-    let next = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let next = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["next", "change.example", "--require-clean", "--project"])
         .arg(&root)
         .output()
@@ -1483,7 +1475,7 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
     .unwrap();
     fs::write(root.join("src/native.cpp"), "void save() {}\n").unwrap();
     run_git(&root, &["init", "--quiet"]);
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -1660,15 +1652,15 @@ fn project_observe_reports_physical_identities_without_inventing_bindings() {
 fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     let root = temporary_test_root("project-observe-output");
     fs::create_dir_all(root.join("src")).unwrap();
-    fs::create_dir_all(root.join(".agentic/drafts")).unwrap();
+    fs::create_dir_all(root.join(".adf/drafts")).unwrap();
     fs::write(
         root.join("src/orders.py"),
         "def save(order):\n    orders.insert(order)\n",
     )
     .unwrap();
     run_git(&root, &["init", "--quiet"]);
-    let relative = ".agentic/drafts/repository-observation.yaml";
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let relative = ".adf/drafts/repository-observation.yaml";
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -1694,7 +1686,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert_eq!(draft["kind"], "repository-observation-draft");
     assert!(draft["binding_artifacts"][0]["bindings"]["symbols"]["save"]["logical_ref"].is_null());
 
-    let repeated = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let repeated = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -1711,7 +1703,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("refusing to overwrite"));
     assert_eq!(fs::read(&draft_path).unwrap(), original);
 
-    let escaped = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let escaped = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -1727,7 +1719,7 @@ fn project_observe_writes_a_new_draft_without_applying_or_overwriting_it() {
     assert!(!escaped.status.success());
     assert!(String::from_utf8_lossy(&escaped.stderr).contains("must stay in the repository"));
 
-    let git_internal = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let git_internal = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -1779,7 +1771,7 @@ fn project_observe_uses_only_the_signed_release_framework_catalog() {
     assert_success(&observed);
     let draft: Value = serde_json::from_slice(&observed.stdout).unwrap();
     let candidate = &draft["artifacts"][0]["framework_candidates"][0];
-    assert_eq!(candidate["framework"], "dev.agentic-kit/typeorm");
+    assert_eq!(candidate["framework"], "dev.adf/typeorm");
     assert_eq!(candidate["method"], "save");
     assert_eq!(candidate["suggested_fact_kinds"], json!(["db_write"]));
     assert_eq!(candidate["review_status"], "required");
@@ -1812,24 +1804,24 @@ fn project_observe_refuses_a_symlinked_draft_output() {
     let root = temporary_test_root("project-observe-output-symlink");
     let outside = temporary_test_root("project-observe-output-symlink-target");
     fs::create_dir_all(root.join("src")).unwrap();
-    fs::create_dir_all(root.join(".agentic")).unwrap();
+    fs::create_dir_all(root.join(".adf")).unwrap();
     fs::write(
         root.join("src/orders.py"),
         "def save(order):\n    orders.insert(order)\n",
     )
     .unwrap();
     fs::write(&outside, "keep\n").unwrap();
-    symlink(&outside, root.join(".agentic/draft.yaml")).unwrap();
+    symlink(&outside, root.join(".adf/draft.yaml")).unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
             "--analysis-root",
             "src",
             "--output",
-            ".agentic/draft.yaml",
+            ".adf/draft.yaml",
             "--project",
         ])
         .arg(&root)
@@ -1853,11 +1845,11 @@ fn project_validates_and_promotes_a_reviewed_draft_safely() {
          \x20   orders.save(order)\n",
     )
     .unwrap();
-    let active_path = project.root.join(".agentic/repository-observation.yaml");
+    let active_path = project.root.join(".adf/repository-observation.yaml");
     let mut base_observation = read_yaml(&active_path);
     base_observation["phase"] = json!("post-build");
     write_yaml(&active_path, &base_observation);
-    let draft_relative = ".agentic/repository-observation.draft.yaml";
+    let draft_relative = ".adf/repository-observation.draft.yaml";
     let observed = project.run(&[
         "project",
         "observe",
@@ -2027,7 +2019,7 @@ fn project_validates_and_promotes_a_reviewed_draft_safely() {
     assert!(!missing_draft.status.success());
     assert!(String::from_utf8_lossy(&missing_draft.stderr).contains("requires --draft"));
     assert!(
-        !fs::read_dir(project.root.join(".agentic"))
+        !fs::read_dir(project.root.join(".adf"))
             .unwrap()
             .any(|entry| entry
                 .unwrap()
@@ -2204,7 +2196,7 @@ fn project_observe_suggests_eight_major_orms_without_approving_them() {
     .unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -2370,7 +2362,7 @@ fn project_observe_suggests_eight_major_messaging_apis_without_approving_them() 
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -2519,7 +2511,7 @@ fn project_observe_suggests_eight_major_http_clients_without_approving_them() {
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -2586,7 +2578,7 @@ fn project_observe_suggests_three_object_storage_families_without_approving_them
     }
     run_git(&root, &["init", "--quiet"]);
 
-    let output = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let output = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -2648,7 +2640,7 @@ fn assert_review_candidates(draft: &Value, expected: &[(&str, &str, &str)], kind
 #[test]
 fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
     let project = TestProject::new();
-    let observe = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let observe = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "project",
             "observe",
@@ -2664,7 +2656,7 @@ fn binding_artifacts_are_not_authoritative_until_placeholders_are_reviewed() {
     assert_success(&observe);
     let draft: Value = serde_json::from_slice(&observe.stdout).unwrap();
     write_yaml(
-        &project.root.join(".agentic/repository-observation.yaml"),
+        &project.root.join(".adf/repository-observation.yaml"),
         &json!({
             "schema_version": "5",
             "phase": "pre-build",
@@ -2717,7 +2709,7 @@ fn project_validate_bindings_reports_a_valid_reviewed_repository() {
 #[test]
 fn project_validate_bindings_reports_missing_and_ambiguous_bindings() {
     let project = TestProject::new();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["resources"] = json!({});
     write_yaml(&observation_path, &observation);
@@ -2734,7 +2726,7 @@ fn project_validate_bindings_reports_missing_and_ambiguous_bindings() {
     let missing_text = project.run(&["project", "validate-bindings"]);
     assert!(!missing_text.status.success());
     let missing_stdout = String::from_utf8_lossy(&missing_text.stdout);
-    assert!(missing_stdout.contains("Next: run agentic project observe"));
+    assert!(missing_stdout.contains("Next: run adf project observe"));
     assert!(missing_stdout.contains("Binding candidates are never applied automatically"));
 
     fs::write(
@@ -2788,7 +2780,7 @@ fn project_validate_bindings_reports_missing_and_ambiguous_bindings() {
 #[test]
 fn project_validate_bindings_reports_unaccepted_authority_and_coverage_blocks() {
     let project = TestProject::new();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["methods"]["unused.save"] = json!({
         "kind": "db_write",
@@ -2878,7 +2870,7 @@ fn assert_language_artifact_with_optional_method_binding(
     let project = TestProject::new();
     fs::remove_file(project.root.join("src/place_order.py")).unwrap();
     fs::write(project.root.join(path), source).unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["path"] = Value::String(path.to_owned());
     observation["artifacts"][0]["language"] = Value::String(language.to_owned());
@@ -2920,10 +2912,10 @@ fn project_commands_refuse_symlinked_project_paths() {
     fs::create_dir_all(&root).unwrap();
     fs::create_dir_all(&outside).unwrap();
     fs::write(outside.join("config.yaml"), "schema_version: \"1\"\n").unwrap();
-    symlink(&outside, root.join(".agentic")).unwrap();
+    symlink(&outside, root.join(".adf")).unwrap();
     run_git(&root, &["init", "--quiet"]);
 
-    let change = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let change = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "change",
             "init",
@@ -2941,7 +2933,7 @@ fn project_commands_refuse_symlinked_project_paths() {
     assert!(String::from_utf8_lossy(&change.stderr).contains("symlinked project path"));
     assert!(!outside.join("changes/change.example/change.yaml").exists());
 
-    let _ = fs::remove_file(root.join(".agentic"));
+    let _ = fs::remove_file(root.join(".adf"));
     let _ = fs::remove_dir_all(root);
     let _ = fs::remove_dir_all(outside);
 }
@@ -2996,7 +2988,7 @@ fn project_next_explain_and_contract_health_share_the_real_project_loader() {
 #[test]
 fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
     let project = TestProject::new();
-    let policy_path = project.root.join(".agentic/contract-health-policy.yaml");
+    let policy_path = project.root.join(".adf/contract-health-policy.yaml");
     let blocking_policy = json!({
         "schema_version": "1",
         "fail_on": ["failed", "unverified"]
@@ -3007,7 +2999,7 @@ fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
     let failed = project.run(&[
         "contract-health",
         "--policy",
-        ".agentic/contract-health-policy.yaml",
+        ".adf/contract-health-policy.yaml",
         "--format",
         "json",
     ]);
@@ -3033,7 +3025,7 @@ fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
     let passed = project.run(&[
         "contract-health",
         "--policy",
-        ".agentic/contract-health-policy.yaml",
+        ".adf/contract-health-policy.yaml",
         "--format",
         "json",
     ]);
@@ -3047,7 +3039,7 @@ fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
 #[test]
 fn contract_health_gate_rejects_invalid_or_untracked_policy() {
     let project = TestProject::new();
-    let policy_path = project.root.join(".agentic/contract-health-policy.yaml");
+    let policy_path = project.root.join(".adf/contract-health-policy.yaml");
     write_yaml(
         &policy_path,
         &json!({
@@ -3058,7 +3050,7 @@ fn contract_health_gate_rejects_invalid_or_untracked_policy() {
     let invalid = project.run(&[
         "contract-health",
         "--policy",
-        ".agentic/contract-health-policy.yaml",
+        ".adf/contract-health-policy.yaml",
     ]);
     assert!(!invalid.status.success());
     assert!(
@@ -3075,13 +3067,13 @@ fn contract_health_gate_rejects_invalid_or_untracked_policy() {
     );
     fs::write(
         project.root.join(".git/info/exclude"),
-        ".agentic/contract-health-policy.yaml\n",
+        ".adf/contract-health-policy.yaml\n",
     )
     .unwrap();
     let untracked = project.run(&[
         "contract-health",
         "--policy",
-        ".agentic/contract-health-policy.yaml",
+        ".adf/contract-health-policy.yaml",
         "--require-clean",
     ]);
     assert!(!untracked.status.success());
@@ -3094,7 +3086,7 @@ fn contract_health_gate_rejects_invalid_or_untracked_policy() {
 #[test]
 fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     let project = TestProject::new();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["mcp", "--project"])
         .arg(&project.root)
         .stdin(Stdio::piped())
@@ -3142,17 +3134,17 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     assert_eq!(
         names,
         [
-            "agentic_abandon_action",
-            "agentic_add_evidence",
-            "agentic_apply_contract",
-            "agentic_apply_decision",
-            "agentic_contract_health",
-            "agentic_explain",
-            "agentic_next",
-            "agentic_submit",
+            "adf_abandon_action",
+            "adf_add_evidence",
+            "adf_apply_contract",
+            "adf_apply_decision",
+            "adf_contract_health",
+            "adf_explain",
+            "adf_next",
+            "adf_submit",
         ]
     );
-    for name in ["agentic_next", "agentic_submit"] {
+    for name in ["adf_next", "adf_submit"] {
         let tool = tools
             .iter()
             .find(|tool| tool["name"].as_str() == Some(name))
@@ -3162,7 +3154,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     }
     let contract_tool = tools
         .iter()
-        .find(|tool| tool["name"].as_str() == Some("agentic_apply_contract"))
+        .find(|tool| tool["name"].as_str() == Some("adf_apply_contract"))
         .unwrap();
     assert!(
         contract_tool["inputSchema"]["properties"]["expected_clause_digests"].is_object(),
@@ -3174,7 +3166,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
         "id": 3,
         "method": "tools/call",
         "params": {
-            "name": "agentic_next",
+            "name": "adf_next",
             "arguments": {"change_id": "change.place-order"}
         }
     });
@@ -3243,7 +3235,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "jsonrpc": "2.0",
             "id": 4,
             "method": "tools/call",
-            "params": {"name": "agentic_submit", "arguments": wrong_arguments}
+            "params": {"name": "adf_submit", "arguments": wrong_arguments}
         }),
     );
     let rejected = mcp_receive(&mut output);
@@ -3259,7 +3251,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "jsonrpc": "2.0",
             "id": 5,
             "method": "tools/call",
-            "params": {"name": "agentic_submit", "arguments": arguments}
+            "params": {"name": "adf_submit", "arguments": arguments}
         }),
     );
     let submitted = mcp_receive(&mut output);
@@ -3274,13 +3266,9 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             .starts_with("result.")
     );
     assert_eq!(
-        fs::read_dir(
-            project
-                .root
-                .join(".agentic/changes/change.place-order/results")
-        )
-        .unwrap()
-        .count(),
+        fs::read_dir(project.root.join(".adf/changes/change.place-order/results"))
+            .unwrap()
+            .count(),
         1
     );
 
@@ -3290,7 +3278,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "jsonrpc": "2.0",
             "id": 6,
             "method": "tools/call",
-            "params": {"name": "agentic_submit", "arguments": arguments}
+            "params": {"name": "adf_submit", "arguments": arguments}
         }),
     );
     let retried = mcp_receive(&mut output);
@@ -3317,7 +3305,7 @@ fn an_action_survives_the_server_process_that_issued_it() {
         &mut issuing_input,
         &mut issuing_output,
         3,
-        "agentic_next",
+        "adf_next",
         json!({"change_id": "change.place-order"}),
     );
     assert_eq!(issued["isError"], false);
@@ -3331,17 +3319,11 @@ fn an_action_survives_the_server_process_that_issued_it() {
 
     let (mut resumed, mut resumed_input, mut resumed_output) = start_mcp_server(&project.root);
 
-    let stale = mcp_call(
-        &mut resumed_input,
-        &mut resumed_output,
-        3,
-        "agentic_submit",
-        {
-            let mut stale = arguments.clone();
-            stale["action_id"] = Value::String("action.0000000000000000".to_owned());
-            stale
-        },
-    );
+    let stale = mcp_call(&mut resumed_input, &mut resumed_output, 3, "adf_submit", {
+        let mut stale = arguments.clone();
+        stale["action_id"] = Value::String("action.0000000000000000".to_owned());
+        stale
+    });
     assert_eq!(stale["isError"], true);
     assert_eq!(
         stale["structuredContent"]["code"], "ACTION_NOT_CURRENT",
@@ -3357,7 +3339,7 @@ fn an_action_survives_the_server_process_that_issued_it() {
         &mut resumed_input,
         &mut resumed_output,
         4,
-        "agentic_submit",
+        "adf_submit",
         arguments.clone(),
     );
     assert_eq!(
@@ -3371,19 +3353,15 @@ fn an_action_survives_the_server_process_that_issued_it() {
         &mut resumed_input,
         &mut resumed_output,
         5,
-        "agentic_submit",
+        "adf_submit",
         arguments,
     );
     assert_eq!(retried["isError"], false);
     assert_eq!(retried["structuredContent"]["already_completed"], true);
     assert_eq!(
-        fs::read_dir(
-            project
-                .root
-                .join(".agentic/changes/change.place-order/results")
-        )
-        .unwrap()
-        .count(),
+        fs::read_dir(project.root.join(".adf/changes/change.place-order/results"))
+            .unwrap()
+            .count(),
         1
     );
 
@@ -3392,7 +3370,7 @@ fn an_action_survives_the_server_process_that_issued_it() {
 }
 
 fn start_mcp_server(root: &Path) -> (Child, ChildStdin, BufReader<ChildStdout>) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_agentic"))
+    let mut child = Command::new(env!("CARGO_BIN_EXE_adf"))
         .args(["mcp", "--project"])
         .arg(root)
         .stdin(Stdio::piped())
@@ -3522,8 +3500,8 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
     let text = project.run(&["next", "change.place-order"]);
     assert_success(&text);
     let stdout = String::from_utf8_lossy(&text.stdout);
-    assert!(stdout.contains("Next: run agentic project observe"));
-    assert!(stdout.contains("Then: run agentic project validate-bindings"));
+    assert!(stdout.contains("Next: run adf project observe"));
+    assert!(stdout.contains("Then: run adf project validate-bindings"));
     assert!(stdout.contains("Binding candidates are never applied automatically"));
 }
 
@@ -3546,7 +3524,7 @@ fn ambiguous_short_symbol_binding_blocks_same_named_methods() {
          class B { void save() { orders.insert(null); } }\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"]
         .as_array_mut()
@@ -3604,7 +3582,7 @@ fn declared_inventory_only_language_reports_unsupported_language() {
         "int main() { return 0; }\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"]
         .as_array_mut()
@@ -3784,7 +3762,7 @@ fn syntax_error_blocks_detection() {
 #[test]
 fn observed_resource_without_a_binding_blocks_detection() {
     let project = TestProject::new();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["resources"] = json!({});
     write_yaml(&observation_path, &observation);
@@ -3857,7 +3835,7 @@ fn reviewed_framework_method_binding_classifies_a_non_builtin_method() {
          \x20   orders.save(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["methods"]["orders.save"] = json!({
         "kind": "db_write",
@@ -3883,7 +3861,7 @@ fn reviewed_messaging_method_binding_classifies_a_non_builtin_method() {
          \x20   orders.delay(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["resources"]["orders"]["logical_ref"] =
         json!("integration.order-tasks");
@@ -3910,7 +3888,7 @@ fn reviewed_external_call_binding_emits_generic_and_specific_signals() {
          \x20   payment_client.request(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["resources"]["payment_client"] = json!({
         "logical_ref": "integration.payment-provider",
@@ -3944,7 +3922,7 @@ fn reviewed_object_write_binding_emits_generic_and_specific_signals() {
          \x20   archive_bucket.put_object(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
         "logical_ref": "data.order-archive",
@@ -3978,7 +3956,7 @@ fn reviewed_multi_fact_binding_emits_external_and_object_write_signals() {
          \x20   archive_bucket.put_object(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["schema_version"] = json!("5");
     observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
@@ -4020,7 +3998,7 @@ fn multi_fact_binding_fails_closed_when_one_logical_ref_is_missing() {
          \x20   archive_bucket.put_object(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["schema_version"] = json!("5");
     observation["artifacts"][0]["bindings"]["resources"]["archive_bucket"] = json!({
@@ -4058,7 +4036,7 @@ fn reviewed_security_bindings_emit_authorization_and_sensitive_data_signals() {
          \x20   customers.find(order)\n",
     )
     .unwrap();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["schema_version"] = json!("5");
     observation["artifacts"][0]["bindings"]["resources"]["permissions"] = json!({
@@ -4109,7 +4087,7 @@ fn reviewed_security_bindings_emit_authorization_and_sensitive_data_signals() {
 #[test]
 fn unknown_method_binding_kind_is_rejected_before_detection() {
     let project = TestProject::new();
-    let observation_path = project.root.join(".agentic/repository-observation.yaml");
+    let observation_path = project.root.join(".adf/repository-observation.yaml");
     let mut observation = read_yaml(&observation_path);
     observation["artifacts"][0]["bindings"]["methods"]["orders.save"] = json!({
         "kind": "unknown_write",
@@ -4146,7 +4124,7 @@ fn run_framework_e2e(case_id: &str, expected_frameworks: &[&str]) -> Value {
         &project.root,
         &["commit", "--quiet", "-m", "add framework fixture"],
     );
-    let draft_relative = format!(".agentic/{case_id}.draft.yaml");
+    let draft_relative = format!(".adf/{case_id}.draft.yaml");
     let observed = project.run(&[
         "project",
         "observe",
@@ -4394,14 +4372,14 @@ fn release_resolver_rejects_tampered_schema_assets() {
 #[test]
 fn release_resolver_rejects_asset_path_escape() {
     let project = TestProject::new();
-    let mut lock = read_yaml(&project.root.join(".agentic/framework.lock"));
+    let mut lock = read_yaml(&project.root.join(".adf/framework.lock"));
     lock["schema_version"] = Value::String("1".to_owned());
     lock.as_object_mut().unwrap().remove("release_artifact");
-    write_yaml(&project.root.join(".agentic/framework.lock"), &lock);
+    write_yaml(&project.root.join(".adf/framework.lock"), &lock);
     fs::write(
         project.release_root.join("release.yaml"),
         "schema_version: \"1\"\n\
-         release_id: prototype-vnext-dev\n\
+         release_id: adf-dev\n\
          assets:\n\
          \x20 rules: ../rules.yaml\n\
          \x20 schemas: schemas/v1\n",
@@ -4451,7 +4429,7 @@ fn signed_offline_bundle_is_installed_atomically() {
         "install",
         "offline-bundle",
         "--lock",
-        ".agentic/framework.lock",
+        ".adf/framework.lock",
     ]);
     assert_success(&output);
     assert!(project.release_root.join("release.yaml").is_file());
@@ -4521,7 +4499,7 @@ fn the_public_key_of_a_signing_seed_can_be_derived_without_disclosing_it() {
 
     let derived = project.run_with_env(
         &["release", "public-key"],
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &seed,
     );
     assert_success(&derived);
@@ -4543,13 +4521,13 @@ fn the_public_key_of_a_signing_seed_can_be_derived_without_disclosing_it() {
     );
     arguments.push("--expected-public-key");
     arguments.push(&public_key);
-    let published = project.run_with_env(&arguments, "AGENTIC_RELEASE_SIGNING_KEY_HEX", &seed);
+    let published = project.run_with_env(&arguments, "ADF_RELEASE_SIGNING_KEY_HEX", &seed);
     assert_success(&published);
 
     let missing = project.run(&["release", "public-key"]);
     assert!(!missing.status.success());
     assert!(
-        String::from_utf8_lossy(&missing.stderr).contains("AGENTIC_RELEASE_SIGNING_KEY_HEX"),
+        String::from_utf8_lossy(&missing.stderr).contains("ADF_RELEASE_SIGNING_KEY_HEX"),
         "the missing seed has to be named"
     );
 }
@@ -4566,20 +4544,20 @@ fn publisher_is_reproducible_non_overwriting_and_consumable() {
             "published/release-a.tar",
             "published/framework-a.lock",
         ),
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &seed,
     );
     assert_success(&first);
     let receipt: Value = serde_json::from_slice(&first.stdout).unwrap();
     validate_delivery_schema(&receipt, "publish-receipt.schema.json");
-    assert_eq!(receipt["release_id"], "prototype-vnext-dev");
+    assert_eq!(receipt["release_id"], "adf-dev");
     let second = project.run_with_env(
         &publisher_arguments(
             "publisher-source",
             "published/release-b.tar",
             "published/framework-b.lock",
         ),
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &seed,
     );
     assert_success(&second);
@@ -4599,7 +4577,7 @@ fn publisher_is_reproducible_non_overwriting_and_consumable() {
             "published/release-a.tar",
             "published/framework-a.lock",
         ),
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &seed,
     );
     assert!(!duplicate.status.success());
@@ -4608,7 +4586,7 @@ fn publisher_is_reproducible_non_overwriting_and_consumable() {
         fs::read(project.root.join("published/release-a.tar")).unwrap()
     );
 
-    let trust_path = project.root.join(".agentic/trusted-release-keys.yaml");
+    let trust_path = project.root.join(".adf/trusted-release-keys.yaml");
     let mut trust = read_yaml(&trust_path);
     trust["keys"][0]["allowed_sources"]
         .as_array_mut()
@@ -4661,10 +4639,10 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
 
     let missing = project.run(&arguments);
     assert!(!missing.status.success());
-    assert!(String::from_utf8_lossy(&missing.stderr).contains("AGENTIC_RELEASE_SIGNING_KEY_HEX"));
+    assert!(String::from_utf8_lossy(&missing.stderr).contains("ADF_RELEASE_SIGNING_KEY_HEX"));
     let invalid = project.run_with_env(
         &arguments,
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         "not-a-secret-key",
     );
     assert!(!invalid.status.success());
@@ -4680,7 +4658,7 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
     wrong_key_arguments.extend(["--expected-public-key", &expected_public_key]);
     let wrong_key = project.run_with_env(
         &wrong_key_arguments,
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &"07".repeat(32),
     );
     assert!(!wrong_key.status.success());
@@ -4688,17 +4666,17 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
     assert!(!project.root.join("published/wrong-key.tar").exists());
     assert!(!project.root.join("published/wrong-key.lock").exists());
 
-    let mut incompatible = read_yaml(&project.root.join(".agentic/framework.lock"));
+    let mut incompatible = read_yaml(&project.root.join(".adf/framework.lock"));
     incompatible["protocols"]["kernel"] = Value::String("unexpected".to_owned());
     write_yaml(
-        &project.root.join(".agentic/incompatible-publisher.lock"),
+        &project.root.join(".adf/incompatible-publisher.lock"),
         &incompatible,
     );
     let mut incompatible_arguments = arguments;
-    incompatible_arguments[4] = ".agentic/incompatible-publisher.lock";
+    incompatible_arguments[4] = ".adf/incompatible-publisher.lock";
     let rejected = project.run_with_env(
         &incompatible_arguments,
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &"07".repeat(32),
     );
     assert!(!rejected.status.success());
@@ -4707,7 +4685,7 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
 
     fs::write(
         source.join("framework-catalog.yaml"),
-        "schema_version: '1'\nnamespace: agentic\nrules: []\n",
+        "schema_version: '1'\nnamespace: adf\nrules: []\n",
     )
     .unwrap();
     let invalid_catalog = project.run_with_env(
@@ -4716,11 +4694,11 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
             "published/invalid-catalog.tar",
             "published/invalid-catalog.lock",
         ),
-        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        "ADF_RELEASE_SIGNING_KEY_HEX",
         &"07".repeat(32),
     );
     assert!(!invalid_catalog.status.success());
-    assert!(String::from_utf8_lossy(&invalid_catalog.stderr).contains("namespace agentic"));
+    assert!(String::from_utf8_lossy(&invalid_catalog.stderr).contains("namespace adf"));
     assert!(!project.root.join("published/invalid-catalog.tar").exists());
     assert!(!project.root.join("published/invalid-catalog.lock").exists());
 }
@@ -4729,8 +4707,8 @@ fn publisher_rejects_missing_or_invalid_signing_secrets() {
 fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
     let record = json!({
         "schema_version": "1",
-        "release_id": "prototype-vnext-dev",
-        "release_tag": "framework-prototype-vnext-dev",
+        "release_id": "adf-dev",
+        "release_tag": "framework-adf-dev",
         "source_revision": "1".repeat(40),
         "candidate_workflow_run_id": "12345",
         "source_id": "remote:test-fixture",
@@ -4749,25 +4727,25 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
             "LICENSE-APACHE": format!("sha256:{}", "1".repeat(64)),
             "LICENSE-MIT": format!("sha256:{}", "2".repeat(64)),
             "THIRD-PARTY-NOTICES.md": format!("sha256:{}", "3".repeat(64)),
-            "agentic-aarch64-apple-darwin":
+            "adf-aarch64-apple-darwin":
                 format!("sha256:{}", "9".repeat(64)),
-            "agentic-aarch64-apple-darwin.build.json":
+            "adf-aarch64-apple-darwin.build.json":
                 format!("sha256:{}", "a".repeat(64)),
-            "agentic-aarch64-unknown-linux-gnu":
+            "adf-aarch64-unknown-linux-gnu":
                 format!("sha256:{}", "b".repeat(64)),
-            "agentic-aarch64-unknown-linux-gnu.build.json":
+            "adf-aarch64-unknown-linux-gnu.build.json":
                 format!("sha256:{}", "c".repeat(64)),
-            "agentic-x86_64-apple-darwin":
+            "adf-x86_64-apple-darwin":
                 format!("sha256:{}", "d".repeat(64)),
-            "agentic-x86_64-apple-darwin.build.json":
+            "adf-x86_64-apple-darwin.build.json":
                 format!("sha256:{}", "e".repeat(64)),
-            "agentic-x86_64-pc-windows-msvc.exe":
+            "adf-x86_64-pc-windows-msvc.exe":
                 format!("sha256:{}", "f".repeat(64)),
-            "agentic-x86_64-pc-windows-msvc.exe.build.json":
+            "adf-x86_64-pc-windows-msvc.exe.build.json":
                 format!("sha256:{}", "1".repeat(64)),
-            "agentic-x86_64-unknown-linux-gnu":
+            "adf-x86_64-unknown-linux-gnu":
                 format!("sha256:{}", "2".repeat(64)),
-            "agentic-x86_64-unknown-linux-gnu.build.json":
+            "adf-x86_64-unknown-linux-gnu.build.json":
                 format!("sha256:{}", "3".repeat(64)),
         },
     });
@@ -4778,7 +4756,7 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
 fn distribution_trust_schema_pins_the_release_key_and_source_policy() {
     let trust = json!({
         "schema_version": "1",
-        "release_id": "prototype-vnext-dev",
+        "release_id": "adf-dev",
         "keys": [{
             "id": "test.framework.release",
             "algorithm": "ed25519",
@@ -4794,7 +4772,7 @@ fn distribution_trust_schema_pins_the_release_key_and_source_policy() {
 fn binary_build_record_schema_pins_target_revision_and_digest() {
     let record = json!({
         "schema_version": "1",
-        "binary_name": "agentic-x86_64-unknown-linux-gnu",
+        "binary_name": "adf-x86_64-unknown-linux-gnu",
         "target": "x86_64-unknown-linux-gnu",
         "source_revision": "1".repeat(40),
         "sha256": format!("sha256:{}", "2".repeat(64)),
@@ -4817,11 +4795,11 @@ fn failed_install_does_not_leave_a_partial_release() {
         "install",
         "tampered-bundle",
         "--lock",
-        ".agentic/framework.lock",
+        ".adf/framework.lock",
     ]);
     assert!(!output.status.success());
     assert!(!project.release_root.exists());
-    let releases = project.root.join(".agentic/cache/releases");
+    let releases = project.root.join(".adf/cache/releases");
     assert!(fs::read_dir(releases).unwrap().all(|entry| {
         !entry
             .unwrap()
@@ -4834,20 +4812,20 @@ fn failed_install_does_not_leave_a_partial_release() {
 #[test]
 fn framework_lock_switch_creates_a_validated_rollback_point() {
     let project = TestProject::new();
-    let candidate = project.root.join(".agentic/candidate-framework.lock");
-    fs::copy(project.root.join(".agentic/framework.lock"), &candidate).unwrap();
-    let mut legacy = read_yaml(&project.root.join(".agentic/framework.lock"));
+    let candidate = project.root.join(".adf/candidate-framework.lock");
+    fs::copy(project.root.join(".adf/framework.lock"), &candidate).unwrap();
+    let mut legacy = read_yaml(&project.root.join(".adf/framework.lock"));
     legacy["schema_version"] = Value::String("1".to_owned());
     legacy.as_object_mut().unwrap().remove("release_artifact");
-    write_yaml(&project.root.join(".agentic/framework.lock"), &legacy);
+    write_yaml(&project.root.join(".adf/framework.lock"), &legacy);
 
-    let switched = project.run(&["release", "switch", ".agentic/candidate-framework.lock"]);
+    let switched = project.run(&["release", "switch", ".adf/candidate-framework.lock"]);
     assert_success(&switched);
     assert_eq!(
-        read_yaml(&project.root.join(".agentic/framework.lock"))["schema_version"],
+        read_yaml(&project.root.join(".adf/framework.lock"))["schema_version"],
         "2"
     );
-    let backup = fs::read_dir(project.root.join(".agentic/cache/framework-lock-backups"))
+    let backup = fs::read_dir(project.root.join(".adf/cache/framework-lock-backups"))
         .unwrap()
         .next()
         .unwrap()
@@ -4858,7 +4836,7 @@ fn framework_lock_switch_creates_a_validated_rollback_point() {
     let rolled_back = project.run(&["release", "rollback", &backup]);
     assert_success(&rolled_back);
     assert_eq!(
-        read_yaml(&project.root.join(".agentic/framework.lock"))["schema_version"],
+        read_yaml(&project.root.join(".adf/framework.lock"))["schema_version"],
         "1"
     );
 }
@@ -4872,11 +4850,11 @@ fn retired_keys_allow_runtime_and_rollback_but_not_new_install() {
     assert_success(&runtime);
 
     fs::copy(
-        project.root.join(".agentic/framework.lock"),
-        project.root.join(".agentic/retired-candidate.lock"),
+        project.root.join(".adf/framework.lock"),
+        project.root.join(".adf/retired-candidate.lock"),
     )
     .unwrap();
-    let switch = project.run(&["release", "switch", ".agentic/retired-candidate.lock"]);
+    let switch = project.run(&["release", "switch", ".adf/retired-candidate.lock"]);
     assert!(!switch.status.success());
     assert!(String::from_utf8_lossy(&switch.stderr).contains("retired"));
 
@@ -4888,7 +4866,7 @@ fn retired_keys_allow_runtime_and_rollback_but_not_new_install() {
         "install",
         "retired-key-bundle",
         "--lock",
-        ".agentic/framework.lock",
+        ".adf/framework.lock",
     ]);
     assert!(!install.status.success());
     assert!(
@@ -4926,7 +4904,7 @@ fn overlapping_keys_allow_a_reviewable_signer_rotation() {
         "offline:test-fixture",
     );
 
-    let trust_path = project.root.join(".agentic/trusted-release-keys.yaml");
+    let trust_path = project.root.join(".adf/trusted-release-keys.yaml");
     let mut trust = read_yaml(&trust_path);
     trust["keys"][0]["status"] = Value::String("retired".to_owned());
     trust["keys"].as_array_mut().unwrap().push(json!({
@@ -4938,7 +4916,7 @@ fn overlapping_keys_allow_a_reviewable_signer_rotation() {
     }));
     write_yaml(&trust_path, &trust);
 
-    let lock_path = project.root.join(".agentic/framework.lock");
+    let lock_path = project.root.join(".adf/framework.lock");
     let mut lock = read_yaml(&lock_path);
     lock["release_artifact"]["artifact_digest"] = Value::String(artifact_digest);
     lock["release_artifact"]["signer_key_id"] =
@@ -4952,7 +4930,7 @@ fn overlapping_keys_allow_a_reviewable_signer_rotation() {
 #[test]
 fn framework_lock_pins_the_logical_release_source() {
     let project = TestProject::new();
-    let lock_path = project.root.join(".agentic/framework.lock");
+    let lock_path = project.root.join(".adf/framework.lock");
     let mut lock = read_yaml(&lock_path);
     lock["release_artifact"]["source_id"] = Value::String("offline:other".to_owned());
     write_yaml(&lock_path, &lock);
@@ -4969,16 +4947,16 @@ fn framework_lock_pins_the_logical_release_source() {
 #[test]
 fn switch_rejects_a_candidate_with_an_incompatible_runtime_protocol() {
     let project = TestProject::new();
-    let active_path = project.root.join(".agentic/framework.lock");
+    let active_path = project.root.join(".adf/framework.lock");
     let active_before = fs::read_to_string(&active_path).unwrap();
     let mut candidate = read_yaml(&active_path);
     candidate["protocols"]["kernel"] = Value::String("unexpected".to_owned());
     write_yaml(
-        &project.root.join(".agentic/incompatible-framework.lock"),
+        &project.root.join(".adf/incompatible-framework.lock"),
         &candidate,
     );
 
-    let output = project.run(&["release", "switch", ".agentic/incompatible-framework.lock"]);
+    let output = project.run(&["release", "switch", ".adf/incompatible-framework.lock"]);
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("protocols.kernel"));
     assert_eq!(active_before, fs::read_to_string(active_path).unwrap());
@@ -5049,7 +5027,7 @@ fn temporary_test_root(label: &str) -> PathBuf {
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQUENCE: AtomicU64 = AtomicU64::new(0);
     std::env::temp_dir().join(format!(
-        "agentic-vnext-{label}-{}-{}",
+        "adf-{label}-{}-{}",
         std::process::id(),
         SEQUENCE.fetch_add(1, Ordering::Relaxed)
     ))
@@ -5169,7 +5147,7 @@ fn write_migration_completion(
 }
 
 fn validate_migration_candidate_cli(root: &Path, candidate: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_agentic"))
+    Command::new(env!("CARGO_BIN_EXE_adf"))
         .args([
             "migration",
             "validate-candidate",
@@ -5195,7 +5173,7 @@ impl TestProject {
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let root = std::env::temp_dir().join(format!(
-            "agentic-vnext-cli-{}-{}",
+            "adf-cli-{}-{}",
             std::process::id(),
             SEQUENCE.fetch_add(1, Ordering::Relaxed)
         ));
@@ -5203,9 +5181,7 @@ impl TestProject {
             fs::remove_dir_all(&root).unwrap();
         }
         copy_tree(&manifest_root.join("testdata/fixtures/cli-project"), &root);
-        let release_root = root
-            .join(".agentic/cache/releases")
-            .join("prototype-vnext-dev");
+        let release_root = root.join(".adf/cache/releases").join("adf-dev");
         fs::create_dir_all(&release_root).unwrap();
         fs::copy(
             manifest_root.join("testdata/fixtures/db-sqs/rules.yaml"),
@@ -5247,11 +5223,8 @@ impl TestProject {
             }],
         });
         validate_delivery_schema(&trust_store, "trusted-release-keys-v2.schema.json");
-        write_yaml(
-            &root.join(".agentic/trusted-release-keys.yaml"),
-            &trust_store,
-        );
-        let framework_lock_path = root.join(".agentic/framework.lock");
+        write_yaml(&root.join(".adf/trusted-release-keys.yaml"), &trust_store);
+        let framework_lock_path = root.join(".adf/framework.lock");
         let mut framework_lock = read_yaml(&framework_lock_path);
         framework_lock["schema_version"] = Value::String("2".to_owned());
         framework_lock["release_artifact"] = json!({
@@ -5270,18 +5243,18 @@ impl TestProject {
     }
 
     fn run(&self, arguments: &[&str]) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_adf"));
         command.args(arguments);
         command
             .arg("--project")
             .arg(&self.root)
-            .env_remove("AGENTIC_RELEASE_SIGNING_KEY_HEX")
+            .env_remove("ADF_RELEASE_SIGNING_KEY_HEX")
             .output()
             .unwrap()
     }
 
     fn run_with_env(&self, arguments: &[&str], variable: &str, value: &str) -> Output {
-        let mut command = Command::new(env!("CARGO_BIN_EXE_agentic"));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_adf"));
         command.args(arguments);
         command
             .arg("--project")
@@ -5339,7 +5312,7 @@ fn publisher_arguments<'a>(source: &'a str, archive: &'a str, lock: &'a str) -> 
         "build",
         source,
         "--lock",
-        ".agentic/framework.lock",
+        ".adf/framework.lock",
         "--source-id",
         "remote:test-fixture",
         "--key-id",
@@ -5365,7 +5338,7 @@ fn prepare_remote_candidate(project: &TestProject) -> (PathBuf, PathBuf) {
         "test.framework.release",
         "remote:test-fixture",
     );
-    let trust_path = project.root.join(".agentic/trusted-release-keys.yaml");
+    let trust_path = project.root.join(".adf/trusted-release-keys.yaml");
     let mut trust = read_yaml(&trust_path);
     trust["keys"][0]["allowed_sources"]
         .as_array_mut()
@@ -5373,10 +5346,10 @@ fn prepare_remote_candidate(project: &TestProject) -> (PathBuf, PathBuf) {
         .push(Value::String("remote:test-fixture".to_owned()));
     write_yaml(&trust_path, &trust);
 
-    let mut candidate = read_yaml(&project.root.join(".agentic/framework.lock"));
+    let mut candidate = read_yaml(&project.root.join(".adf/framework.lock"));
     candidate["release_artifact"]["artifact_digest"] = Value::String(artifact_digest);
     candidate["release_artifact"]["source_id"] = Value::String("remote:test-fixture".to_owned());
-    let path = project.root.join(".agentic/remote-framework.lock");
+    let path = project.root.join(".adf/remote-framework.lock");
     write_yaml(&path, &candidate);
     (path, bundle)
 }
@@ -5390,7 +5363,7 @@ fn write_release_source(project_root: &Path, base_url: &str) {
         }],
     });
     validate_delivery_schema(&source, "release-sources.schema.json");
-    write_yaml(&project_root.join(".agentic/release-sources.yaml"), &source);
+    write_yaml(&project_root.join(".adf/release-sources.yaml"), &source);
 }
 
 fn tar_release(root: &Path) -> Vec<u8> {
@@ -5438,7 +5411,7 @@ fn serve_once(
         let mut request = [0_u8; 4096];
         let read = stream.read(&mut request).unwrap();
         let request = String::from_utf8_lossy(&request[..read]);
-        assert!(request.starts_with("GET /releases/prototype-vnext-dev.tar "));
+        assert!(request.starts_with("GET /releases/adf-dev.tar "));
         let reason = if status == 200 { "OK" } else { "Found" };
         let mut response = format!(
             "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n",
@@ -5480,7 +5453,7 @@ fn write_signed_release(
     }
     let payload = json!({
         "schema_version": "2",
-        "release_id": "prototype-vnext-dev",
+        "release_id": "adf-dev",
         "source_id": source_id,
         "assets": assets,
         "files": files,
@@ -5497,7 +5470,7 @@ fn write_signed_release(
 }
 
 fn set_test_key_status(project_root: &Path, status: &str) {
-    let path = project_root.join(".agentic/trusted-release-keys.yaml");
+    let path = project_root.join(".adf/trusted-release-keys.yaml");
     let mut trust = read_yaml(&path);
     trust["keys"][0]["status"] = Value::String(status.to_owned());
     write_yaml(&path, &trust);
