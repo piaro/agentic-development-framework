@@ -1,8 +1,8 @@
 # Agentic Development Framework
 
-A control plane for repositories worked on by AI agents. It decides what happens
-next in a change, and refuses to call that change done until the evidence its
-contracts require actually exists.
+A control plane for repositories worked on by AI agents. People and agents build
+contracts together - what this repository holds true, who decided it, and what
+evidence closes it - and every change is worked against them and adds to them.
 
 日本語の解説は [`docs/concepts.ja.md`](docs/concepts.ja.md) にあります。
 
@@ -18,42 +18,84 @@ attachments is a product decision. An agent can find that the question exists,
 lay out the options, and say which it would pick. It cannot be the one who
 decides, and no amount of prompting makes it the right party.
 
-## What this does
+And when someone does decide, the answer usually lives in a conversation that
+ends. The next change asks again, or does not ask and answers differently.
 
-Work is issued one action at a time. An agent asks what to do, does that one
-thing, submits the result, and asks again.
+## Contracts are the point
 
-The difference is where each of those decisions is made.
+A contract is what this repository currently holds true: the rule, who had the
+authority to set it, and what evidence closes it. Contracts are the durable
+artifact here. Everything else - the actions, the roles, the checks - exists to
+build them, use them, and keep them honest.
 
-**The order of work is computed, not prompted.** Nothing tells the agent to do
-analysis before implementation. A kernel derives the next action from the
-records in the repository, and the action's identity is a digest of what it was
-derived from. An agent cannot skip a step by forgetting one, and cannot invent a
-step that the state does not call for. It also means work survives a crash: a
-different process reaches the same action from the same records, so submitting
-after a restart is accepted precisely when the change is still waiting for it.
+**People and agents write them together.** The agent investigates the code,
+finds that a rule is missing, lays out the options and their impact, and says
+which it would pick. A person decides. That decision is recorded, and the rule
+it settled becomes a contract clause citing it as authority. Neither party does
+this alone: the agent cannot decide, and the person should not have to
+reconstruct the question from scratch.
+
+**Every change is worked against them.** Before implementation, the contracts
+that govern the change are resolved and challenged. During it, they are what
+the implementation must satisfy. After it, the change completes only when each
+clause has evidence traceable to it.
+
+**They grow.** A question answered once does not come back - the next change
+resolves against the clause instead of asking again. An incident becomes a
+clause with a test behind it. The repository ends each change knowing more about
+itself than it did before, and that accumulation is the actual product.
+
+They are layered, because a rule that governs one feature and a rule that
+governs the system are not the same kind of thing:
+
+```text
+project        system-wide invariants, and where a human must decide
+  domain       meaning, ownership, relationships, lifecycle
+  capability   behaviour shared across features
+  architecture standard implementations and dependency rules
+  data         states that must hold across every operation sequence
+  operation    one read or write: preconditions, effects, failure, retry
+feature        what this change adds, and which of the above govern it
+```
+
+A feature contract is not a copy of the ones above it. It states the delta and
+names which ones apply. When a decision turns out to hold beyond the feature -
+ownership, cardinality, a storage format, a protocol - it belongs in the layer
+that already governs that, and moving it there is how the repository stops
+relearning it.
+
+The alternative is what usually happens: the knowledge lives in whoever was in
+the room, the agent re-derives it every session, and the two disagree.
+
+## What makes that trustworthy
+
+Contracts are only worth building if the process around them cannot be talked
+out of. Work is issued one action at a time - an agent asks what to do, does
+that one thing, submits the result, and asks again - and each of those steps is
+decided by the control plane rather than by what the agent remembers.
+
+**The order of work is computed, not prompted.** A kernel derives the next
+action from the records in the repository, and the action's identity is a digest
+of what it was derived from. An agent cannot skip a step by forgetting one, or
+invent one the state does not call for. It also means work survives a crash: a
+different process reaches the same action from the same records.
 
 **Authority is a checked property, not a judgement call.** Reporting a
 requirement as met requires a clause in an accepted contract, an explicit
 requirement in the request, a recorded human decision, or an accepted decision
 record. An agent's own reasoning is evidence and never authority - not by
 convention, but because the submission is rejected without one of those four.
-When none of them settles a question, the change stops at
-`needs-human-decision` and the person gets the options, the impact, and a
-recommendation.
 
 **What the code does is read, not described.** Detectors parse the actual source
-in sixteen languages and report the calls they find. A call they cannot account
-for - an unmapped resource, an unresolved receiver, a language with no detector -
-stops the change instead of being passed over. Nothing is classified by name:
-`save` and `execute` mean different things in different frameworks, so they need
-a binding that a person reviewed and an accepted decision authorizes.
+in sixteen languages. A call they cannot account for stops the change instead of
+being passed over, and nothing is classified by name: `save` and `execute` mean
+different things in different frameworks, so they need a binding a person
+reviewed.
 
-**Records are the memory, and they go stale on purpose.** Contracts, decisions,
-evidence, and results live in the repository, so a question answered in one
-change is settled for the next one. Each result is bound to digests of what it
-was based on, so changing a contract, the code, or the authority behind it marks
-the work that depended on it stale and asks for it again.
+**Contracts going stale is a feature.** Each result is bound to digests of what
+it was based on, so changing a contract, the code, or the authority behind it
+marks the work that depended on it stale and asks for it again. A contract that
+drifted from the code does not silently keep passing.
 
 **Nothing reviews its own work.** Implementation and challenge are separate
 roles, and a post-build challenge runs in a context that did not build the
