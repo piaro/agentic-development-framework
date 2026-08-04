@@ -9,9 +9,9 @@
 - 仕様を決めてよい根拠は、既存のaccepted Contract、依頼に明示された要求、記録された人の判断、accepted Decisionだけとする。エージェントの推論、反証で見つけた指摘、Contractの不足、コード、テストは証拠であり、仕様を決める権限にはならない。
 - 権限のある根拠で決められない場合は、選択肢、影響、推奨、必要な決定者を添えて人へ戻す。実装の中で暗黙に決めない。
 - Feature Contractを上位Contractの代用にしない。Project、Domain、Capability、Architecture、Data Invariant、Operation Contractを解決する。
-- 検出された候補は、名前の一致ではなく実際のコードを読んで採用または除外し、理由を残す。
-- データ変更ではOperation Contractにmutation、transaction、consistency、idempotency、失敗点を記録し、Data Invariantを各操作後に検査する。
-- 外部Platformの能力を推測で確定せず、probeまたは公式仕様で検証する。
+- 検出された候補は、名前が一致したからではなく実際のコードを読んで採用または除外し、その理由を残す。
+- データを変更するときは、何をどう書き換えるか、どこまでを1つのまとまりとして扱うか、いつ整合するか、再実行しても同じ結果になるか、どこで失敗しうるかをOperation Contractへ記録する。各操作のあとにData Invariantを検査する。
+- 外部プラットフォームがどう動くかを推測で確定しない。実際に動かして確かめるか、公式の仕様で裏を取る。
 - 上位Contractから逸脱する場合は、理由をDecision、現在の例外をFeature Contractへ記録する。
-- 高リスクな未確定判断だけを人へ上げ、包括的レビューを正しさの代替にしない。
+- 影響の大きい未確定の判断だけを人へ上げる。とりあえず全体をレビューすることで正しさの代わりにしない。
 <!-- adf:end -->
