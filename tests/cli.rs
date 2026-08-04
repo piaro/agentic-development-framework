@@ -19,7 +19,16 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
         .unwrap();
     assert_success(&help);
     assert!(help.stderr.is_empty());
-    assert!(String::from_utf8_lossy(&help.stdout).contains("agentic project init"));
+    let help = String::from_utf8_lossy(&help.stdout);
+    assert!(help.contains("agentic project init"));
+    // A command that may change without notice has to say so where it is read.
+    let (stable, experimental) = help
+        .split_once("experimental, may change in any release")
+        .expect("usage separates the experimental commands");
+    assert!(stable.contains("agentic <next|explain>"));
+    assert!(!stable.contains("agentic migration"));
+    assert!(experimental.contains("agentic migration"));
+    assert!(experimental.contains("agentic detector-audit"));
 
     let version = Command::new(env!("CARGO_BIN_EXE_agentic"))
         .arg("--version")

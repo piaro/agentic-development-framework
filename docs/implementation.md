@@ -801,7 +801,7 @@ sources:
 - MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。process再起動やMCP接続断を跨いだ未提出Actionの提出は、正本を再評価して同じActionが現在のものであるときに受理します。別のActionへ進んでいる場合は`ACTION_NOT_CURRENT`で拒否し、現在のActionを示します。remote MCPと、複数Projectを扱う単一processは未実装です。
 - 旧Python CLI、その導入処理、旧Schema、旧Skillは削除しました。既存Projectの移行は`migration`commandで扱います。
 
-したがって、このPrototypeのResult形式やModule APIを互換性のある公開仕様として利用しないでください。
+約束する範囲と、予告なく変わる範囲は`COMPATIBILITY.md`にあります。中核のコマンド、保存される記録の形、MCPの道具、配布の形は安定として扱います。移行機能、Detector品質測定、Framework検出Catalogの形式は実験的です。Rust crateはlibraryとして公開しないため、moduleとtypeは内部実装です。
 
 ## 配布実装との関係
 

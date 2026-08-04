@@ -2085,23 +2085,25 @@ usage:\n\
   agentic project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
   agentic project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   agentic project promote-bindings --draft <path> [--project <root>]\n\
+  agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
+  agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
+  agentic mcp [--project <root>] [--release <root>]\n\
+  agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
+  agentic binary <install|update|status|rollback> ...\n\
+  agentic --help\n\
+  agentic --version\n\
+\n\
+experimental, may change in any release - see COMPATIBILITY.md:\n\
   agentic migration <inspect|draft> [--project <root>] [--format <text|json>]\n\
   agentic migration validate-draft --draft <path> [--project <root>] [--format <text|json>]\n\
   agentic migration generate-candidate --draft <path> --output <path> [--project <root>] [--format <text|json>]\n\
   agentic migration validate-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
   agentic migration apply-candidate --candidate <path> [--project <root>] [--format <text|json>]\n\
-  agentic change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
-  agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
-  agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   agentic benchmark <corpus-root> [--format <text|json>]\n\
   agentic detector-audit <repository-root> [--format <text|json>] [--require-clean]\n\
   agentic detector-audit-check <repository-root> --baseline <path> [--format <text|json>]\n\
-  agentic catalog signal-domains [--format <text|json>]\n\
-  agentic mcp [--project <root>] [--release <root>]\n\
-  agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
-  agentic binary <install|update|status|rollback> ...\n\
-  agentic --help\n\
-  agentic --version\n"
+  agentic catalog signal-domains [--format <text|json>]\n"
 }
 
 fn mcp_usage() {

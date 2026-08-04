@@ -2,7 +2,7 @@
 
 AIエージェントを前提に、Repository内の仕様・判断・実装・検証を接続する開発コントロールプレーンです。
 
-次期構成の検討内容は`docs/FRAMEWORK-REVIEW.md`、現行CLIの標準経路へ未接続の検証実装は`docs/implementation.md`にあります。Prototypeは公開APIや現在の利用手順ではありません。vNextの実装・互換性検証はRust版を正とし、Python版は過去の設計検証用referenceとして残しています。Rustのbuild済みバイナリ、Artifact Attestation必須のbootstrap、versioned update・rollbackに加え、現行Projectを変更しない移行診断、Migration Draftのレビュー、隔離候補のCompletion Record・署名・Schema検証、検証済み候補の明示適用までを配布候補として検証しています。
+実装の詳細は`docs/implementation.md`、設計の検討記録は`docs/FRAMEWORK-REVIEW.md`にあります。約束する範囲と予告なく変わる範囲は`COMPATIBILITY.md`にあります。
 
 ## 目的
 
@@ -380,6 +380,16 @@ sh scripts/tests/test-vnext-rust.sh
 ```
 
 `scripts/tests/test-vnext-rust.sh`は、書式、lint、テストに加えて、Detector品質corpus、golden期待値、署名済みRelease生成、公開、導入までを通します。
+
+## 互換性
+
+初版は`0.1.0`です。`0.1.x`の範囲では非互換な変更をしません。`0.2.0`のようにマイナーを上げるときは非互換な変更を許容し、その内容と対処を変更履歴に必ず書きます。
+
+安定として扱うのは、日常利用のコマンド、保存される記録の形、プロジェクト内のファイル、機械可読な出力、MCPの道具、配布の形です。
+
+移行機能、Detector品質測定、Framework検出Catalogの形式は実験的です。どの版でも予告なく変わります。人向けの表示文とRust crateのAPIは、そもそも約束の対象外です。
+
+詳細は`COMPATIBILITY.md`にあります。Detectorの改善で検出結果が変わり、これまで進めた変更が止まることがありますが、これは非互換な変更としては扱いません。
 
 ## 報告と貢献
 

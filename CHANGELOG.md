@@ -2,13 +2,18 @@
 
 Notable changes, newest first. Versions follow [Semantic Versioning](https://semver.org).
 
-Nothing has been released yet. Until 0.1.0, the CLI surface and the stored
-record shapes may change without notice; see the compatibility section of the
-README for what will be promised once it ships.
+Nothing has been released yet. What 0.1.0 will promise, and what stays free to
+change, is written down in `COMPATIBILITY.md`.
 
 ## Unreleased
 
 ### Added
+
+- `COMPATIBILITY.md` states what the first release promises: the everyday
+  commands, the stored record shapes, the machine-readable output, the MCP
+  interface, and the distribution formats are stable, while migration and the
+  detector quality tooling may change in any release. `--help` separates the
+  two so the distinction is visible where it is read.
 
 - `project init` places the agent skills and the project guide from inside the
   binary, and appends its guidance block to `AGENTS.md`. A downloaded binary is
