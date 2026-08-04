@@ -21,6 +21,10 @@ README for what will be promised once it ships.
 
 ### Changed
 
+- A change stopped by a coverage gap now says which kind of stop it is. A
+  language with no detector is called out as a limit of the kit rather than
+  something a binding review can fix, and a source that failed to parse points
+  at the source. Previously every stop read the same.
 - Work submitted after a restart or a dropped connection is accepted when the
   control plane would still issue that same action, rather than being refused
   because the process had forgotten it. An action that is no longer current is

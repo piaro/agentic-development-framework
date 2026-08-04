@@ -97,6 +97,26 @@ rather than forcing it through.
 Rationale belongs in `decisions/`. The current rule belongs in `contracts/`. The decision
 request is temporary - nothing downstream may keep referring to it.
 
+## When the change is blocked instead
+
+`blocked-detection` means the detectors could not account for everything in
+scope, so no action is issued until that is resolved. The `diagnostics` name the
+gap kind, and the kind decides what you can do:
+
+- `unmapped-observation`, `unsupported-observation`, `unbound-source-artifact`,
+  `ambiguous-symbol-binding`, `invalid-binding`: a binding is missing, ambiguous,
+  or unreviewed. Run `agentic project observe`, review the draft, and promote it.
+  This is the resolvable case, and it is the common one.
+- `unsupported-language`: the source is in a language this build has no detector
+  for - C++ among them. No review resolves it. Either the source moves out of
+  `analysis.roots`, or the change waits. Do not report this as a defect and do
+  not work around it by weakening what is analyzed.
+- `parse-error`: the source is in a supported language but did not parse. Fix
+  the source. If it is valid, the parser is wrong and that is worth reporting.
+
+Never satisfy a requirement by narrowing the analyzed scope so a gap disappears.
+The gap is the finding.
+
 ## Submit and continue
 
 Call `agentic_submit` with the action id, the context digest from the action, and the
