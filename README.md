@@ -24,7 +24,9 @@ ends. The next change asks again, or does not ask and answers differently.
 ## Contracts are the point
 
 A contract is what this repository currently holds true: the rule, who had the
-authority to set it, and what evidence closes it. Contracts are the durable
+authority to set it, and what evidence closes it. For the deletion question
+above, that is three parts: attachments go with the task, the recorded decision
+that settled it, and the test that proves it. Contracts are the durable
 artifact here. Everything else - the actions, the roles, the checks - exists to
 build them, use them, and keep them honest.
 
@@ -41,7 +43,8 @@ the implementation must satisfy. After it, the change completes only when each
 clause has evidence traceable to it.
 
 **They grow.** A question answered once does not come back - the next change
-resolves against the clause instead of asking again. An incident becomes a
+that touches deletion finds the clause and resolves against it instead of
+asking again. An incident becomes a
 clause with a test behind it. The repository ends each change knowing more about
 itself than it did before, and that accumulation is the actual product.
 
@@ -60,17 +63,17 @@ feature        what this change adds, and which of the above govern it
 
 A feature contract is not a copy of the ones above it. It states the delta and
 names which ones apply. When a decision turns out to hold beyond the feature -
-ownership, cardinality, a storage format, a protocol - it belongs in the layer
-that already governs that, and moving it there is how the repository stops
-relearning it.
+say the deletion rule is really "no child record outlives its parent", a fact
+about the data rather than about tasks - it belongs in the layer that already
+governs that, and moving it there is how the repository stops relearning it.
 
 The alternative is what usually happens: the knowledge lives in whoever was in
 the room, the agent re-derives it every session, and the two disagree.
 
 ## What makes that trustworthy
 
-Contracts are only worth building if the process around them cannot be talked
-out of. Work is issued one action at a time - an agent asks what to do, does
+Contracts are only worth building if an agent cannot talk its way past the
+process that enforces them. Work is issued one action at a time - an agent asks what to do, does
 that one thing, submits the result, and asks again - and each of those steps is
 decided by the control plane rather than by what the agent remembers.
 
@@ -270,7 +273,7 @@ of being ignored.
 | [`docs/publishing.md`](docs/publishing.md) | releasing, for whoever holds the signing key |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | building, testing, and what is out of scope |
 | [`SECURITY.md`](SECURITY.md) | reporting a vulnerability, and what counts as one |
-| [`docs/concepts.ja.md`](docs/concepts.ja.md) | the contract hierarchy and data integrity model, in Japanese |
+| [`docs/concepts.ja.md`](docs/concepts.ja.md) | what it solves and how to use it, in Japanese |
 | [`docs/implementation.md`](docs/implementation.md) | the implementation of record, in Japanese |
 
 ## License
