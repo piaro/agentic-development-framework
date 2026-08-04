@@ -151,7 +151,7 @@ allowed_output_kinds: []
 registered_output_refs: []
 ```
 
-- RegistryはMCP sessionのmemoryにだけ保持する。
+- RegistryはMCP sessionのmemoryにだけ保持する。memoryにないActionは、正本の再評価と一致するときに再構成する。
 - Generated ContextをGit、Result、derived cacheへ保存しない。
 - Evidence、Decision、Contractの専用Toolが保存したrefだけを`registered_output_refs`へ追加する。
 - 正常な`submit`後にexact keyを消費し、再評価で返した次Actionを新しいentryとして登録する。
@@ -258,9 +258,9 @@ Output:
 }
 ```
 
-- exact action keyがRegistryにない提出を拒否する。
+- exact action keyがRegistryにない提出は、正本を再評価して同じActionが現在のものであるときだけ受理する。
 - 成功したResult追記後だけActionを消費する。
-- Contract、Decision、Evidenceの`output_refs`は、同じentryの`registered_output_refs`に存在しなければ拒否する。
+- Contract、Decision、Evidenceの`output_refs`は、同じentryの`registered_output_refs`に存在しなければ拒否する。再起動を跨いだActionでは、そのRecordがChangeの正本に存在することで代える。
 - Repository artifactの`output_refs`は`implement-change` Actionだけに許可する。
 - 同じ内容のtransport retryは、Registry消費後でも既存Resultと提出内容が一致すれば成功として返せるようにする。
 - 同じAction／Contextに異なる内容が既にあれば競合として拒否する。

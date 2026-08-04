@@ -25,7 +25,6 @@ README for what will be promised once it ships.
   control plane would still issue that same action, rather than being refused
   because the process had forgotten it. An action that is no longer current is
   refused as `ACTION_NOT_CURRENT` and names the action to work on instead.
-
 - The three agent skills are organised by the role the control plane assigns -
   analyst, builder, challenger - rather than by the command an agent used to
   run. The order of work comes from `agentic next`, not from the skills.
