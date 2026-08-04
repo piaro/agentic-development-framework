@@ -7,6 +7,7 @@
 use crate::application::{ApplicationResponse, ApplicationSubmission};
 use crate::cli_output::next_response_value;
 use crate::context::GeneratedContext;
+use crate::kernel::ProjectSnapshot;
 use crate::project_runtime::LoadedProject;
 use crate::submission::ResultSubmission;
 use schemars::JsonSchema;
@@ -31,6 +32,10 @@ struct IssuedActionEntry {
     framework_lock_digest: String,
     rule_index_digest: String,
     registered_output_refs: BTreeSet<String>,
+    /// False once the entry was rebuilt after a restart rather than issued by
+    /// this process. Such an entry has no memory of which records the Action
+    /// wrote, so their provenance is established from the store instead.
+    issued_in_this_session: bool,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -150,13 +155,24 @@ impl ProjectApplicationService {
         payload: Value,
         output_refs: Vec<String>,
     ) -> Result<SubmitServiceResponse, ServiceError> {
-        let Some(entry) = self.issued.get(key).cloned() else {
-            return self.completed_submission(key, &payload, &output_refs);
+        let entry = match self.issued.get(key).cloned() {
+            Some(entry) => entry,
+            None => {
+                // A Result already stored for this Action and Context means the
+                // submission arrived twice; replay it rather than writing again.
+                if let Some(response) = self.replay_submission(key, &payload, &output_refs)? {
+                    return Ok(response);
+                }
+                self.resume(key)?
+            }
         };
-        validate_output_refs(&entry, &output_refs)?;
 
         let project = self.load(false)?;
         let mut application = project.application().map_err(application_error)?;
+        let snapshot = application
+            .snapshot(&key.change_id)
+            .map_err(application_error)?;
+        validate_output_refs(&entry, &output_refs, &snapshot)?;
         assert_framework_identity(&entry, &application)?;
         let role = required_context_string(&entry.context, &["action", "role"])?;
         let result_schema =
@@ -203,12 +219,14 @@ impl ProjectApplicationService {
         })
     }
 
-    fn completed_submission(
+    /// Replays a submission whose Result is already stored, or `None` when this
+    /// Action and Context produced no Result yet.
+    fn replay_submission(
         &mut self,
         key: &IssuedActionKey,
         payload: &Value,
         output_refs: &[String],
-    ) -> Result<SubmitServiceResponse, ServiceError> {
+    ) -> Result<Option<SubmitServiceResponse>, ServiceError> {
         let project = self.load(false)?;
         let mut application = project.application().map_err(application_error)?;
         let snapshot = application
@@ -218,14 +236,7 @@ impl ProjectApplicationService {
             result["action_id"].as_str() == Some(key.action_id.as_str())
                 && result["context_digest"].as_str() == Some(key.context_digest.as_str())
         }) else {
-            return Err(service_error(
-                "ACTION_NOT_ISSUED",
-                format!(
-                    "Action was not issued in this MCP session: {} {}",
-                    key.action_id, key.context_digest
-                ),
-                false,
-            ));
+            return Ok(None);
         };
         if !submitted_payload_matches(&result["payload"], payload)
             || result["output_refs"] != json!(output_refs)
@@ -255,13 +266,13 @@ impl ProjectApplicationService {
             self.issued.insert(next_key.clone(), next_entry);
             next_key
         });
-        Ok(SubmitServiceResponse {
+        Ok(Some(SubmitServiceResponse {
             schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
             result_id,
             already_completed: true,
             next_response,
             issued_action,
-        })
+        }))
     }
 
     pub fn add_evidence(
@@ -402,17 +413,63 @@ impl ProjectApplicationService {
         .map_err(project_error)
     }
 
-    fn issued_entry(&self, key: &IssuedActionKey) -> Result<IssuedActionEntry, ServiceError> {
-        self.issued.get(key).cloned().ok_or_else(|| {
-            service_error(
-                "ACTION_NOT_ISSUED",
+    /// The entry for `key`, rebuilding it when the Action is still the current
+    /// one for its change.
+    ///
+    /// Action identity is a digest of the Action body, and the Context digest
+    /// binds the inputs it was built from, so reevaluating a change reproduces
+    /// the same key whenever nothing it depends on has moved. That is what lets
+    /// work survive a restart or a dropped connection: an Action the process no
+    /// longer remembers is accepted precisely when the control plane would issue
+    /// it again, and refused as superseded when it would not.
+    fn issued_entry(&mut self, key: &IssuedActionKey) -> Result<IssuedActionEntry, ServiceError> {
+        if let Some(entry) = self.issued.get(key) {
+            return Ok(entry.clone());
+        }
+        self.resume(key)
+    }
+
+    fn resume(&mut self, key: &IssuedActionKey) -> Result<IssuedActionEntry, ServiceError> {
+        let project = self.load(false)?;
+        let mut application = project.application().map_err(application_error)?;
+        let response = application
+            .next(&key.change_id)
+            .map_err(application_error)?;
+        let rule_index_digest = application.rule_index_digest().to_owned();
+        let framework_lock_digest = application.framework_lock_digest().to_owned();
+        drop(application);
+        drop(project);
+
+        let Some((current_key, mut entry)) = issued_entry(
+            &key.change_id,
+            &response,
+            &rule_index_digest,
+            &framework_lock_digest,
+        ) else {
+            return Err(service_error(
+                "ACTION_NOT_CURRENT",
                 format!(
-                    "Action was not issued in this MCP session: {} {}",
-                    key.action_id, key.context_digest
+                    "Action {} is no longer current: {} has no Action to work on. \
+                     Call next to see where it stands.",
+                    key.action_id, key.change_id
                 ),
                 false,
-            )
-        })
+            ));
+        };
+        if &current_key != key {
+            return Err(service_error(
+                "ACTION_NOT_CURRENT",
+                format!(
+                    "Action {} is no longer current: {} now expects {} against Context {}. \
+                     Call next and redo the work against that Action.",
+                    key.action_id, key.change_id, current_key.action_id, current_key.context_digest
+                ),
+                false,
+            ));
+        }
+        entry.issued_in_this_session = false;
+        self.issued.insert(key.clone(), entry.clone());
+        Ok(entry)
     }
 
     fn register_output(
@@ -422,7 +479,7 @@ impl ProjectApplicationService {
     ) -> Result<(), ServiceError> {
         let entry = self.issued.get_mut(key).ok_or_else(|| {
             service_error(
-                "ACTION_NOT_ISSUED",
+                "INTERNAL",
                 "Issued Action disappeared before its output was registered",
                 true,
             )
@@ -497,13 +554,28 @@ fn issued_entry(
             framework_lock_digest: framework_lock_digest.to_owned(),
             rule_index_digest: rule_index_digest.to_owned(),
             registered_output_refs: BTreeSet::new(),
+            issued_in_this_session: true,
         },
     ))
+}
+
+/// Whether the change's records hold a record of `kind` with this identifier.
+fn change_holds_record(snapshot: &ProjectSnapshot, kind: &str, output_ref: &str) -> bool {
+    let records = match kind {
+        "contract" => &snapshot.contracts,
+        "decision" => &snapshot.decisions,
+        "evidence" => &snapshot.evidence,
+        _ => return false,
+    };
+    records
+        .iter()
+        .any(|record| record["id"].as_str() == Some(output_ref))
 }
 
 fn validate_output_refs(
     entry: &IssuedActionEntry,
     output_refs: &[String],
+    snapshot: &ProjectSnapshot,
 ) -> Result<(), ServiceError> {
     let unique = output_refs.iter().collect::<BTreeSet<_>>();
     if unique.len() != output_refs.len() {
@@ -519,7 +591,16 @@ fn validate_output_refs(
             .split_once('.')
             .map_or(output_ref.as_str(), |item| item.0);
         if matches!(kind, "contract" | "decision" | "evidence") {
-            if !entry.registered_output_refs.contains(output_ref) {
+            // An Action resumed after a restart has no memory of what it wrote,
+            // so the record itself has to stand for that: it must exist and
+            // belong to this change. Records are only written through an Action
+            // that permits them, which is what keeps this from widening.
+            let written = if entry.issued_in_this_session {
+                entry.registered_output_refs.contains(output_ref)
+            } else {
+                change_holds_record(snapshot, kind, output_ref)
+            };
+            if !written {
                 return Err(service_error(
                     "OUTPUT_REF_INVALID",
                     format!("Record output was not written by this issued Action: {output_ref}"),

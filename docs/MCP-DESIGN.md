@@ -160,18 +160,18 @@ registered_output_refs: []
 
 ## 8. server再起動時の扱い
 
-v1では、MCP processの終了時に未提出Actionを失効させます。
+Action IDはAction本体のdigest、Context digestはその生成元入力のdigestです。したがって、入力が動いていなければ、再評価は同じAction IDとContext digestを再生成します。この決定性がAction受理の根拠であり、発行済みActionをどこかへ保存する必要はありません。
 
-再接続後は`agentic_next`を再実行し、現在の正本からActionを再発行します。
+再起動やMCP接続断のあとに未提出Actionを提出した場合、serverは現在の正本から再評価します。
 
-- 入力が変わっていなければ、同じAction IDとContext digestを再生成できる。
-- 入力が変わっていれば、古いActionを暗黙に復元せず、現在のActionからやり直す。
-- Action発行後にコードやRecordを変更し、その途中でserverが停止した場合は、v1では自動resumeしない。
+- 再評価が同じActionを返すなら、そのActionは今も現在のものなので受理する。再起動前に行った作業はやり直さない。
+- 再評価が別のActionを返すなら、`ACTION_NOT_CURRENT`で拒否し、現在のAction IDとContext digestを示す。Agentは`agentic_next`から現在のActionに対してやり直す。
+- 同じActionとContextに対するResultが既にあるなら、二重提出として冪等に再生し、Resultを二重に書かない。内容が違えば`WRITE_CONFLICT`にする。
 - 既に書いたContract、Decision、Evidence、コードは削除やrollbackをせず、現在入力として再評価する。
 
-再起動を跨ぐresumeが必要になった場合は、Generated Contextを正本化せず、MCP Hostが保持する
-署名付きAction receipt、または`.agentic/tmp/`のlocal capabilityとして別versionで設計します。
-derived cacheのreadをAction認証へ流用してはいけません。
+Generated Contextを正本化しない方針は変えません。受理の根拠はmemoryではなく、正本を再評価した結果との一致です。derived cacheのreadをAction認証へ流用してはいけません。
+
+再起動を跨いだAction では、そのActionがどのRecordを書いたかというsession記憶が失われます。この場合、`output_refs`のRecord参照は、そのRecordがChangeの正本に存在することで検査します。Recordは書込みを許可するAction経由でしか書けないため、これによって書込み範囲は広がりません。
 
 ## 9. MCP Tool一覧
 
@@ -396,7 +396,7 @@ Tool errorは機械可読な次の共通形式を返します。
 
 - `INVALID_ARGUMENT`
 - `PROJECT_INVALID`
-- `ACTION_NOT_ISSUED`
+- `ACTION_NOT_CURRENT`
 - `ACTION_NOT_ALLOWED`
 - `CONTEXT_STALE`
 - `OUTPUT_REF_INVALID`
@@ -504,7 +504,7 @@ Schemaとし、生成差分をtestで検査します。
 - MCP経路と既存Application goldenが同じResult ID、State、Action ID、Context digestを返す。
 - MCP handlerからStoreや`prepare_result`を直接呼ぶ重複実装がない。
 - Result、Evidence、Decision、Contractの手動上書きを必要としない。
-- server再起動後にmemoryだけを根拠として古いActionを受理しない。
+- server再起動後にmemoryだけを根拠としてActionを受理しない。受理の根拠は正本を再評価した結果との一致とする。
 
 ## 19. 実装順
 
@@ -515,7 +515,7 @@ Schemaとし、生成差分をtestで検査します。
 5. Human回答、Decision、Contract Toolを追加する。
 6. Evidence Toolとbuild後flowを追加する。
 7. MCPだけで完全lifecycleを通す。
-8. 使用実績を見て、再起動を跨ぐAction receiptとwrite CLIの要否を判断する。
+8. 再起動を跨いだActionの提出を、正本の再評価との一致で受理する。
 
 最初のmilestoneは「Tool一覧が存在する」ことではなく、実MCP clientから
 `next → submit → 次のnext`が永続Recordを介して成立することとします。

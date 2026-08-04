@@ -8,7 +8,7 @@ use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::process::{ChildStdin, ChildStdout, Command, Output, Stdio};
+use std::process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio};
 use std::thread;
 
 #[test]
@@ -3241,7 +3241,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     assert_eq!(rejected["result"]["isError"], true);
     assert_eq!(
         rejected["result"]["structuredContent"]["code"],
-        "ACTION_NOT_ISSUED"
+        "ACTION_NOT_CURRENT"
     );
 
     mcp_send(
@@ -3293,6 +3293,189 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
 
     drop(input);
     assert!(child.wait().unwrap().success());
+}
+
+/// Work done before a restart must still be submittable afterwards.
+///
+/// Action identity is a digest of the Action body, so a server that never saw
+/// the Action can tell whether it is the one the change is still waiting on.
+#[test]
+fn an_action_survives_the_server_process_that_issued_it() {
+    let project = TestProject::new();
+
+    let (mut issuing, mut issuing_input, mut issuing_output) = start_mcp_server(&project.root);
+    let issued = mcp_call(
+        &mut issuing_input,
+        &mut issuing_output,
+        3,
+        "agentic_next",
+        json!({"change_id": "change.place-order"}),
+    );
+    assert_eq!(issued["isError"], false);
+    let issued = issued["structuredContent"].clone();
+    let key = issued["issued_action"].clone();
+    let arguments = risk_signal_submission(&key, &issued["next_response"]["context"]["payload"]);
+
+    // The agent did the work, then the connection died with it.
+    drop(issuing_input);
+    assert!(issuing.wait().unwrap().success());
+
+    let (mut resumed, mut resumed_input, mut resumed_output) = start_mcp_server(&project.root);
+
+    let stale = mcp_call(
+        &mut resumed_input,
+        &mut resumed_output,
+        3,
+        "agentic_submit",
+        {
+            let mut stale = arguments.clone();
+            stale["action_id"] = Value::String("action.0000000000000000".to_owned());
+            stale
+        },
+    );
+    assert_eq!(stale["isError"], true);
+    assert_eq!(
+        stale["structuredContent"]["code"], "ACTION_NOT_CURRENT",
+        "an Action that is not the current one must say so"
+    );
+    let message = stale["structuredContent"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(key["action_id"].as_str().unwrap()),
+        "the message must name the Action to work on instead: {message}"
+    );
+
+    let submitted = mcp_call(
+        &mut resumed_input,
+        &mut resumed_output,
+        4,
+        "agentic_submit",
+        arguments.clone(),
+    );
+    assert_eq!(
+        submitted["isError"], false,
+        "the Action is still current, so the work done before the restart stands"
+    );
+    assert_eq!(submitted["structuredContent"]["already_completed"], false);
+
+    // Resubmitting the same work must not write a second Result.
+    let retried = mcp_call(
+        &mut resumed_input,
+        &mut resumed_output,
+        5,
+        "agentic_submit",
+        arguments,
+    );
+    assert_eq!(retried["isError"], false);
+    assert_eq!(retried["structuredContent"]["already_completed"], true);
+    assert_eq!(
+        fs::read_dir(
+            project
+                .root
+                .join(".agentic/changes/change.place-order/results")
+        )
+        .unwrap()
+        .count(),
+        1
+    );
+
+    drop(resumed_input);
+    assert!(resumed.wait().unwrap().success());
+}
+
+fn start_mcp_server(root: &Path) -> (Child, ChildStdin, BufReader<ChildStdout>) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_agentic"))
+        .args(["mcp", "--project"])
+        .arg(root)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut input = child.stdin.take().unwrap();
+    let mut output = BufReader::new(child.stdout.take().unwrap());
+    mcp_send(
+        &mut input,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-11-25",
+                "capabilities": {},
+                "clientInfo": {"name": "integration-test", "version": "1"}
+            }
+        }),
+    );
+    assert_eq!(mcp_receive(&mut output)["id"], 1);
+    mcp_send(
+        &mut input,
+        json!({"jsonrpc": "2.0", "method": "notifications/initialized"}),
+    );
+    (child, input, output)
+}
+
+fn mcp_call(
+    input: &mut ChildStdin,
+    output: &mut BufReader<ChildStdout>,
+    id: u64,
+    name: &str,
+    arguments: Value,
+) -> Value {
+    mcp_send(
+        input,
+        json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}
+        }),
+    );
+    mcp_receive(output)["result"].clone()
+}
+
+fn risk_signal_submission(key: &Value, context: &Value) -> Value {
+    let reviewed_candidates = context["signal_candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|candidate| {
+            json!({
+                "fingerprint": candidate["fingerprint"],
+                "status": "confirmed",
+                "reason": "restartを跨いで提出した",
+                "basis_refs": candidate["evidence_refs"],
+            })
+        })
+        .collect::<Vec<_>>();
+    let outcomes = context["requirement_instances"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|instance| {
+            json!({
+                "instance_key": instance["instance_key"],
+                "definition_digest": instance["definition_digest"],
+                "status": "satisfied",
+                "summary": "restartを跨いで提出した",
+                "basis_refs": instance["sources"]
+                    .as_object()
+                    .unwrap()
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "change_id": key["change_id"],
+        "action_id": key["action_id"],
+        "context_digest": key["context_digest"],
+        "payload": {
+            "reviewed_candidates": reviewed_candidates,
+            "outcomes": outcomes,
+        },
+        "output_refs": [],
+    })
 }
 
 fn mcp_send(input: &mut ChildStdin, message: Value) {

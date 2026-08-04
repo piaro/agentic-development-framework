@@ -789,7 +789,7 @@ sources:
 - Signal Domain Catalog v3は、既存の永続化・外部連携Signalに加え、review済みMethod Bindingから生成する`authorization_change`と`sensitive_data_access`を収録します。前者は`authorization-control-change`、後者は`sensitive-data-access`を出力し、それぞれ`authorization.*`と`data.*`のresource Bindingを要求します。Project固有の認可境界とdata分類をmethod名から推測せず、accepted Decisionによる明示Bindingだけを受理します。
 - Framework Detection Catalog v1は、Framework Release開発者が組込み候補へruleを追加するための形式です。現在の公式Release候補にはTypeORMの永続化APIを収録しています。PublisherはCatalogを検証して署名対象assetへ追加し、`project observe`はactive lockが固定した署名済みReleaseからだけ読み込みます。外部IDは`namespace/name`へ正規化し、重複するframework・言語・methodの組合せを拒否します。導入Project独自のCatalogは受理せず、候補をBindingへ自動昇格しません。
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
-- Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、resume、複数mirror、過去のResult IDを指定した説明は未実装です。
+- Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。
 - Result payload SchemaはPrototype組込みの6種類に固定されています。Project・組織固有Schemaの追加方法とSchema migrationは未実装です。
 - lifecycle goldenは、実装でコードartifact digestが変わっても設計工程を繰り返さずEvidenceへ進む正常系を固定しています。stale Actionの拒否や保存競合等の異常系scenarioは通常テストだけで、まだ言語間golden化していません。
@@ -798,7 +798,7 @@ sources:
 - cacheはwrite-throughのみです。検証済みcache readによる高速化は未実装です。
 - cleanなlocal Git cloneでのCI再現と、明示policyによるRepository全体の定期Contract Healthゲートまで実装済みです。remote CI status、shallow clone、submodule、複数Repositoryは未実装です。
 - build phaseと解析root、Binding RecordはProject manifestへ明示します。risk factとcoverageはRust AdapterがGitとsourceから生成します。
-- MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。remote MCP、複数Projectを扱う単一process、未提出Actionのprocess再起動を跨ぐresumeは未実装です。
+- MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。process再起動やMCP接続断を跨いだ未提出Actionの提出は、正本を再評価して同じActionが現在のものであるときに受理します。別のActionへ進んでいる場合は`ACTION_NOT_CURRENT`で拒否し、現在のActionを示します。remote MCPと、複数Projectを扱う単一processは未実装です。
 - 旧Python CLI、その導入処理、旧Schema、旧Skillは削除しました。既存Projectの移行は`migration`commandで扱います。
 
 したがって、このPrototypeのResult形式やModule APIを互換性のある公開仕様として利用しないでください。
