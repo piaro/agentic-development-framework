@@ -96,7 +96,7 @@ def digest(root: Path, name: str) -> str:
     return "sha256:" + hashlib.sha256((root / name).read_bytes()).hexdigest()
 
 binary_names = [entry["name"] for entry in binary_metadata["binaries"]]
-binary_assets = ["SHA256SUMS"]
+binary_assets = ["SHA256SUMS", "LICENSE-APACHE", "LICENSE-MIT", "THIRD-PARTY-NOTICES.md"]
 for name in binary_names:
     binary_assets.extend([name, name + ".build.json"])
 
@@ -153,6 +153,9 @@ PY
   "$CANDIDATE_DIR/distribution-trust.json" \
   "$CANDIDATE_DIR/publish-receipt.json" \
   "$BINARY_DIR/SHA256SUMS" \
+  "$BINARY_DIR/LICENSE-APACHE" \
+  "$BINARY_DIR/LICENSE-MIT" \
+  "$BINARY_DIR/THIRD-PARTY-NOTICES.md" \
   "$BINARY_DIR/agentic-aarch64-apple-darwin" \
   "$BINARY_DIR/agentic-aarch64-apple-darwin.build.json" \
   "$BINARY_DIR/agentic-aarch64-unknown-linux-gnu" \
@@ -181,6 +184,9 @@ mkdir -p "$DOWNLOADED"
   --pattern distribution-trust.json \
   --pattern publish-receipt.json \
   --pattern SHA256SUMS \
+  --pattern LICENSE-APACHE \
+  --pattern LICENSE-MIT \
+  --pattern THIRD-PARTY-NOTICES.md \
   --pattern agentic-aarch64-apple-darwin \
   --pattern agentic-aarch64-apple-darwin.build.json \
   --pattern agentic-aarch64-unknown-linux-gnu \
@@ -200,6 +206,9 @@ cmp "$CANDIDATE_DIR/publish-receipt.json" "$DOWNLOADED/publish-receipt.json"
 cmp "$PUBLICATION_RECORD" "$DOWNLOADED/publication-record.json"
 for asset in \
   SHA256SUMS \
+  LICENSE-APACHE \
+  LICENSE-MIT \
+  THIRD-PARTY-NOTICES.md \
   agentic-aarch64-apple-darwin \
   agentic-aarch64-apple-darwin.build.json \
   agentic-aarch64-unknown-linux-gnu \
@@ -225,6 +234,9 @@ DOWNLOADED_BINARIES=$WORK_ROOT/downloaded-binaries
 mkdir -p "$DOWNLOADED_BINARIES"
 for asset in \
   SHA256SUMS \
+  LICENSE-APACHE \
+  LICENSE-MIT \
+  THIRD-PARTY-NOTICES.md \
   agentic-aarch64-apple-darwin \
   agentic-aarch64-apple-darwin.build.json \
   agentic-aarch64-unknown-linux-gnu \

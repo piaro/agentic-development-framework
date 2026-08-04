@@ -60,6 +60,18 @@ pub fn signing_seed_from_environment() -> Result<[u8; 32], PublishError> {
     decode_hex::<32>(&value, SIGNING_KEY_ENV)
 }
 
+/// The public key a signing seed corresponds to, as 64 lowercase hex characters.
+///
+/// Publishing pins the expected public key so a wrong or rotated signing key
+/// stops the build rather than producing a release nobody trusts. That pin has
+/// to come from somewhere, and deriving it here keeps the seed from ever being
+/// handled outside the process that signs with it.
+pub fn signer_public_key(mut signing_seed: [u8; 32]) -> String {
+    let signing_key = SigningKey::from_bytes(&signing_seed);
+    signing_seed.fill(0);
+    encode_hex(&signing_key.verifying_key().to_bytes())
+}
+
 pub fn publish_release(
     options: &PublishOptions<'_>,
     mut signing_seed: [u8; 32],

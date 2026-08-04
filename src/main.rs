@@ -22,7 +22,9 @@ use agentic::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
     observation_draft, promote_observation_draft, read_observation_draft, write_observation_draft,
 };
-use agentic::release_publisher::{PublishOptions, publish_release, signing_seed_from_environment};
+use agentic::release_publisher::{
+    PublishOptions, publish_release, signer_public_key, signing_seed_from_environment,
+};
 use agentic::remote_delivery::{fetch_release, install_release_archive};
 use agentic::signal_catalog::SignalCatalogRegistry;
 use agentic::{
@@ -507,6 +509,8 @@ fn render_binary_receipt(
 }
 
 enum ReleaseCommand {
+    /// Prints the public key a signing seed corresponds to.
+    PublicKey,
     Build {
         source_root: PathBuf,
         base_lock: PathBuf,
@@ -548,9 +552,15 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
     let operation = arguments
         .first()
         .ok_or_else(|| "release requires an operation".to_owned())?;
-    let target = arguments
-        .get(1)
-        .filter(|value| !value.starts_with('-'))
+    // Every operation but public-key names something on disk to act on.
+    let positional = arguments.get(1).filter(|value| !value.starts_with('-'));
+    let target = positional
+        .map(String::as_str)
+        .or(if operation == "public-key" {
+            Some("")
+        } else {
+            None
+        })
         .ok_or_else(|| format!("release {operation} requires a path"))?;
     let mut project_root = PathBuf::from(".");
     let mut lock = None;
@@ -563,7 +573,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
     let mut schemas_path = "schemas/v1".to_owned();
     let mut framework_catalog_path = None;
     let mut build_format = OutputFormat::Text;
-    let mut index = 2;
+    let mut index = if positional.is_some() { 2 } else { 1 };
     while index < arguments.len() {
         match arguments[index].as_str() {
             "--project" => {
@@ -616,6 +626,7 @@ fn parse_release_command(arguments: &[String]) -> Result<ReleaseOptions, String>
         index += 1;
     }
     let command = match operation.as_str() {
+        "public-key" => ReleaseCommand::PublicKey,
         "build" => ReleaseCommand::Build {
             source_root: PathBuf::from(target),
             base_lock: lock
@@ -749,6 +760,11 @@ fn reject_build_only_options(
 
 fn run_release_command(options: &ReleaseOptions) -> Result<String, String> {
     match &options.command {
+        ReleaseCommand::PublicKey => {
+            let signing_seed =
+                signing_seed_from_environment().map_err(|error| error.to_string())?;
+            Ok(signer_public_key(signing_seed))
+        }
         ReleaseCommand::Build {
             source_root,
             base_lock,
@@ -2089,7 +2105,7 @@ usage:\n\
   agentic <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   agentic contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   agentic mcp [--project <root>] [--release <root>]\n\
-  agentic release <build|fetch|install|install-archive|switch|rollback> ...\n\
+  agentic release <public-key|build|fetch|install|install-archive|switch|rollback> ...\n\
   agentic binary <install|update|status|rollback> ...\n\
   agentic --help\n\
   agentic --version\n\
@@ -2131,7 +2147,8 @@ fn binary_usage() {
 
 fn release_usage() {
     eprintln!(
-        "usage:\n  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
+        "usage:\n  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> agentic release public-key\n\
+  AGENTIC_RELEASE_SIGNING_KEY_HEX=<64-hex-seed> \
          agentic release build <source-root> \
          --lock <base-lock> --source-id <id> --key-id <id> \
          [--expected-public-key <64-hex-public-key>] \

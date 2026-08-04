@@ -4512,6 +4512,48 @@ fn remote_fetch_does_not_follow_unreviewed_redirects() {
     assert!(!project.release_root.exists());
 }
 
+/// Publishing pins the expected public key, so there has to be a way to learn
+/// it from the seed without the seed leaving the process that holds it.
+#[test]
+fn the_public_key_of_a_signing_seed_can_be_derived_without_disclosing_it() {
+    let project = TestProject::new();
+    let seed = "07".repeat(32);
+
+    let derived = project.run_with_env(
+        &["release", "public-key"],
+        "AGENTIC_RELEASE_SIGNING_KEY_HEX",
+        &seed,
+    );
+    assert_success(&derived);
+    let public_key = String::from_utf8_lossy(&derived.stdout).trim().to_owned();
+    assert_eq!(public_key.len(), 64, "an Ed25519 public key is 32 bytes");
+    assert!(public_key.chars().all(|digit| digit.is_ascii_hexdigit()));
+    assert!(
+        !String::from_utf8_lossy(&derived.stdout).contains(&seed),
+        "the seed must never be printed"
+    );
+
+    // The derived key is the one publishing will accept.
+    let source = project.root.join("publisher-source");
+    copy_tree(&project.release_root, &source);
+    let mut arguments = publisher_arguments(
+        "publisher-source",
+        "published/release.tar",
+        "published/framework.lock",
+    );
+    arguments.push("--expected-public-key");
+    arguments.push(&public_key);
+    let published = project.run_with_env(&arguments, "AGENTIC_RELEASE_SIGNING_KEY_HEX", &seed);
+    assert_success(&published);
+
+    let missing = project.run(&["release", "public-key"]);
+    assert!(!missing.status.success());
+    assert!(
+        String::from_utf8_lossy(&missing.stderr).contains("AGENTIC_RELEASE_SIGNING_KEY_HEX"),
+        "the missing seed has to be named"
+    );
+}
+
 #[test]
 fn publisher_is_reproducible_non_overwriting_and_consumable() {
     let project = TestProject::new();
@@ -4704,6 +4746,9 @@ fn publication_record_schema_pins_candidate_provenance_and_asset_digests() {
         },
         "binary_asset_digests": {
             "SHA256SUMS": format!("sha256:{}", "8".repeat(64)),
+            "LICENSE-APACHE": format!("sha256:{}", "1".repeat(64)),
+            "LICENSE-MIT": format!("sha256:{}", "2".repeat(64)),
+            "THIRD-PARTY-NOTICES.md": format!("sha256:{}", "3".repeat(64)),
             "agentic-aarch64-apple-darwin":
                 format!("sha256:{}", "9".repeat(64)),
             "agentic-aarch64-apple-darwin.build.json":

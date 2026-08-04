@@ -32,7 +32,7 @@ AGENTIC_RELEASE_SIGNING_KEY_HEX=$SEED \
   AGENTIC_RELEASE_OUTPUT_DIR=$CANDIDATE \
   sh "$RELEASE_CI" >/dev/null
 
-python3 - "$BINARIES" "$SOURCE_REVISION" <<'PY'
+python3 - "$BINARIES" "$SOURCE_REVISION" "$KIT_ROOT" <<'PY'
 import hashlib
 import json
 import sys
@@ -68,6 +68,19 @@ for target in targets:
     (root / f"{name}.build.json").write_text(
         json.dumps(record, indent=2, sort_keys=True) + "\n"
     )
+
+# The published set carries the license terms of everything linked into the
+# binaries, so the fixture has to carry them too.
+kit_root = Path(sys.argv[3])
+for name in ("LICENSE-APACHE", "LICENSE-MIT"):
+    (root / name).write_bytes((kit_root / name).read_bytes())
+(root / "THIRD-PARTY-NOTICES.md").write_text(
+    "# Third-party notices\n\ntest fixture\n"
+)
+for name in ("LICENSE-APACHE", "LICENSE-MIT", "THIRD-PARTY-NOTICES.md"):
+    digest = hashlib.sha256((root / name).read_bytes()).hexdigest()
+    checksums.append(f"{digest}  {name}")
+
 (root / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
 PY
 
@@ -214,6 +227,10 @@ test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publish-receipt.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/publication-record.json"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/SHA256SUMS"
 test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/agentic-x86_64-unknown-linux-gnu"
+# Statically linked dependencies require their terms to be published alongside.
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/LICENSE-APACHE"
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/LICENSE-MIT"
+test -s "$PUBLISHED_STATE/releases/$RELEASE_TAG/assets/THIRD-PARTY-NOTICES.md"
 
 if publish_with_state "$PUBLISHED_STATE" >/dev/null 2>&1; then
   echo "Publication unexpectedly reused an existing Release tag" >&2

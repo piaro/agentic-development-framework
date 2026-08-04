@@ -90,7 +90,10 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
+        "LICENSE-APACHE",
+        "LICENSE-MIT",
         "SHA256SUMS",
+        "THIRD-PARTY-NOTICES.md",
         "agentic-aarch64-apple-darwin",
         "agentic-aarch64-apple-darwin.build.json",
         "agentic-aarch64-unknown-linux-gnu",
@@ -103,7 +106,19 @@
         "agentic-x86_64-unknown-linux-gnu.build.json"
       ],
       "properties": {
+        "LICENSE-APACHE": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "LICENSE-MIT": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
         "SHA256SUMS": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        },
+        "THIRD-PARTY-NOTICES.md": {
           "type": "string",
           "pattern": "^sha256:[0-9a-f]{64}$"
         },

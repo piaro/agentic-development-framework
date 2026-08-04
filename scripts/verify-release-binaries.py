@@ -17,6 +17,13 @@ TARGETS = (
     "x86_64-pc-windows-msvc",
     "x86_64-unknown-linux-gnu",
 )
+# The binaries statically link their dependencies, so the license terms have to
+# be published with them rather than left in the repository.
+LICENSE_FILES = (
+    "LICENSE-APACHE",
+    "LICENSE-MIT",
+    "THIRD-PARTY-NOTICES.md",
+)
 REVISION = re.compile(r"^[0-9a-f]{40}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 
@@ -48,7 +55,7 @@ def main(arguments: list[str]) -> None:
 
     binaries = {binary_name(target) for target in TARGETS}
     records = {name + ".build.json" for name in binaries}
-    expected = binaries | records
+    expected = binaries | records | set(LICENSE_FILES)
     if not write_checksums or (root / "SHA256SUMS").exists():
         expected.add("SHA256SUMS")
     actual: set[str] = set()
@@ -105,6 +112,13 @@ def main(arguments: list[str]) -> None:
             or not record["rustc_version"].startswith("rustc 1.89.0 ")
         ):
             fail(f"Binary build record Rust version mismatch: {name}")
+
+    for name in LICENSE_FILES:
+        path = root / name
+        if path.stat().st_size == 0:
+            fail(f"Published license file is empty: {name}")
+        digest = hashlib.sha256(path.read_bytes()).hexdigest()
+        checksums.append(f"{digest}  {name}")
 
     checksum_text = "\n".join(checksums) + "\n"
     checksum_path = root / "SHA256SUMS"

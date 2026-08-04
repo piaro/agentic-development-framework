@@ -9,6 +9,15 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Added
 
+- Published releases carry `LICENSE-APACHE`, `LICENSE-MIT`, and
+  `THIRD-PARTY-NOTICES.md` alongside the binaries. The binaries link their
+  dependencies statically, and several of those require their terms to travel
+  with the binary.
+- `agentic release public-key` derives the public key of a signing seed, which
+  publishing pins so a wrong or rotated key stops the build. There was
+  previously no way to obtain it.
+- `docs/publishing.md` is the runbook for whoever holds the signing key.
+
 - `COMPATIBILITY.md` states what the first release promises: the everyday
   commands, the stored record shapes, the machine-readable output, the MCP
   interface, and the distribution formats are stable, while migration and the
