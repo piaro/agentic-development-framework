@@ -9,6 +9,11 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Added
 
+- English documentation: the README is the entry point, `docs/limits.md` states
+  which languages are analyzed and which calls are not resolved, and the
+  Japanese material moves to `docs/concepts.ja.md`. Where the two disagree, the
+  English is authoritative.
+
 - Published releases carry `LICENSE-APACHE`, `LICENSE-MIT`, and
   `THIRD-PARTY-NOTICES.md` alongside the binaries. The binaries link their
   dependencies statically, and several of those require their terms to travel

@@ -43,6 +43,18 @@ run to be slow.
   then spend the body on the reason rather than the diff. A reader who
   disagrees with the change should be able to tell what you were solving.
 
+## Where things are
+
+| Path | What is there |
+|---|---|
+| `Cargo.toml`, `src/`, `tests/` | the implementation; the binary is named `agentic` |
+| `schemas/` | the record and output schemas, also carried in a framework release |
+| `skill-src/`, `templates/` | what the binary embeds and `project init` places |
+| `scripts/` | release helpers, with the acceptance tests in `scripts/tests/` |
+| `bootstrap/` | the install scripts a published binary is fetched by |
+| `testdata/` | golden expectations, fixtures, and the detector quality corpora |
+| `docs/` | the implementation of record and the design history |
+
 ## Things worth knowing about the code
 
 - **Golden expectations are contracts, not snapshots.** `testdata/golden/`

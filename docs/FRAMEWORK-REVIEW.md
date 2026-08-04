@@ -3,7 +3,7 @@
 > 状態: 検討中
 >
 > この文書は、フレームワーク見直しのための検討メモであり、現在有効な規範や確定済みのDecision Recordではない。
-> 現行仕様は`README.md`と`contracts/`、確定した判断履歴は`decisions/`を正本とする。
+> 現行仕様は`README.md`、`docs/concepts.ja.md`、`docs/implementation.md`を正本とする。
 
 ## 1. 見直しの目的
 
