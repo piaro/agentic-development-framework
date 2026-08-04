@@ -90,6 +90,18 @@ pub fn initialize_project(
     let lock_path = candidate_root.join(CANDIDATE_LOCK_FILE);
     let archive_path = candidate_root.join(FRAMEWORK_ARCHIVE_FILE);
     let trust_path = candidate_root.join(DISTRIBUTION_TRUST_FILE);
+    // A downloaded binary sits beside the Framework Release it was published
+    // with; one built from source does not, and saying only that a file is
+    // missing leaves no way to find out what should have produced it.
+    if !lock_path.exists() {
+        return Err(setup_error(format!(
+            "no Framework Release to initialize from: {} is missing.\n\
+             The install script places one beside the binary it downloads. \
+             A binary built from source has none, so point --candidate-dir at a \
+             Release you built with scripts/release-ci.sh.",
+            relative_display(&candidate_root, &lock_path)
+        )));
+    }
     require_regular_file(&lock_path)?;
     require_regular_file(&archive_path)?;
     require_regular_file(&trust_path)?;

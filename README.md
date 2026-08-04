@@ -21,26 +21,100 @@ decides, and no amount of prompting makes it the right party.
 ## What this does
 
 Work is issued one action at a time. An agent asks what to do, does that one
-thing, submits the result, and asks again. What it may do is decided by the
-control plane, not by what the agent remembers:
+thing, submits the result, and asks again.
 
-- A decision with no authority behind it stops the change and goes to a person,
-  with the options and their impact.
-- Contracts, decisions, evidence, and results are records in the repository, so
-  a decision made in one change is available to the next one.
-- Implementation and challenge run in separate contexts, so nothing reviews its
-  own work.
-- A change completes when each contract clause has evidence traceable to it.
+The difference is where each of those decisions is made.
 
-The control plane checks structure, references, state, digests, and coverage. It
-does not judge meaning: a wrong contract, recorded by a person or an agent, is
-accepted. That boundary is deliberate and is what keeps it honest about what it
-verifies.
+**The order of work is computed, not prompted.** Nothing tells the agent to do
+analysis before implementation. A kernel derives the next action from the
+records in the repository, and the action's identity is a digest of what it was
+derived from. An agent cannot skip a step by forgetting one, and cannot invent a
+step that the state does not call for. It also means work survives a crash: a
+different process reaches the same action from the same records, so submitting
+after a restart is accepted precisely when the change is still waiting for it.
+
+**Authority is a checked property, not a judgement call.** Reporting a
+requirement as met requires a clause in an accepted contract, an explicit
+requirement in the request, a recorded human decision, or an accepted decision
+record. An agent's own reasoning is evidence and never authority - not by
+convention, but because the submission is rejected without one of those four.
+When none of them settles a question, the change stops at
+`needs-human-decision` and the person gets the options, the impact, and a
+recommendation.
+
+**What the code does is read, not described.** Detectors parse the actual source
+in sixteen languages and report the calls they find. A call they cannot account
+for - an unmapped resource, an unresolved receiver, a language with no detector -
+stops the change instead of being passed over. Nothing is classified by name:
+`save` and `execute` mean different things in different frameworks, so they need
+a binding that a person reviewed and an accepted decision authorizes.
+
+**Records are the memory, and they go stale on purpose.** Contracts, decisions,
+evidence, and results live in the repository, so a question answered in one
+change is settled for the next one. Each result is bound to digests of what it
+was based on, so changing a contract, the code, or the authority behind it marks
+the work that depended on it stale and asks for it again.
+
+**Nothing reviews its own work.** Implementation and challenge are separate
+roles, and a post-build challenge runs in a context that did not build the
+change. The rules deciding all of this come from a signed framework release the
+project pins - a project cannot quietly widen what counts as verified.
+
+And the boundary, which matters as much as the rest: the control plane checks
+structure, references, state, digests, and coverage. It does not judge meaning.
+A contract that says the wrong thing is accepted. Knowing exactly what it does
+not verify is what makes the rest worth trusting.
+
+## Installing
+
+> No release has been published yet, so today the way to get `adf` is to build
+> it. The download below works from the first release onward.
+
+**Build it.** You need Rust 1.89 or newer, and nothing else:
+
+```sh
+git clone https://github.com/piaro/agentic-development-framework
+cd agentic-development-framework
+cargo build --release
+```
+
+A project pins a signed framework release - the rules and schemas it is
+evaluated against - and a downloaded binary arrives with one beside it. A binary
+you built does not, so build one to develop against. The key here is
+throwaway; a real one belongs in the publishing job:
+
+```sh
+SEED=$(openssl rand -hex 32)
+PUBLIC_KEY=$(ADF_RELEASE_SIGNING_KEY_HEX=$SEED ./target/release/adf release public-key)
+ADF_RELEASE_SIGNING_KEY_HEX=$SEED \
+ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX=$PUBLIC_KEY \
+  sh scripts/release-ci.sh
+# the release is in dist/framework
+```
+
+Then point initialization at it with `--candidate-dir dist/framework`.
+
+**Or download it**, once a release exists. The bootstrap script fetches the
+binary for your platform along with the framework release it pins, checks that
+GitHub attested both to a build of this repository, and installs them together.
+It needs the [GitHub CLI](https://cli.github.com) for that check:
+
+```sh
+sh bootstrap/install.sh --tag framework-<release-id>
+# add the printed bin directory to PATH
+```
+
+It refuses to install anything whose attestation does not verify, so a tampered
+or unattested download stops there rather than landing on your machine.
+Offline installs, key rotation, and rolling back are in
+[`docs/implementation.md`](docs/implementation.md).
+
+Running users need no Python and no Rust toolchain - the binary carries
+everything, including the agent skills it places into a project.
 
 ## Getting started
 
-You need the `adf` binary and a git repository. Nothing else - no Python, no
-Rust toolchain.
+You need `adf` and a git repository.
 
 ```sh
 adf project init --project /path/to/project
