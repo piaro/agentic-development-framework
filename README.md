@@ -13,7 +13,7 @@ Agentic Development Kitは、エージェントへ実装を依頼する前に「
 - 現在有効な仕様を階層Contractとして管理する
 - Issue、Contract、Decisionに基づいて変更ごとの適用Contractを解決する
 - Contract gapや仕様拡張を実装前Challengerが反証する
-- authorityのないプロダクト判断を`blocked-contract-decision`で止める
+- 権限ある根拠のないプロダクト判断を止め、選択肢とともに人へ戻す
 - Data InvariantとOperation Contractからデータ変更経路を横断検査する
 - BuilderとChallengerを分離し、証拠が揃った変更だけを完了とする
 - 障害から得た知識をContract、test、probe、runtime checkへ昇格する
@@ -56,99 +56,76 @@ Issue・依頼・既存Docs
 
 実装後の反証は、実装した文脈から独立した文脈で行います。同じ文脈での見直しを反証として記録しません。
 
-各段階は次のartifactを受け渡します。
+発行される作業と、それに対して提出する結果は次のとおりです。
 
-| 段階 | 主な入力 | 主な出力・gate |
+| 状態 | 割り当てられる作業 | 提出する結果 |
 |---|---|---|
-| Change | Issue、依頼、既存Docs、コード | `change.yaml`、影響範囲、Risk |
-| Contract | Change、accepted Contract、Decision | `contract-assessment.yaml`、Feature Contract、Decision Request |
-| 実装前Challenge | Issue、Assessment、authority、Contract | `contract-challenge.yaml`、blocking finding |
-| Resolve / Ready | Assessment、Challenge、Contract、active change | `.agentic/resolved/<id>.lock.yaml`、readiness |
-| Build | freshなresolved lock | コード、テスト、migration、証拠 |
-| 実装後Challenge | raw diff、Mutation Graph、Operation Contract | 反証結果、残存リスク、追加証拠 |
-| Evidence | Contract clause、テスト、probe | 完了可否 |
+| `needs-analysis` | 検出候補の確認、要件の分析 | 候補の採否と理由、各要件の判定と根拠 |
+| `needs-human-decision` | 人への判断依頼 | 人が選んだ選択肢と決定者 |
+| `needs-decision-recording` | 回答をDecisionとContractへ反映 | 反映の完了 |
+| `needs-pre-build-challenge` | 実装前の反証 | 各要件の判定と、攻めた内容 |
+| `ready-to-build` | 実装 | 実装の要約 |
+| `needs-evidence` | 証拠の記録 | Contract条項に対応する証拠 |
+| `needs-post-build-challenge` | 実装後の反証 | 各要件の判定と、見つけた反例 |
+| `ready-to-merge` | なし | — |
 
-Assessment、Decision Request、Challenge、resolved lockは変更単位のworkflow情報です。現在有効な規範の正本は`contracts/`、判断履歴の正本は`decisions/`に置きます。
+変更ごとの記録は`.agentic/changes/<id>/`に残ります。現在有効な規範の正本は`contracts/`、判断履歴の正本は`decisions/`です。
 
 ## Quick Start
 
 ### 前提環境
 
-- `bin/agentic-init`: POSIX互換`sh`
-- `.agentic/bin/agentic`: Python 3.10以上、PyYAML 6系
+- 署名済みの`agentic`バイナリ。導入手順は`docs/implementation.md`にあります
+- Git管理下のRepository。初期化はGitのtop-levelを対象にします
 - 対象Repositoryの仕様、Issue、コード、テストを調査できるエージェント環境
 
-導入後にPython依存をインストールします。
+利用者にPythonもRustのビルド環境も要求しません。
+
+### プロジェクトを初期化する
 
 ```sh
-python3 -m pip install -r .agentic/runtime/requirements.txt
+agentic project init --project /path/to/project
 ```
 
-### 導入Levelを選ぶ
+`project init`は既存ファイルを上書きしません。次を配置します。
 
-上位Levelは下位Levelを含みます。現在のコード量ではなく、失敗時の影響、状態の複雑さ、変更の不可逆性で選びます。
+- `.agentic/` に設定、Framework lock、Trust Store、Release cache、空のRepository Observation
+- `.agents/skills/` に3つのSkillと参照文書
+- `docs/agentic/README.md` に進め方の案内
+- `AGENTS.md` に管理ブロック。既にファイルがあれば末尾へ追記します
 
-| Level | 主な対象 | 導入される仕組み |
-|---|---|---|
-| Lite | 個人開発、短期プロトタイプ | Project / Feature Contract、authority、Decision Request、実装前Challenge |
-| Standard | 継続運用する通常の業務アプリ | Lite + Domain / Capability / Architecture、Data Invariant、Operation Contract、適合性検査 |
-| System | 複数サービス・チーム・エージェント、非同期処理 | Standard + Mutation Graph、active change競合、Platform probe、Stateful Challenger |
-| Critical | 金銭、機密、権限、法令、監査、不可逆操作 | System + Threat / Failure Model、Failure Injection、runtime invariant、release evidence |
+生成されたファイルは自動でcommitしません。内容を確認してからGitへ追加してください。
 
-迷った場合はStandardを基準にします。プロジェクトの導入Levelとは別に、各変更をR0からR3で分類します。保存形式、認可境界、外部Protocol、削除などの高リスク変更では、プロジェクト全体のLevelを変えずに必要な検証だけを一時昇格できます。
+### 既にコードがあるとき
 
-### 対話形式で導入する
-
-KitのRepositoryで次を実行し、導入モード、対象、Levelを選択します。
+対応言語の物理的な関数とresourceを列挙し、レビューしてから正式な対応付けにします。候補は自動では反映されません。
 
 ```sh
-./bin/agentic-init
+agentic project observe \
+  --project /path/to/project \
+  --output .agentic/repository-observation.draft.yaml
+
+# 人が論理ID、owner、承認Decisionを記入してから
+agentic project validate-bindings --draft .agentic/repository-observation.draft.yaml --project /path/to/project
+agentic project promote-bindings --draft .agentic/repository-observation.draft.yaml --project /path/to/project
 ```
-
-`new`は空のディレクトリへ新規導入し、`adopt`は既存Repositoryへ導入します。
-
-### 新規プロジェクトへ導入する
-
-```sh
-./bin/agentic-init \
-  --mode new \
-  --level standard \
-  --target /path/to/new-project \
-  --name example-project \
-  --non-interactive
-```
-
-### 既存プロジェクトへ導入する
-
-まず`--dry-run`で追加予定を確認します。既存のユーザーファイルは上書きしません。
-
-```sh
-./bin/agentic-init \
-  --mode adopt \
-  --level standard \
-  --target /path/to/existing-project \
-  --non-interactive \
-  --dry-run
-
-./bin/agentic-init \
-  --mode adopt \
-  --level standard \
-  --target /path/to/existing-project \
-  --non-interactive
-```
-
-導入直後は、`docs/agentic/adoption-report.md`と`docs/agentic/source-of-truth.md`をエージェントに完成させ、コードから推測した事実と認可済みの仕様を区別します。
 
 ### 最初の変更を開始する
 
-対象Repositoryで次を実行します。
-
 ```sh
-.agentic/bin/agentic contract lint
-.agentic/bin/agentic change init feature-id --title "変更タイトル"
+agentic change init change.first-feature \
+  --title "最初の機能" \
+  --intent "何のために変更するか" \
+  --project /path/to/project
+
+agentic next change.first-feature --project /path/to/project
 ```
 
-生成された`.agentic/changes/feature-id/`と`contracts/features/feature-id.yaml`を、後述のDevelopment flowに沿って更新します。
+以降は`next`が返す作業を1件ずつ実行します。詳しい流れは次章にあります。
+
+### 既存プロジェクトからの移行
+
+旧CLIを導入済みのRepositoryは、`agentic migration inspect`で移行対象を診断できます。この機能は実験的な扱いで、初版の互換性の約束には含めません。手順は`docs/implementation.md`にあります。
 
 ## 動作の前提となるDocsと情報源
 
@@ -156,7 +133,7 @@ Kitは、エージェントの推論だけを仕様の根拠にはしません�
 
 | 情報 | 役割 | 仕様を決めるauthorityになれるか |
 |---|---|---|
-| `AGENTS.md` | Repository固有の作業規約、禁止事項、検証方法 | Assessment decisionのauthority kindにはしない |
+| `AGENTS.md` | Repository固有の作業規約、禁止事項、検証方法 | 仕様を決める根拠にはしない |
 | Issue・要求文 | 変更の目的、明示要求、非対象、受入条件 | 明示された要求は`issue-requirement`として可 |
 | `contracts/` | 現在有効な規範 | acceptedな明示clauseは`accepted-contract`として可 |
 | `decisions/` | 判断理由と変更履歴 | accepted Decisionは`accepted-decision`として可 |
@@ -197,14 +174,14 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 
 ### ユースケース: 仕様判断が足りない
 
-既存authorityから一意に決められない場合、Assessment decisionを`needs-human-decision`にし、問い、選択肢、影響、推奨、必要な判断者をDecision Requestへまとめます。この時点のchangeは`blocked-contract-decision`です。
+既存の権限ある根拠から一意に決められない場合、問い、選択肢、影響、推奨、必要な判断者を判断依頼としてまとめます。変更は`needs-human-decision`で止まり、人が答えるまで先へ進みません。
 
 ```sh
-.agentic/bin/agentic contract decisions <change-id>
-.agentic/bin/agentic contract decisions --all --format markdown
+agentic next <change-id>
+agentic explain <change-id>
 ```
 
-人の判断後は、判断履歴を`decisions/`へ、現在値を持つ判断なら有効な仕様を`contracts/`へ反映し、Assessmentのauthorityから参照します。Decision Requestは一時情報であり、解決後の実装やContractから参照し続けません。
+人の判断後は、判断の理由を`decisions/`へ、そこから決まった現在の規範を`contracts/`へ記録します。判断依頼は一時的な情報であり、以降の実装やContractから参照し続けません。
 
 ### ユースケース: 新しい仕様や上位Contract変更が必要
 
@@ -213,16 +190,16 @@ Agent推論、Challenger finding、Contract gap、実装都合、既存コード
 1. 既存accepted Contract、Issue明示要求、accepted Decision、記録された人の判断に根拠があるか確認する。
 2. 根拠がなければDecision Requestを作り、人へ判断を求める。
 3. Feature固有でない判断は、適切なProject / Domain / Capability / Architecture / Data Invariant / Operation Contractへ反映する。
-4. resolvedな仕様拡張decision IDをFeature Contractの`introduced_decisions`へ対応づける。
-5. 実装前Challengeをやり直し、authorityがdecisionの内容を本当に支持するか反証する。
+4. 決まった内容を、理由はDecisionへ、現在の規範はContractへ記録する。
+5. 実装前の反証をやり直し、その根拠が本当にその判断を支持するか確かめる。
 
 Challengerのfindingは再検討の入口にはなりますが、authorityにはなりません。
 
 ### ユースケース: データを変更する
 
-Standard以上では、操作順序に依存せず守る条件をData Invariantへ、各writeの振る舞いをOperation Contractへ記録します。その後`agentic mutation build`で同じEntityへのwriterとactive change競合を可視化します。
+操作順序に依存せず守る条件をData Invariantへ、各writeの振る舞いをOperation Contractへ記録します。書込みの検出は`project observe`が出した候補を人がレビューした対応付けに基づきます。
 
-System以上またはR2以上の変更では、create / update / delete / retry、並行実行、順序逆転、commit前後の停止、event重複、migration混在をScenario Driverで試し、各操作後にInvariantを検査します。
+影響の大きい変更では、作成・更新・削除・再試行、並行実行、順序逆転、commit前後の停止、event重複、migration混在といった順序を試し、各操作後にInvariantを検査します。反証の観点は`agentic-challenger`のSkillにある参照文書にまとめてあります。
 
 ### ユースケース: 既存Repositoryへ導入する
 
@@ -230,8 +207,8 @@ System以上またはR2以上の変更では、create / update / delete / retry�
 
 1. 実行入口、境界、データストア、外部サービス、CI、テスト、既存仕様を収集する。
 2. Domain、状態、所有権、多重度、変更経路、Platform未知を復元する。
-3. 同じ能力の異なる実装を比較し、`adoption-report.md`へ事実、推測、未確認を分けて記録する。
-4. 認可済みの現在値だけをContractへ昇格し、既存文書との対応を`source-of-truth.md`へ記録する。
+3. 同じ能力の異なる実装を比較し、事実、推測、未確認を分けて記録する。
+4. 認可済みの現在値だけをContractへ昇格し、既存文書との対応を残す。
 5. 安全網、参照設計、互換層、data migration、呼び出し側、旧経路の順で段階移行する。
 
 ### ユースケース: 障害や反復する不具合から学ぶ
@@ -264,23 +241,22 @@ Feature Contractは上位Contractのコピーでも上書きでもありませ�
 |---|---|---|
 | Contract | 今、何を守るか | 現在有効な間 |
 | Decision | なぜ、その仕様を選んだか | 判断履歴として保持 |
-| Assessment | この変更に何が適用されるか | 変更workflow中と履歴 |
-| Decision Request | 人に何を決めてほしいか | 解決までの一時情報 |
-| Challenge | どの前提を反証し、何が残ったか | 変更workflowの証拠 |
-| resolved lock | 実装が従うContract集合は何か | 対象入力が変わるまで |
+| 判断依頼 | 人に何を決めてほしいか | 解決までの一時情報 |
+| 反証の結果 | どの前提を攻め、何が残ったか | 変更ごとの証拠 |
+| 証拠 | Contract条項が本当に満たされたか | 変更ごとの証拠 |
 
 ### Authorityとreadiness
 
-Assessmentで`resolved`または`accepted`にするdecisionには、次のいずれかのauthorityが必要です。
+要件を満たしたと報告するには、次のいずれかの根拠が必要です。
 
-- `accepted-contract`: 既存accepted Contractの明示clause
-- `issue-requirement`: Issue本文の明示要求
-- `human-decision`: 記録された人の判断
-- `accepted-decision`: acceptedなDecision record
+- 既存のaccepted Contractの明示clause
+- 依頼に明示された要求
+- 記録された人の判断
+- acceptedなDecision record
 
-CLIはauthority kind、ref、参照先の状態、Featureとの対応を構造検査します。Issueや人の判断がdecisionの意味を本当に支持するかは、実装前Challengerが独立に検査します。
+制御基盤は根拠の種類、参照先、その状態を構造として検査します。その根拠が判断の内容を本当に支持するかは、実装前の反証が独立に確かめます。
 
-未判断候補、authority不足、未解決Decision Request、Contract coverage不足、staleまたはblockingなChallenge、Platform未知、Contract競合があればresolve / readyは失敗します。Contract、Assessment、Repository内のauthority source、Challengeの内容が変わった場合も、既存lockはstaleになり再Challenge・再resolveが必要です。外部Issueなどの内容変更はofflineのhash検査では検知できないため、Challengerが参照内容を再確認します。
+未確認の候補、根拠の不足、未解決の判断依頼、Contract coverageの不足、Platformの未知、Contractの競合があれば、実装へ進みません。Contract、コード、根拠となる記録が変わると、それに依存していた結果は古いものとして扱われ、やり直しになります。外部Issueなど、Repositoryの外にある内容の変更はhash検査では検知できないため、反証側が参照内容を再確認します。
 
 ## Data Integrity
 
@@ -309,51 +285,34 @@ Data Integrityは、個別APIのテストだけでなく、同じデータへ到
 - idempotencyとduplicate semantics
 - failure pointと競合Operation
 
-### Mutation GraphとStateful Challenge
+### 状態を持つ変更への反証
 
-```sh
-.agentic/bin/agentic mutation build
-```
+同じEntityへ書き込む経路を並べ、単体では正しくても組み合わせでInvariantを破る順序を探します。通常順だけでなく、重複、逆順、並行、timeout、部分失敗、cancel、移行中の新旧混在を試します。
 
-Mutation GraphはOperation ContractからEntityごとのwriterを集約し、単体では正しくても組み合わせでInvariantを破る経路や、同じ領域を変更するactive changeを見つけるために使います。
-
-Stateful Challengerは、通常順だけでなく、重複、逆順、並行、timeout、部分失敗、cancel、migration中の新旧混在を試します。新しい意味を推測で追加するのではなく、反例が示すContract gapをAssessmentへ戻します。
+反証で新しい意味を推測で追加することはしません。反例が示すContractの不足は、分析へ戻して判断依頼にします。観点は`agentic-challenger`のSkillにある参照文書にまとめてあります。
 
 ## CLI
 
-導入先では`.agentic/bin/agentic`を使用します。別のディレクトリから実行する場合は`--root /path/to/project`を指定できます。
+対象Repositoryは`--project /path/to/project`で指定します。省略した場合は現在のディレクトリです。
 
 | コマンド | 役割 |
 |---|---|
-| `agentic contract lint` | Contractの必須field、ID、参照、statusを構造検査する |
-| `agentic change init <id> --title <title>` | Change、Assessment、Challenge、Feature Contractの雛形を生成する |
-| `agentic contract candidates <id>` | 影響範囲と単一軸一致するContract候補を列挙する |
-| `agentic contract decisions <id>` | 未解決Decision Requestを表示する |
-| `agentic contract decisions --all --format markdown` | active changeの判断依頼を人向けにまとめる |
-| `agentic contract challenge-input <id>` | 実装前Challengeへ渡す対象とfresh hashを出力する |
-| `agentic contract authority-check <id>` | authority model、Feature対応、Challenge、lockを診断する |
-| `agentic contract authority-check --all` | すべてのactive changeを診断する |
-| `agentic contract resolve <id>` | 適用Contractとauthority検証結果をresolved lockへ固定する |
-| `agentic mutation build` | Operation ContractからMutation Graphを構築する |
-| `agentic change ready <id>` | 実装開始前のreadinessとactive change競合を検査する |
-| `agentic evidence check <id>` | Featureのevidence requirements、Challenger結果、残存リスクを検査する |
+| `agentic project init` | 設定、Framework lock、Skill、案内、`AGENTS.md`の管理ブロックを配置する |
+| `agentic project observe` | コードから物理的な関数とresourceを列挙し、レビュー用のDraftを出力する |
+| `agentic project validate-bindings` | 対応付けの不足と検査不能な範囲を分けて報告する |
+| `agentic project promote-bindings` | レビュー済みDraftを正式な観測結果へ反映する |
+| `agentic change init <id> --title <title> --intent <intent>` | 変更を作る |
+| `agentic next <id>` | 現在の状態と、次にやること1件を返す |
+| `agentic explain <id>` | その判定になった理由を説明する |
+| `agentic contract-health` | Repository全体のContractの健全性を検査する |
+| `agentic mcp` | エージェント向けにMCP serverとして起動する |
+| `agentic migration <...>` | 旧CLIのProjectを診断し、移行候補を作って適用する |
+| `agentic release <...>` | 署名済みFramework Releaseを生成、取得、導入、切替、切り戻しする |
+| `agentic binary <...>` | CLIバイナリ自体を導入、更新、状態確認、切り戻しする |
 
-代表的な実行順です。
+エージェントの通常経路はMCPです。`agentic mcp`を起動すると、`agentic_next`と`agentic_submit`で同じやり取りを行えます。
 
-```sh
-.agentic/bin/agentic change init feature-id --title "変更タイトル"
-.agentic/bin/agentic contract candidates feature-id
-.agentic/bin/agentic contract lint
-.agentic/bin/agentic contract challenge-input feature-id
-# $agentic-challengerがcontract-challenge.yamlを完成させる
-.agentic/bin/agentic contract resolve feature-id
-.agentic/bin/agentic mutation build
-.agentic/bin/agentic change ready feature-id
-# 実装と実装後Challenge
-.agentic/bin/agentic evidence check feature-id
-```
-
-CLIは意味判断を自動化しません。候補の採否、authorityが要求を意味的に支持するか、Feature-localか上位Contractか、どの選択肢がプロダクトとして正しいかは、Skillが情報を整理し、必要に応じて人が決定します。
+CLIは意味判断を自動化しません。候補の採否、根拠が要求を本当に支持するか、Feature固有か上位の規範か、どの選択肢がプロダクトとして正しいかは、Skillが情報を整理し、必要に応じて人が決定します。
 
 ## Repository内の情報配置
 
@@ -364,43 +323,34 @@ CLIは意味判断を自動化しません。候補の採否、authorityが要�
 | `docs/agentic/` | 利用方法、既存正本との対応、導入報告（How / Index） |
 | `probes/` | 外部Platformを実証する実行物 |
 | `evidence/` | Contract clauseに対応するテスト、probe、反証、残存リスク |
-| `.agentic/changes/<id>/` | Change、Assessment、Decision Request、Challenge、resolved lock |
-| `.agentic/active-changes.yaml` | 進行中変更と依存・競合関係 |
-| `.agentic/generated/mutation-graph.yaml` | Entity writerと変更競合の生成結果 |
+| `.agentic/changes/<id>/` | 変更ごとの記録、発行された作業の結果、判断依頼 |
+| `.agentic/config.yaml` | 正本の場所と観測結果の位置 |
+| `.agentic/framework.lock` | 使用するFramework Releaseの固定 |
+| `.agentic/repository-observation.yaml` | コード上の物理識別子と論理IDの対応付け |
+| `.agents/skills/` | エージェント向けSkill。`project init`が配置する |
 
-## Kitのupgrade
+## 更新と切り戻し
 
-導入済みRepositoryを更新する場合は、最新版のKitから実行します。
+CLIバイナリの更新と、Projectごとに使うFramework Releaseの更新は別の操作です。
 
 ```sh
-./bin/agentic-init --upgrade --target /path/to/project --non-interactive --dry-run
-./bin/agentic-init --upgrade --target /path/to/project --non-interactive
-/path/to/project/.agentic/bin/agentic --version
+agentic binary status
+agentic binary update <candidate-directory>
+agentic binary rollback
+
+agentic release switch <release-id> --project /path/to/project
+agentic release rollback --project /path/to/project
 ```
 
-`--upgrade`は`.agentic/installation.yaml`からmode、Level、project名を引き継ぎ、Kit管理のCLI、Skill、`AGENTS.md`管理ブロック、installation metadataだけを更新します。既存のContract、Assessment、Decision、Schema、設定、Docsは上書きしません。
-
-### 2.xから3.0.0への移行
-
-3.0.0ではdecision authorityと実装前Challengeを必須化しました。
-
-1. `--upgrade --dry-run`で更新対象を確認してから`--upgrade`する。
-2. `agentic contract authority-check --all`でactive changeを診断する。
-3. activeなAssessmentをschema version 2へ更新し、resolved / accepted decisionへauthorityを追加する。意味を判断できない項目は自動backfillせずDecision Requestにする。
-4. resolvedな仕様拡張decision IDをFeature Contractの`introduced_decisions`へ追加する。
-5. `agentic contract challenge-input <id>`を基に実装前Challengeをやり直す。
-6. Challenge通過後に`contract resolve`と`change ready`を再実行する。
-
-旧resolved lockは3.0.0のreadinessには使用できません。completed / cancelled changeのAssessmentとresolved lockは移行対象外です。一方、accepted Feature Contractは完了済みchangeに由来していても`contract lint`の対象です。旧形式の`introduced_decisions`がobject配列なら、既存のdecision IDだけを保持した文字列配列へ手動で変換します。
+いずれも署名とattestationの検証を通ったものだけを導入します。詳細は`docs/implementation.md`にあります。
 
 ## Shell・CLI・エージェント・人の責務
 
 | 担当 | 責務 |
 |---|---|
-| `agentic-init` | Level別template、CLI、Skill、AGENTS管理ブロックを安全に配置する |
-| CLI | 構造、参照、status、hash、coverage、競合、証拠不足を機械検査する |
+| 制御基盤 | 次にやることを決め、構造、参照、状態、hash、coverage、競合、証拠不足を機械検査する |
 | Agent Skills | Repository調査、Contract記入、選択肢整理、実装、意味的な反証を行う |
-| 人 | authorityのないプロダクト判断、risk受容、組織的な優先順位を決定する |
+| 人 | 権限ある根拠のないプロダクト判断、risk受容、組織的な優先順位を決定する |
 
 人へすべてのgapを丸投げするのではなく、エージェントは既存authorityから解決できるものを処理し、未決定の問いだけを選択肢、影響、推奨とともに提示します。
 
@@ -412,12 +362,11 @@ Rust実装がRepository直下にあります。
 |---|---|
 | `Cargo.toml`、`src/`、`tests/` | 正準実装のRust crate。バイナリ名は`agentic` |
 | `schemas/` | 保存Recordと生成物の言語非依存Schema。Framework Releaseにも含まれる |
-| `skill-src/`、`templates/` | エージェント向けSkillと文書雛形 |
+| `skill-src/`、`templates/` | バイナリへ同梱し、`project init`が配置するSkillと案内 |
 | `scripts/` | リリース生成・検証・公開の補助script。`scripts/tests/`に一連の受入テスト |
 | `bootstrap/` | 配布バイナリの導入script |
 | `testdata/` | golden期待値、固定入力、Detector品質corpus |
 | `docs/` | 実装の正本`implementation.md`と設計記録 |
-| `bin/`、`legacy/` | 旧Python実装。Skillの書き直し後に削除する |
 
 ## Kit開発時のValidation
 
@@ -427,11 +376,10 @@ Kit自体を変更した場合は次を実行します。
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
-sh scripts/tests/test-init.sh
-python3 /path/to/skill-creator/scripts/quick_validate.py skill-src/<skill-name>
+sh scripts/tests/test-vnext-rust.sh
 ```
 
-`scripts/tests/test-init.sh`は、旧Python実装の導入処理とRust実装の受入テストをまとめて実行します。
+`scripts/tests/test-vnext-rust.sh`は、書式、lint、テストに加えて、Detector品質corpus、golden期待値、署名済みRelease生成、公開、導入までを通します。
 
 ## ライセンス
 

@@ -3,11 +3,10 @@
 //! The published binary carries these files, so a user who downloaded only the
 //! binary still gets the half of the kit that agents read.
 //!
-//! Only files valid for the current control plane are placed. The contract and
-//! evidence templates under `templates/common/contracts`, `templates/levels`,
-//! and `templates/common/.agentic` describe the retired Python CLI: they use a
-//! different record shape, and placing them would leave a project whose
-//! `contracts/` directory fails to load.
+//! `templates/` holds only what a project actually receives. The contract and
+//! evidence templates that shipped with the retired Python CLI are gone: they
+//! used a different record shape, and placing them left a project whose
+//! `contracts/` directory could not load.
 
 use std::fmt;
 
@@ -15,8 +14,8 @@ include!(concat!(env!("OUT_DIR"), "/embedded_assets.rs"));
 
 const SKILL_SOURCE_PREFIX: &str = "skill-src/";
 const SKILL_TARGET_PREFIX: &str = ".agents/skills/";
-const AGENTS_BLOCK_ASSET: &str = "templates/snippets/AGENTS.block";
-const GUIDE_ASSET: &str = "templates/common/docs/agentic/README.md.tmpl";
+const AGENTS_BLOCK_ASSET: &str = "templates/AGENTS.block";
+const GUIDE_ASSET: &str = "templates/docs/agentic/README.md";
 const GUIDE_TARGET: &str = "docs/agentic/README.md";
 
 pub const AGENTS_FILE: &str = "AGENTS.md";

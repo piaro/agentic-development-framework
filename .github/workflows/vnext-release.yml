@@ -41,13 +41,7 @@ jobs:
           rustup toolchain install 1.89.0 --profile minimal --component clippy,rustfmt
           rustup default 1.89.0
 
-      - name: Run current Kit regression tests
-        run: |
-          sh -n bin/agentic-init
-          python3 -m py_compile bin/agentic
-          sh scripts/tests/test-init.sh
-
-      - name: Run vNext regression tests
+      - name: Run regression tests
         run: sh scripts/tests/test-vnext-rust.sh
 
       - name: Build and verify signed Release candidate

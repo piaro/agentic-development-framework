@@ -2178,7 +2178,7 @@ Prototypeにはテスト用InMemory Adapterと、Git管理配置を再現するF
 
 ### 14.12 実装言語と配布方式
 
-現行`bin/agentic`とshadow prototypeはPythonで実装されているため、現在のKitをそのまま利用する環境にはPython 3.10以上とPyYAML 6系が必要である。ただし、これはFrameworkの概念上の要件ではなく、現行実装の要件である。
+旧CLIとshadow prototypeはPythonで実装されており、当時はPython 3.10以上とPyYAML 6系が必要だった。これはFrameworkの概念上の要件ではなく実装上の要件であり、Rust実装へ移行した現在は不要である。
 
 広く頒布するvNextでは、Thin Kernel、CLI、Rule Compiler、Context manifest生成、local Project AdapterをRustの単一実行バイナリとして配布する方針を第一候補とする。利用者はコンパイラやPythonを導入せず、対象OS・CPU向けにbuild済みのバイナリを実行する。Contract、Decision、Rule、Requirement、Schema、Skill、Docsは人とAgentが読めるテキストとしてバイナリ外に置き、Framework Releaseとしてversionを固定する。
 

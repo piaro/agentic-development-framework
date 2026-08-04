@@ -230,7 +230,7 @@ Prisma Examplesの1件は、同一の`const db`初期化が未完了の式の途
 
 ## 実行
 
-Repository rootで実行します。正準実装と受入テストはRust版です。`legacy/agentic_vnext/`のPython実装は過去の設計探索用参照であり、新しい設計の実装・同等性確認の対象にはしません。
+Repository rootで実行します。実装と受入テストはRust版だけです。設計探索に使ったPython実装は削除しました。
 
 ### 現行Projectの移行診断
 
@@ -512,7 +512,7 @@ agentic mcp --project .
 MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`agentic_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`agentic_next`を再実行してください。
 
 ```sh
-sh scripts/tests/test-vnext.sh
+sh scripts/tests/test-vnext-rust.sh
 ```
 
 Rust互換実装はContributor向けに別途実行します。通常のKit利用者へRust
@@ -763,7 +763,6 @@ sources:
 | `schemas/delivery/v2/` | 署名済みRelease、attestation対象Distribution Trust、鍵statusを持つ公開鍵設定、取得元、Framework lock拡張、Publish Receipt、Binary Build Record、Publication Recordの固定形式 |
 | `testdata/golden/v1/` | canonical JSON、Schema、Kernel、Application、永続lifecycle、Explain Report等の固定期待値 |
 | `src/`、`tests/` | 正準実装のRust crate。Project loader、ProjectStore、Application、CLI、local stdio MCP serverを含む |
-| `legacy/agentic_vnext/` | 過去の設計探索に使ったPython実装。新しい設計の実装対象にはしない |
 | `testdata/fixtures/db-sqs/` | DB更新＋SQS送信の固定入力 |
 | `testdata/fixtures/security-lifecycle/` | review済みSecurity BindingからEvidence・Challenge完了までを通す固定入力 |
 | `testdata/benchmarks/major-frameworks-v1/` | 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を扱う10 projectの品質corpus |
@@ -800,7 +799,7 @@ sources:
 - cleanなlocal Git cloneでのCI再現と、明示policyによるRepository全体の定期Contract Healthゲートまで実装済みです。remote CI status、shallow clone、submodule、複数Repositoryは未実装です。
 - build phaseと解析root、Binding RecordはProject manifestへ明示します。risk factとcoverageはRust AdapterがGitとsourceから生成します。
 - MCP Adapterは発行済みActionに応じてResult、Evidence、Decision、Contractを書き込みます。Decision／Contract全体の更新は`expected_digest`、Contract条項の更新は`expected_clause_digests`による楽観的lockを使います。別条項の並行更新は保持し、同じ条項の並行更新はstaleとして拒否します。新規作成では`expected_digest: null`を明示します。remote MCP、複数Projectを扱う単一process、未提出Actionのprocess再起動を跨ぐresumeは未実装です。
-- 現行`bin/agentic`、Schema、Skill、導入処理の挙動は変更しません。
+- 旧Python CLI、その導入処理、旧Schema、旧Skillは削除しました。既存Projectの移行は`migration`commandで扱います。
 
 したがって、このPrototypeのResult形式やModule APIを互換性のある公開仕様として利用しないでください。
 
