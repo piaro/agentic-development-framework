@@ -3,8 +3,10 @@
 This is the runbook for whoever holds the signing key. It covers the one-time
 setup and the two workflows that produce a published release.
 
-Everything here happens on GitHub. The signing key never leaves the candidate
-job, and no step publishes anything without an approval.
+Publishing happens on GitHub. The signing key never leaves the candidate job,
+and no step publishes anything without an approval. The one-time setup below is
+the exception: it runs on your own machine, from a clone of this repository,
+because it is what creates the key in the first place.
 
 ## One-time setup
 
@@ -19,14 +21,21 @@ openssl rand -hex 32
 Keep it somewhere you would keep a password. Anyone holding it can sign a
 release that installs on every project pinned to this key.
 
-Derive the public key it corresponds to:
+Derive the public key it corresponds to. You are setting this up before any
+release exists, so run it from a clone of this repository rather than from a
+published binary:
 
 ```sh
-AGENTIC_RELEASE_SIGNING_KEY_HEX=<seed> agentic release public-key
+cargo build --release
+AGENTIC_RELEASE_SIGNING_KEY_HEX=<seed> ./target/release/agentic release public-key
 ```
 
 This prints the public key and nothing else. The seed is never printed and never
 written to disk.
+
+Take care with shell history: a seed typed on a command line stays in
+`~/.zsh_history` or the equivalent. Reading it from a variable you set in one
+step, or from a password manager, avoids that.
 
 ### 2. Store them in the repository
 
