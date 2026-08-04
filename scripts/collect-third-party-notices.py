@@ -1,31 +1,39 @@
 #!/usr/bin/env python3
 """Collect third-party license notices for the distributed binary.
 
-Reads Cargo.lock, locates each dependency in the local cargo registry, and
-writes a single notices file containing every dependency's license expression
-and license text. Binary distribution requires these notices: the BSD-3-Clause
-and Apache-2.0 dependencies mandate that their terms travel with the binary.
+Binary distribution requires these notices: the BSD-3-Clause and Apache-2.0
+dependencies mandate that their terms travel with the binary.
 
-Package sources are read from the extracted registry directory when present and
-from the downloaded .crate archive otherwise, so fetching without building is
-enough. All packages in Cargo.lock are included regardless of target platform,
-which makes one notices file valid for every published binary. Windows and
-WebAssembly packages only arrive when their target is fetched explicitly, so
-run `cargo fetch --target <triple>` once per published target beforehand.
+Which packages count is decided per published target. Cargo.lock lists every
+package any resolution could reach, including ones no published binary links,
+and those are never downloaded - so requiring notices for all of them fails on
+packages that are not actually distributed. Passing `--target` therefore asks
+cargo which packages the binary for that target really links, and the union
+across targets becomes one notices file valid for every published binary.
+
+Package contents are read from the extracted registry directory when present
+and from the downloaded .crate archive otherwise, so fetching without building
+is enough. Run `cargo fetch --locked --target <triple>` for each target first.
 
 Usage:
-  collect-third-party-notices.py --lock <Cargo.lock> --output <path> [--allow-missing]
+  collect-third-party-notices.py --lock <Cargo.lock> --output <path>
+      [--target <triple>]... [--allow-missing]
 
-Exits non-zero when a dependency has no discoverable license text, unless
---allow-missing is given.
+Without `--target`, every package in Cargo.lock is included, which is the
+stricter superset and needs every one of them fetched.
+
+Exits non-zero when a dependency cannot be located or has no discoverable
+license text, unless --allow-missing is given.
 """
 
 from __future__ import annotations
 
 import argparse
 import io
+import json
 import os
 import re
+import subprocess
 import sys
 import tarfile
 from pathlib import Path
@@ -149,6 +157,66 @@ def license_expression(manifest: str) -> str:
     return "not declared"
 
 
+def linked_packages(lock_path: Path, targets: list[str]) -> list[tuple[str, str]]:
+    """Packages the published binaries link, as (name, version) pairs.
+
+    Only normal dependencies are followed. Build dependencies run during the
+    build and dev dependencies build the tests; neither is distributed.
+    """
+    linked: set[tuple[str, str]] = set()
+    for target in targets:
+        completed = subprocess.run(
+            [
+                "cargo",
+                "metadata",
+                "--format-version",
+                "1",
+                "--locked",
+                "--filter-platform",
+                target,
+                "--manifest-path",
+                str(lock_path.parent / "Cargo.toml"),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode != 0:
+            raise SystemExit(
+                f"cargo could not resolve the dependency graph for {target}:\n"
+                f"{completed.stderr.strip()}"
+            )
+        metadata = json.loads(completed.stdout)
+        packages = {package["id"]: package for package in metadata["packages"]}
+        dependencies = {
+            node["id"]: [
+                dependency["pkg"]
+                for dependency in node["deps"]
+                if any(kind["kind"] is None for kind in dependency["dep_kinds"])
+            ]
+            for node in metadata["resolve"]["nodes"]
+        }
+        root = metadata["resolve"]["root"]
+        if root is None:
+            raise SystemExit("the workspace has no root package to walk from")
+        pending = [root]
+        seen = {root}
+        while pending:
+            current = pending.pop()
+            if current != root:
+                package = packages[current]
+                linked.add((package["name"], package["version"]))
+            for dependency in dependencies.get(current, []):
+                if dependency not in seen:
+                    seen.add(dependency)
+                    pending.append(dependency)
+    return sorted(linked)
+
+
+def locked_packages(lock_path: Path) -> list[tuple[str, str]]:
+    lock_text = lock_path.read_text(encoding="utf-8")
+    return sorted(set(PACKAGE_PATTERN.findall(lock_text)))
+
+
 def package_authors(manifest: str) -> str:
     match = AUTHORS_PATTERN.search(manifest)
     if not match:
@@ -186,18 +254,28 @@ def main() -> int:
     parser.add_argument("--lock", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument(
+        "--target",
+        action="append",
+        default=[],
+        dest="targets",
+        metavar="TRIPLE",
+        help="published target whose linked packages are covered; repeatable",
+    )
+    parser.add_argument(
         "--canonical-dir",
         type=Path,
-        default=Path(__file__).resolve().parents[3],
+        default=Path(__file__).resolve().parents[1],
         help="directory holding LICENSE-APACHE, used when a package ships no text",
     )
     parser.add_argument("--allow-missing", action="store_true")
     arguments = parser.parse_args()
 
-    lock_text = arguments.lock.read_text(encoding="utf-8")
-    packages = PACKAGE_PATTERN.findall(lock_text)
+    if arguments.targets:
+        packages = linked_packages(arguments.lock, arguments.targets)
+    else:
+        packages = locked_packages(arguments.lock)
     if not packages:
-        print(f"no packages found in {arguments.lock}", file=sys.stderr)
+        print(f"no packages found for {arguments.lock}", file=sys.stderr)
         return 1
 
     root_package = arguments.lock.parent / "Cargo.toml"

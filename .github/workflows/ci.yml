@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes the previous run's answer obsolete.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Kept in step with rust-version in Cargo.toml. Building on the oldest
+  # supported toolchain is what makes that promise true rather than aspirational.
+  RUST_TOOLCHAIN: 1.89.0
+  TARGETS: >-
+    x86_64-unknown-linux-gnu
+    aarch64-unknown-linux-gnu
+    x86_64-apple-darwin
+    aarch64-apple-darwin
+    x86_64-pc-windows-msvc
+
+jobs:
+  check:
+    name: Check on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component clippy,rustfmt
+          rustup default "$RUST_TOOLCHAIN"
+
+      - name: Cache cargo registry and build output
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: ${{ runner.os }}-cargo-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ env.RUST_TOOLCHAIN }}-
+
+      # Formatting, lint, unit and integration tests, the detector quality
+      # corpus, the golden suites, and the signed release and install flows.
+      - name: Run regression tests
+        run: sh scripts/tests/test-vnext-rust.sh
+
+  third-party-notices:
+    name: Third-party notices stay generatable
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Install pinned Rust toolchain
+        run: |
+          rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal
+          rustup default "$RUST_TOOLCHAIN"
+
+      # Notices must ship with the binary, so a dependency that carries no
+      # usable license terms has to fail here rather than at release time.
+      - name: Fetch dependencies for every published target
+        run: |
+          for target in $TARGETS; do
+            cargo fetch --locked --target "$target"
+          done
+
+      - name: Collect third-party notices
+        run: |
+          selected=""
+          for target in $TARGETS; do
+            selected="$selected --target $target"
+          done
+          python3 scripts/collect-third-party-notices.py \
+            --lock Cargo.lock \
+            --output THIRD-PARTY-NOTICES.md \
+            $selected

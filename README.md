@@ -390,9 +390,19 @@ MITライセンスとApache License 2.0の二本立てです。利用者はど�
 配布するバイナリは依存ライブラリを静的に含みます。依存ライブラリの表示義務を満たすため、リリース物には第三者ライセンス表記を同梱します。表記は次で生成します。
 
 ```sh
+for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu \
+              x86_64-apple-darwin aarch64-apple-darwin x86_64-pc-windows-msvc; do
+  cargo fetch --locked --target "$target"
+done
+
 python3 scripts/collect-third-party-notices.py \
   --lock Cargo.lock \
-  --output THIRD-PARTY-NOTICES.md
+  --output THIRD-PARTY-NOTICES.md \
+  --target x86_64-unknown-linux-gnu \
+  --target aarch64-unknown-linux-gnu \
+  --target x86_64-apple-darwin \
+  --target aarch64-apple-darwin \
+  --target x86_64-pc-windows-msvc
 ```
 
-公開対象のプラットフォームごとに`cargo fetch --target <triple>`を先に実行してください。WindowsとWebAssembly向けのパッケージは、対象を指定して取得しないと手元に現れません。
+対象を指定すると、そのプラットフォーム向けバイナリが実際にリンクするパッケージだけを収録します。`Cargo.lock`には、どの構成でも使われないパッケージも含まれるため、指定なしでは配布しないものまで要求してしまいます。
