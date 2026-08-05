@@ -54,7 +54,7 @@ pub fn build_project_snapshot(
         .cloned()
         .ok_or_else(|| ProjectSnapshotError::new(format!("unknown change: {change_id}")))?;
     let contracts = records_for_change(project, "contracts", change_id)?;
-    let decisions = records_for_change(project, "decisions", change_id)?;
+    let decisions = decision_records_for_change(project, change_id)?;
     let results = records_for_change(project, "results", change_id)?;
     let evidence = records_for_change(project, "evidence", change_id)?;
     let repository = project
@@ -147,6 +147,25 @@ fn records_for_change(
             item.get("change_id")
                 .and_then(Value::as_str)
                 .is_none_or(|candidate| candidate == change_id)
+        })
+        .cloned()
+        .collect();
+    records.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
+    Ok(records)
+}
+
+fn decision_records_for_change(
+    project: &Map<String, Value>,
+    change_id: &str,
+) -> Result<Vec<Value>, ProjectSnapshotError> {
+    let mut records: Vec<Value> = record_array(project, "decisions")?
+        .iter()
+        .filter(|decision| {
+            decision["status"].as_str() == Some("accepted")
+                || decision
+                    .get("change_id")
+                    .and_then(Value::as_str)
+                    .is_none_or(|candidate| candidate == change_id)
         })
         .cloned()
         .collect();
@@ -323,6 +342,99 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "repository fact 0 binding authority is not an accepted Decision: decision.binding"
+        );
+    }
+
+    #[test]
+    fn accepted_decision_from_an_earlier_change_remains_available() {
+        let registry =
+            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1"))
+                .unwrap();
+        let snapshot = build_project_snapshot(
+            &json!({
+                "changes": [{
+                    "schema_version": "1",
+                    "id": "change.current",
+                    "title": "Current change",
+                    "intent": "Use an existing repository binding"
+                }],
+                "decisions": [{
+                    "schema_version": "1",
+                    "id": "decision.binding",
+                    "change_id": "change.previous",
+                    "status": "accepted",
+                    "title": "Bind the repository fact",
+                    "resolves": ["contract.shared#binding"]
+                }],
+                "repository": {
+                    "facts": [{
+                        "binding_authority_refs": ["decision.binding"]
+                    }]
+                }
+            }),
+            "change.current",
+            &registry,
+        )
+        .unwrap();
+
+        assert_eq!(snapshot.decisions.len(), 1);
+        assert_eq!(snapshot.decisions[0]["id"], "decision.binding");
+        assert!(snapshot.artifact_digests.contains_key("decision.binding"));
+    }
+
+    #[test]
+    fn non_accepted_decisions_from_other_changes_remain_out_of_scope() {
+        let registry =
+            SchemaRegistry::load(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1"))
+                .unwrap();
+        let snapshot = build_project_snapshot(
+            &json!({
+                "changes": [{
+                    "schema_version": "1",
+                    "id": "change.current",
+                    "title": "Current change",
+                    "intent": "Inspect decision scope"
+                }],
+                "decisions": [
+                    {
+                        "schema_version": "1",
+                        "id": "decision.accepted-earlier",
+                        "change_id": "change.previous",
+                        "status": "accepted",
+                        "title": "Accepted earlier decision",
+                        "resolves": ["contract.shared#accepted"]
+                    },
+                    {
+                        "schema_version": "1",
+                        "id": "decision.proposed-earlier",
+                        "change_id": "change.previous",
+                        "status": "proposed",
+                        "title": "Unresolved earlier proposal",
+                        "resolves": ["contract.shared#proposed"]
+                    },
+                    {
+                        "schema_version": "1",
+                        "id": "decision.proposed-current",
+                        "change_id": "change.current",
+                        "status": "proposed",
+                        "title": "Current proposal",
+                        "resolves": ["contract.current#proposed"]
+                    }
+                ]
+            }),
+            "change.current",
+            &registry,
+        )
+        .unwrap();
+
+        let decision_ids = snapshot
+            .decisions
+            .iter()
+            .filter_map(|decision| decision["id"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            decision_ids,
+            ["decision.accepted-earlier", "decision.proposed-current"]
         );
     }
 }
