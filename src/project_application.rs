@@ -20,6 +20,27 @@ use std::path::{Path, PathBuf};
 
 pub const MCP_APPLICATION_PROTOCOL_VERSION: &str = "1";
 
+/// Describe a Record-shaped JSON value as a Schema object rather than the
+/// boolean Schema `true` that `serde_json::Value` produces on its own.
+///
+/// `true` accepts every instance and is valid JSON Schema, but it carries no
+/// type for a client to act on. MCP clients that convert tool Schemas into
+/// their own validators reject a boolean where a Schema object is expected, and
+/// a client that does accept it still has nothing telling it to send an object
+/// rather than a string. Every value described here is a Record or a Report,
+/// and those are always JSON objects.
+pub(crate) fn json_object_schema(_generator: &mut schemars::SchemaGenerator) -> schemars::Schema {
+    schemars::json_schema!({"type": "object"})
+}
+
+/// Describe the optimistic concurrency digest, which is the digest of the
+/// Record being replaced or `null` when the Record is being created.
+pub(crate) fn expected_digest_schema(
+    _generator: &mut schemars::SchemaGenerator,
+) -> schemars::Schema {
+    schemars::json_schema!({"type": ["string", "null"]})
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
 pub struct IssuedActionKey {
     pub change_id: String,
@@ -42,6 +63,7 @@ struct IssuedActionEntry {
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct NextServiceResponse {
     pub schema_version: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub next_response: Value,
     pub issued_action: Option<IssuedActionKey>,
 }
@@ -51,6 +73,7 @@ pub struct SubmitServiceResponse {
     pub schema_version: String,
     pub result_id: String,
     pub already_completed: bool,
+    #[schemars(schema_with = "json_object_schema")]
     pub next_response: Value,
     pub issued_action: Option<IssuedActionKey>,
 }

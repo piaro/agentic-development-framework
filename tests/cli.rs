@@ -3207,6 +3207,51 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
         "Contract tool must expose clause-scoped optimistic locking"
     );
 
+    // A boolean Schema accepts every instance and is valid JSON Schema, but it
+    // states no type. Clients that convert tool Schemas into their own
+    // validators reject the whole listing when they find one, and clients that
+    // accept it have nothing telling them to send an object.
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap();
+        for schema_key in ["inputSchema", "outputSchema"] {
+            let Some(properties) = tool[schema_key]["properties"].as_object() else {
+                continue;
+            };
+            for (property, schema) in properties {
+                assert!(
+                    schema.is_object(),
+                    "{name}.{schema_key}.{property} must be a Schema object, not {schema}"
+                );
+            }
+        }
+    }
+    for (name, property) in [
+        ("adf_add_evidence", "evidence"),
+        ("adf_apply_contract", "contract"),
+        ("adf_apply_decision", "decision"),
+        ("adf_submit", "payload"),
+    ] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"].as_str() == Some(name))
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"][property]["type"], "object",
+            "{name}.{property} carries a Record and must declare its type"
+        );
+    }
+    for name in ["adf_apply_contract", "adf_apply_decision"] {
+        let tool = tools
+            .iter()
+            .find(|tool| tool["name"].as_str() == Some(name))
+            .unwrap();
+        assert_eq!(
+            tool["inputSchema"]["properties"]["expected_digest"]["type"],
+            json!(["string", "null"]),
+            "{name} takes the replaced Record digest, or null when it creates one"
+        );
+    }
+
     let next_call = json!({
         "jsonrpc": "2.0",
         "id": 3,

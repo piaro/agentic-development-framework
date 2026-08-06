@@ -7,6 +7,17 @@ change, is written down in `COMPATIBILITY.md`.
 
 ## Unreleased
 
+### Fixed
+
+- MCP tool Schemas now describe the JSON values they carry instead of emitting
+  the boolean Schema `true`. `payload`, `evidence`, `contract`, `decision`,
+  `report`, and `next_response` declare `object`, and `expected_digest` declares
+  `string` or `null`. The boolean form was valid JSON Schema and accepted the
+  same instances, but it stated no type: clients that convert tool Schemas into
+  their own validators rejected the entire `tools/list` response over it, and a
+  client that accepted it still had nothing telling it to send an object rather
+  than a string.
+
 ### Changed
 
 - Accepted Decisions now remain available to later Changes, while proposed,
