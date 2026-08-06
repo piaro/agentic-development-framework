@@ -52,7 +52,11 @@ Project Snapshot
 - 人向け本文を保持するChange・Contract・DecisionのMarkdown Record
 - typed blockだけを更新し、YAML版と同じSnapshotを生成するMarkdown codec
 - Change・Contract・Decision・Result・Evidenceの言語非依存JSON Schema検証
-- 6種類のResult payload Schemaと、Result種別ごとの許可Role検証
+- 7種類のResult payload Schemaと、Result種別ごとの許可Role検証
+- 変更意図から影響を評価し、影響あり・影響なし・判断不能を区別するImpact Assessment
+- コードとContractがない新規プロジェクトで、最初の変更に必要な規範だけを作る起動経路
+- 作業ごとに絞ったContext、過去のImpact Assessmentの再利用、実行環境に向けたモデル推奨
+- 追加のLLM実行や追跡処理を行わず、提出済みのToken数・処理時間とContextサイズを集計するExecution Log
 - outcomeの結論・根拠参照と、発行Contextに対する参照整合性の検証
 - 全ChangeのEvidence履歴と現在の入力digestから生成する条項単位のContract Health表示と、明示policyによる定期CIゲート
 - 主要8 ORM・8 messaging・8 HTTP client・3 Object Storage SDK系統を測るDetector品質benchmark
@@ -791,7 +795,7 @@ sources:
 - ContextはRequirement単位に分離していますが、現在の最小単位はContract文書IDとコードartifact IDです。Contract clauseやコードsymbol単位の選択は未実装です。
 - Rust CLIはFramework lockからlocal Releaseを自動解決して`next`と`explain`を実行します。決定的な署名済みRelease生成、offline directory・local tar・remote tarの導入、切替、rollback、5 Platformのnative binary build、checksum・attestation、候補Artifact保存、Environment承認後のGitHub Release公開、attestation必須bootstrap、versioned binary更新・rollbackは実装済みです。実際のGitHub-hosted workflowによる公開・導入の実証、SBOM、認証付きFramework取得、複数mirror、過去のResult IDを指定した説明は未実装です。
 - Framework lock v2はRelease artifact digest、取得元ID、署名鍵IDを固定します。鍵のrotation・retire・revoke規則は実装済みです。組織提供Releaseの合成、署名済み失効listのremote同期、透明性logは未実装です。
-- Result payload SchemaはPrototype組込みの6種類に固定されています。Project・組織固有Schemaの追加方法とSchema migrationは未実装です。
+- Result payload SchemaはPrototype組込みの7種類に固定されています。Project・組織固有Schemaの追加方法とSchema migrationは未実装です。
 - lifecycle goldenは、実装でコードartifact digestが変わっても設計工程を繰り返さずEvidenceへ進む正常系を固定しています。stale Actionの拒否や保存競合等の異常系scenarioは通常テストだけで、まだ言語間golden化していません。
 - `canonical-json-v1`は整数だけを扱います。浮動小数点の言語間正規化は未定義のため拒否します。
 - Rust crateはcanonical JSONからExplain Reportまでgolden互換であり、実Projectのconfig、Git artifact、Filesystem Storeを読む`next`／`explain` CLIを含みます。

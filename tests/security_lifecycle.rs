@@ -286,6 +286,7 @@ fn submission(
         result_schema: action.expected_result_schema.clone(),
         payload,
         output_refs,
+        execution: None,
     }
 }
 

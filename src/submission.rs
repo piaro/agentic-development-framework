@@ -8,7 +8,11 @@ use crate::canonical_digest;
 use crate::context::GeneratedContext;
 use crate::contract_scope::{clause_matches_subjects, contract_matches_subjects};
 use crate::kernel::ProjectSnapshot;
+use crate::project::{CONTRACT_INDEX_REF, DECISION_INDEX_REF};
 use crate::schema::SchemaRegistry;
+use crate::signal_catalog::{
+    SignalCatalogRegistry, TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -25,6 +29,8 @@ pub struct ResultSubmission {
     pub result_schema: String,
     pub payload: Value,
     pub output_refs: Vec<String>,
+    #[serde(default)]
+    pub execution: Option<Value>,
 }
 
 pub fn prepare_result(
@@ -65,7 +71,10 @@ pub fn prepare_result(
     }
     for (reference, issued_digest) in &context.source_digests {
         let current_digest = current.artifact_digests.get(reference);
-        if current_digest != Some(issued_digest) && !output_ref_set.contains(reference.as_str()) {
+        if current_digest != Some(issued_digest)
+            && !output_ref_set.contains(reference.as_str())
+            && !index_change_is_output(reference, &output_ref_set)
+        {
             return Err(error(format!("issued context is stale: {reference}")));
         }
     }
@@ -82,7 +91,15 @@ pub fn prepare_result(
             missing_outputs.join(", ")
         )));
     }
+    let mut input_refs = context.source_digests.clone();
     let mut freshness_refs = context.source_digests.clone();
+    for index_ref in [CONTRACT_INDEX_REF, DECISION_INDEX_REF] {
+        if index_change_is_output(index_ref, &output_ref_set)
+            && let Some(digest) = current.artifact_digests.get(index_ref)
+        {
+            freshness_refs.insert(index_ref.to_owned(), digest.clone());
+        }
+    }
     for reference in &submission.output_refs {
         freshness_refs.insert(
             reference.clone(),
@@ -94,6 +111,11 @@ pub fn prepare_result(
     schema_registry
         .validate_result_payload(&submission.result_schema, &payload)
         .map_err(|validation| error(validation.to_string()))?;
+    if submission.result_schema == "result.impact-assessment" {
+        let selected_inputs = validate_impact_assessment(context, current, &payload)?;
+        input_refs.extend(selected_inputs.clone());
+        freshness_refs.extend(selected_inputs);
+    }
     if submission.result_schema == "result.risk-signal-review" {
         validate_candidate_reviews(context, &payload)?;
     }
@@ -101,6 +123,7 @@ pub fn prepare_result(
 
     let mut output_refs = submission.output_refs.clone();
     output_refs.sort();
+    let execution = execution_record(context, submission.execution.as_ref())?;
     let body = json!({
         "schema_version": RESULT_SUBMISSION_PROTOCOL_VERSION,
         "change_id": submission.change_id,
@@ -108,12 +131,19 @@ pub fn prepare_result(
         "role": submission.role,
         "result_schema": submission.result_schema,
         "context_digest": submission.context_digest,
-        "input_refs": context.source_digests,
+        "input_refs": input_refs,
         "output_refs": output_refs,
         "freshness_refs": freshness_refs,
+        "execution": execution,
         "payload": payload,
     });
-    let digest = canonical_digest(&body).map_err(|canonical| error(canonical.to_string()))?;
+    let mut identity_body = body.clone();
+    identity_body
+        .as_object_mut()
+        .expect("Result body is an object")
+        .remove("execution");
+    let digest =
+        canonical_digest(&identity_body).map_err(|canonical| error(canonical.to_string()))?;
     let mut result = body
         .as_object()
         .expect("Result body is constructed as an object")
@@ -135,6 +165,174 @@ pub fn prepare_result(
         .validate("result", &result)
         .map_err(|validation| error(validation.to_string()))?;
     Ok(result)
+}
+
+fn index_change_is_output(reference: &str, output_refs: &BTreeSet<&str>) -> bool {
+    (reference == CONTRACT_INDEX_REF
+        && output_refs
+            .iter()
+            .any(|output| output.starts_with("contract.")))
+        || (reference == DECISION_INDEX_REF
+            && output_refs
+                .iter()
+                .any(|output| output.starts_with("decision.")))
+}
+
+fn execution_record(
+    context: &GeneratedContext,
+    reported: Option<&Value>,
+) -> Result<Value, ResultSubmissionError> {
+    let mut execution = match reported {
+        None => Map::new(),
+        Some(Value::Object(values)) => values.clone(),
+        Some(_) => return Err(error("execution must be an object")),
+    };
+    if execution.contains_key("context_bytes") {
+        return Err(error("execution.context_bytes is measured by ADF"));
+    }
+    for field in [
+        "duration_ms",
+        "input_tokens",
+        "output_tokens",
+        "tool_calls",
+        "retries",
+    ] {
+        if execution
+            .get(field)
+            .is_some_and(|value| value.as_u64().is_none())
+        {
+            return Err(error(format!(
+                "execution.{field} must be a non-negative integer"
+            )));
+        }
+    }
+    let context_bytes = serde_json::to_vec(context)
+        .map_err(|serialization| error(serialization.to_string()))?
+        .len() as u64;
+    execution.insert("context_bytes".to_owned(), Value::from(context_bytes));
+    Ok(Value::Object(execution))
+}
+
+fn validate_impact_assessment(
+    context: &GeneratedContext,
+    current: &ProjectSnapshot,
+    payload: &Value,
+) -> Result<BTreeMap<String, String>, ResultSubmissionError> {
+    let status = payload["status"]
+        .as_str()
+        .expect("Impact Assessment Schema guarantees status");
+    let impacts = array_field(payload, "impacts");
+    let unknowns = array_field(payload, "unknowns");
+    match status {
+        "no-impact" if !impacts.is_empty() || !unknowns.is_empty() => {
+            return Err(error("no-impact requires empty impacts and unknowns"));
+        }
+        "impacts-identified" if impacts.is_empty() || !unknowns.is_empty() => {
+            return Err(error(
+                "impacts-identified requires at least one impact and no unknowns",
+            ));
+        }
+        "inconclusive" if unknowns.is_empty() => {
+            return Err(error("inconclusive requires at least one unknown"));
+        }
+        _ => {}
+    }
+
+    let signal_registry =
+        SignalCatalogRegistry::built_in().map_err(|catalog| error(catalog.to_string()))?;
+    let mut seen = BTreeSet::new();
+    for impact in impacts {
+        let signal = impact["signal"]
+            .as_str()
+            .expect("Impact Assessment Schema guarantees signal");
+        let bindings = impact["bindings"]
+            .as_object()
+            .expect("Impact Assessment Schema guarantees bindings")
+            .iter()
+            .map(|(key, value)| {
+                (
+                    key.clone(),
+                    value
+                        .as_str()
+                        .expect("Impact Assessment Schema guarantees binding strings")
+                        .to_owned(),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        signal_registry
+            .validate_signal_candidate(
+                signal,
+                TYPED_FACT_DETECTOR_ID,
+                TYPED_FACT_DETECTOR_VERSION,
+                &bindings,
+            )
+            .map_err(|catalog| error(catalog.to_string()))?;
+        let identity = canonical_digest(&json!({"signal": signal, "bindings": bindings}))
+            .map_err(|canonical| error(canonical.to_string()))?;
+        if !seen.insert(identity) {
+            return Err(error("impacts must be unique by signal and bindings"));
+        }
+    }
+
+    let offered = assessment_offered_refs(context);
+    let selected = array_field(payload, "basis_refs")
+        .iter()
+        .chain(
+            impacts
+                .iter()
+                .flat_map(|impact| array_field(impact, "governing_refs")),
+        )
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    let unknown = selected.difference(&offered).copied().collect::<Vec<_>>();
+    if !unknown.is_empty() {
+        return Err(error(format!(
+            "Impact Assessment refers to inputs not offered by the issued Context: {}",
+            unknown.join(", ")
+        )));
+    }
+    let mut selected_inputs = BTreeMap::new();
+    for reference in selected {
+        let digest = current.artifact_digests.get(reference).ok_or_else(|| {
+            error(format!(
+                "Impact Assessment input is not current: {reference}"
+            ))
+        })?;
+        selected_inputs.insert(reference.to_owned(), digest.clone());
+    }
+    Ok(selected_inputs)
+}
+
+fn assessment_offered_refs(context: &GeneratedContext) -> BTreeSet<&str> {
+    let mut offered = context
+        .source_refs
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    offered.extend(
+        array_field(&context.payload, "repository_index")
+            .iter()
+            .filter_map(|item| item["ref"].as_str()),
+    );
+    for contract in array_field(&context.payload, "governance_index") {
+        if let Some(id) = contract["id"].as_str() {
+            offered.insert(id);
+        }
+        for clause in array_field(contract, "clauses") {
+            if let Some(reference) = clause["ref"].as_str() {
+                offered.insert(reference);
+            }
+            if let Some(reference) = clause["authority_ref"].as_str() {
+                offered.insert(reference);
+            }
+        }
+    }
+    offered.extend(
+        array_field(&context.payload, "decision_index")
+            .iter()
+            .filter_map(|decision| decision["id"].as_str()),
+    );
+    offered
 }
 
 fn validate_candidate_reviews(
@@ -488,6 +686,7 @@ mod tests {
                 }]
             }),
             output_refs,
+            execution: None,
         }
     }
 
@@ -519,6 +718,164 @@ mod tests {
         assert_eq!(
             result["payload"]["outcomes"][0]["freshness_refs"]["evidence.test"],
             format!("sha256:{}", "b".repeat(64))
+        );
+    }
+
+    fn impact_context() -> GeneratedContext {
+        let digest = |character: char| format!("sha256:{}", character.to_string().repeat(64));
+        GeneratedContext {
+            action_id: "action.impact".to_owned(),
+            role: "Analyst".to_owned(),
+            source_refs: vec![
+                "change.test".to_owned(),
+                "repository.content".to_owned(),
+                "contracts.index".to_owned(),
+            ],
+            source_digests: BTreeMap::from([
+                ("change.test".to_owned(), digest('a')),
+                ("repository.content".to_owned(), digest('b')),
+                ("contracts.index".to_owned(), digest('c')),
+            ]),
+            instance_source_digests: BTreeMap::new(),
+            contract_clause_projection_version: "1".to_owned(),
+            contract_clauses: Vec::new(),
+            contract_clauses_digest: canonical_digest(&json!([])).unwrap(),
+            payload: json!({
+                "action": {"expected_result_schema": "result.impact-assessment"},
+                "requirement_instances": [],
+                "signal_candidates": [],
+                "repository_index": [{"ref": "code.accounts"}],
+                "governance_index": [{
+                    "id": "contract.accounts",
+                    "clauses": [{"ref": "contract.accounts#persist"}]
+                }],
+                "decision_index": []
+            }),
+            digest: digest('d'),
+        }
+    }
+
+    fn impact_snapshot() -> ProjectSnapshot {
+        let digest = |character: char| format!("sha256:{}", character.to_string().repeat(64));
+        ProjectSnapshot {
+            change_id: "change.test".to_owned(),
+            change: json!({}),
+            contracts: Vec::new(),
+            decisions: Vec::new(),
+            results: Vec::new(),
+            evidence: Vec::new(),
+            repository: json!({}),
+            artifact_digests: BTreeMap::from([
+                ("change.test".to_owned(), digest('a')),
+                ("repository.content".to_owned(), digest('b')),
+                ("contracts.index".to_owned(), digest('c')),
+                ("code.accounts".to_owned(), digest('e')),
+                ("contract.accounts".to_owned(), digest('f')),
+                ("contract.accounts#persist".to_owned(), digest('1')),
+            ]),
+            digest: String::new(),
+        }
+    }
+
+    fn impact_submission(status: &str, impacts: Value, unknowns: Value) -> ResultSubmission {
+        ResultSubmission {
+            change_id: "change.test".to_owned(),
+            action_id: "action.impact".to_owned(),
+            context_digest: format!("sha256:{}", "d".repeat(64)),
+            role: "Analyst".to_owned(),
+            result_schema: "result.impact-assessment".to_owned(),
+            payload: json!({
+                "status": status,
+                "summary": "Assessed the requested account change.",
+                "impacts": impacts,
+                "unknowns": unknowns,
+                "basis_refs": ["change.test", "code.accounts"]
+            }),
+            output_refs: Vec::new(),
+            execution: Some(json!({
+                "duration_ms": 25,
+                "model": "economy-test",
+                "input_tokens": 120,
+                "output_tokens": 40,
+                "tool_calls": 1,
+                "retries": 0
+            })),
+        }
+    }
+
+    #[test]
+    fn impact_assessment_validates_declared_signals_and_records_lightweight_metrics() {
+        let submission = impact_submission(
+            "impacts-identified",
+            json!([{
+                "signal": "persistent-data-write",
+                "bindings": {
+                    "data": "data.accounts",
+                    "operation": "operation.register-account"
+                },
+                "description": "Stores a new account.",
+                "risk": "medium",
+                "governing_refs": ["contract.accounts#persist"]
+            }]),
+            json!([]),
+        );
+
+        let result = prepare_result(
+            &impact_context(),
+            &impact_snapshot(),
+            &submission,
+            &registry(),
+        )
+        .unwrap();
+
+        assert_eq!(result["execution"]["duration_ms"], 25);
+        assert_eq!(result["execution"]["model"], "economy-test");
+        assert!(result["execution"]["context_bytes"].as_u64().unwrap() > 0);
+        assert_eq!(
+            result["input_refs"]["contract.accounts#persist"],
+            format!("sha256:{}", "1".repeat(64))
+        );
+
+        let mut alternate_execution = submission.clone();
+        alternate_execution.execution = Some(json!({
+            "duration_ms": 50,
+            "model": "different-observer-value",
+            "input_tokens": 240,
+            "output_tokens": 80
+        }));
+        let alternate_result = prepare_result(
+            &impact_context(),
+            &impact_snapshot(),
+            &alternate_execution,
+            &registry(),
+        )
+        .unwrap();
+        assert_eq!(result["id"], alternate_result["id"]);
+    }
+
+    #[test]
+    fn impact_assessment_distinguishes_no_impact_from_inconclusive() {
+        let invalid = impact_submission("no-impact", json!([]), json!(["Unknown storage"]));
+        let error = prepare_result(&impact_context(), &impact_snapshot(), &invalid, &registry())
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "no-impact requires empty impacts and unknowns"
+        );
+
+        let inconclusive = impact_submission(
+            "inconclusive",
+            json!([]),
+            json!(["The storage boundary is not specified."]),
+        );
+        assert!(
+            prepare_result(
+                &impact_context(),
+                &impact_snapshot(),
+                &inconclusive,
+                &registry(),
+            )
+            .is_ok()
         );
     }
 }

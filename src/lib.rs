@@ -20,6 +20,7 @@ pub mod detector_audit;
 pub mod detector_audit_baseline;
 pub mod detector_benchmark;
 pub mod distribution_trust;
+pub mod execution_log;
 pub mod explain;
 pub mod filesystem_project;
 mod framework_detection;
@@ -732,6 +733,10 @@ pub fn verify_context_suite(
                     reason: source.reason.clone(),
                     expected_result_schema: source.expected_result_schema.clone(),
                     candidate_fingerprints: source.candidate_fingerprints.clone(),
+                    execution_guidance: kernel::ExecutionGuidance {
+                        preferred_model_tier: "standard".to_owned(),
+                        escalation_conditions: Vec::new(),
+                    },
                 })
             })
             .transpose()?;
@@ -1065,6 +1070,7 @@ pub fn verify_result_submission_suite(
                     .collect()
             })
             .unwrap_or_default(),
+        execution: None,
     };
     let actual = submission::prepare_result(&context, &snapshot, &submission, &registry)
         .map_err(|error| GoldenError::Mismatch(error.to_string()))?;
@@ -1203,6 +1209,7 @@ pub fn verify_application_suite(
                     result_schema: action.expected_result_schema.clone(),
                     payload: step["input"]["payload"].clone(),
                     output_refs: string_array(&step["input"]["output_refs"]),
+                    execution: None,
                 };
                 response = application.submit(&submission).map_err(|error| {
                     GoldenError::Mismatch(format!("scenario step {index} submit failed: {error}"))
@@ -1791,6 +1798,7 @@ pub fn verify_persistent_application_suite(
                         result_schema: action.expected_result_schema.clone(),
                         payload: step["input"]["payload"].clone(),
                         output_refs: string_array(&step["input"]["output_refs"]),
+                        execution: None,
                     };
                     response = application.submit(&submission).map_err(|error| {
                         GoldenError::Mismatch(format!(
@@ -1994,6 +2002,7 @@ pub fn verify_explain_suite(
                     result_schema: action.expected_result_schema.clone(),
                     payload: step["input"]["payload"].clone(),
                     output_refs: string_array(&step["input"]["output_refs"]),
+                    execution: None,
                 };
                 response = application.submit(&submission).map_err(|error| {
                     GoldenError::Mismatch(format!("Explain step {index} submit failed: {error}"))
@@ -2260,6 +2269,7 @@ fn complete_current_build<Store: application::ProjectStore>(
         result_schema: action.expected_result_schema.clone(),
         payload: input["payload"].clone(),
         output_refs: string_array(&input["output_refs"]),
+        execution: None,
     };
     application
         .update_repository(input["repository"].clone())

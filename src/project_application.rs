@@ -7,6 +7,7 @@
 use crate::application::{ApplicationResponse, ApplicationSubmission};
 use crate::cli_output::next_response_value;
 use crate::context::GeneratedContext;
+use crate::execution_log::ExecutionLog;
 use crate::kernel::ProjectSnapshot;
 use crate::project_runtime::LoadedProject;
 use crate::submission::ResultSubmission;
@@ -149,11 +150,28 @@ impl ProjectApplicationService {
             .map_err(application_error)
     }
 
+    pub fn execution_log(
+        &self,
+        change_id: &str,
+        require_clean: bool,
+    ) -> Result<Value, ServiceError> {
+        let project = self.load(require_clean)?;
+        if require_clean {
+            project
+                .assert_tracked_inputs(change_id)
+                .map_err(project_error)?;
+        }
+        let application = project.application().map_err(application_error)?;
+        let snapshot = application.snapshot(change_id).map_err(application_error)?;
+        Ok(ExecutionLog::build(&snapshot).as_value())
+    }
+
     pub fn submit(
         &mut self,
         key: &IssuedActionKey,
         payload: Value,
         output_refs: Vec<String>,
+        execution: Option<Value>,
     ) -> Result<SubmitServiceResponse, ServiceError> {
         let entry = match self.issued.get(key).cloned() {
             Some(entry) => entry,
@@ -185,6 +203,7 @@ impl ProjectApplicationService {
             result_schema: result_schema.to_owned(),
             payload,
             output_refs,
+            execution,
         };
         let ApplicationSubmission { result, response } = application
             .submit_issued(&entry.context, &submission)
@@ -346,7 +365,17 @@ impl ProjectApplicationService {
             ));
         }
         let entry = self.issued_entry(key)?;
-        assert_action(&entry, Some("record-human-decision"), None)?;
+        let action = required_context_string(&entry.context, &["action", "action"])?;
+        if !matches!(
+            action,
+            "record-human-decision" | "establish-impact-governance"
+        ) {
+            return Err(service_error(
+                "ACTION_NOT_ALLOWED",
+                format!("Issued Action does not allow a Contract write: {action}"),
+                false,
+            ));
+        }
         assert_contract_scope(&contract, key)?;
         let contract_id = required_record_id(&contract, "Contract")?.to_owned();
         let authority_refs = contract
@@ -356,10 +385,10 @@ impl ProjectApplicationService {
             .flatten()
             .filter_map(|clause| clause["authority_ref"].as_str())
             .collect::<BTreeSet<_>>();
-        if authority_refs.is_empty() {
+        if action == "record-human-decision" && authority_refs.is_empty() {
             return Err(service_error(
                 "ACTION_NOT_ALLOWED",
-                "Contract update must reference a Decision authority",
+                "A Contract written from a Human decision must reference that Decision authority",
                 false,
             ));
         }

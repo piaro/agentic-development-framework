@@ -12,14 +12,15 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-pub const SCHEMA_BUNDLE_VERSION: &str = "2";
+pub const SCHEMA_BUNDLE_VERSION: &str = "3";
 const RECORD_KINDS: [&str; 5] = ["change", "contract", "decision", "evidence", "result"];
-const RESULT_SCHEMA_IDS: [&str; 6] = [
+const RESULT_SCHEMA_IDS: [&str; 7] = [
     "result.analysis",
     "result.build",
     "result.challenge",
     "result.evidence",
     "result.human-answer",
+    "result.impact-assessment",
     "result.risk-signal-review",
 ];
 

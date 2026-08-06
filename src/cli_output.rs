@@ -23,6 +23,20 @@ pub fn next_response_value(change_id: &str, response: &ApplicationResponse) -> V
                 .map(|instance| instance.instance_key.as_str())
                 .collect::<Vec<_>>(),
             "candidate_fingerprints": action.candidate_fingerprints,
+            "execution_guidance": action.execution_guidance,
+        })
+    });
+    let context_stats = response.context.as_ref().map(|context| {
+        json!({
+            "serialized_bytes": serde_json::to_vec(context)
+                .expect("Generated Context is serializable")
+                .len(),
+            "source_count": context.source_refs.len(),
+            "reused_result_count": context
+                .source_refs
+                .iter()
+                .filter(|reference| reference.starts_with("result."))
+                .count(),
         })
     });
     json!({
@@ -31,6 +45,7 @@ pub fn next_response_value(change_id: &str, response: &ApplicationResponse) -> V
         "state": response.decision.state,
         "next_action": next_action,
         "context": response.context,
+        "context_stats": context_stats,
         "diagnostics": response.decision.diagnostics,
     })
 }
@@ -48,6 +63,10 @@ pub fn render_next_text(change_id: &str, response: &ApplicationResponse) -> Stri
             ));
             lines.push(format!("action_id: {}", action.id));
             lines.push(format!("result_schema: {}", action.expected_result_schema));
+            lines.push(format!(
+                "preferred_model_tier: {}",
+                action.execution_guidance.preferred_model_tier
+            ));
         }
         None => lines.push("next: none".to_owned()),
     }
@@ -60,6 +79,12 @@ pub fn render_next_text(change_id: &str, response: &ApplicationResponse) -> Stri
             } else {
                 context.source_refs.join(",")
             }
+        ));
+        lines.push(format!(
+            "context_bytes: {}",
+            serde_json::to_vec(context)
+                .expect("Generated Context is serializable")
+                .len()
         ));
     }
     if response.decision.state == "blocked-detection" {

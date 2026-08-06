@@ -48,6 +48,8 @@ pub struct SubmitToolInput {
     pub payload: Value,
     #[serde(default)]
     pub output_refs: Vec<String>,
+    #[serde(default)]
+    pub execution: Option<Value>,
 }
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -211,6 +213,28 @@ impl AgenticMcpServer {
             })
     }
 
+    /// Return recorded Context, duration, token, model, tool, and retry metrics.
+    #[tool(
+        name = "adf_execution_log",
+        description = "Return the lightweight execution log already stored for one Change. This does not run analysis or collect telemetry.",
+        annotations(title = "Agentic Execution Log", read_only_hint = true)
+    )]
+    async fn adf_execution_log(
+        &self,
+        Parameters(input): Parameters<NextToolInput>,
+    ) -> Result<Json<ReportToolResponse>, ServiceError> {
+        self.service
+            .lock()
+            .await
+            .execution_log(&input.change_id, input.require_clean)
+            .map(|report| {
+                Json(ReportToolResponse {
+                    schema_version: "1".to_owned(),
+                    report,
+                })
+            })
+    }
+
     /// Validate and persist the Result for an Action issued in this MCP session.
     #[tool(
         name = "adf_submit",
@@ -229,7 +253,7 @@ impl AgenticMcpServer {
         self.service
             .lock()
             .await
-            .submit(&key, input.payload, input.output_refs)
+            .submit(&key, input.payload, input.output_refs, input.execution)
             .map(Json)
     }
 

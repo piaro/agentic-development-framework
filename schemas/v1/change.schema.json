@@ -8,6 +8,7 @@
     "id": {"type": "string", "pattern": "^change\\.[A-Za-z0-9._-]+$"},
     "title": {"type": "string", "minLength": 1},
     "intent": {"type": "string", "minLength": 1},
+    "impact_assessment": {"const": "required"},
     "base_revision": {"type": "string", "minLength": 1}
   },
   "additionalProperties": false

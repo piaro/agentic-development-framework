@@ -1,6 +1,6 @@
 ---
 name: adf-analyst
-description: Carry out the Analyst work the control plane assigns for a change - reviewing detected risk signals, confirming affected data and operation boundaries, writing governing contracts, raising decision requests when no authority settles a product choice, and recording a human's answer as a Decision and Contract. Use when `adf next` issues an action whose role is Analyst, or when a change is in needs-analysis, needs-human-decision, needs-decision-recording, or needs-post-build-analysis.
+description: Carry out the Analyst work the control plane assigns for a change - assessing intended impact, reviewing detected risk signals, confirming affected data and operation boundaries, writing governing contracts, raising decision requests when no authority settles a product choice, and recording a human's answer as a Decision and Contract. Use when `adf next` issues an action whose role is Analyst, or when a change is in needs-impact-assessment, needs-analysis, needs-human-decision, needs-decision-recording, needs-post-build-impact-assessment, or needs-post-build-analysis.
 ---
 
 # Agentic Analyst
@@ -15,6 +15,8 @@ Through MCP, call `adf_next` with the change id. Without MCP, run
 
 - `state`: where the change stands
 - `action`: what to do now, including `id`, `role`, and `action`
+- `action.execution_guidance`: an advisory model tier and the conditions under which the
+  orchestrator should escalate to a more capable model
 - `action.requirement_instances`: each item you must answer, with `instance_key` and
   `definition_digest`
 - `context`: the change, matching contracts, matching decisions, affected code, and
@@ -25,6 +27,55 @@ Stop if `role` is not `Analyst`. Hand the work to the skill that owns that role.
 Copy `instance_key` and `definition_digest` from the action into your result verbatim.
 Never compute or guess them. A digest you invent will be rejected, and a digest you copy
 from an older action means you are answering a question that no longer exists.
+
+Use only the issued Context for the assigned action. Do not start with a repository-wide
+search. When the Context contains prior Result records, reuse their still-applicable facts
+and investigate only what changed.
+
+## `assess-change-impact`
+
+Assess what the Change is intended to affect before relying on detected source calls. This
+action receives the Change, compact repository and governance indexes, the built-in Signal
+Catalog, and up to three prior Impact Assessments.
+
+For each intended effect, choose a Signal from `context.payload.signal_catalog` and copy
+its required binding names exactly. Record:
+
+- `signal` and `bindings`: the catalog Signal and the logical subjects it affects
+- `description`: the intended effect in repository terms
+- `risk`: `low`, `medium`, or `high`
+- `governing_refs`: current Contract clause references that govern the effect, or an empty
+  array when the first Change must establish them; use Decisions as authority in
+  `basis_refs`, not as a substitute for a current Contract
+
+Submit one of three statuses:
+
+- `impacts-identified`: at least one impact and no unknowns
+- `no-impact`: no impacts and no unknowns; use this only after actively checking the
+  Change intent and the issued indexes
+- `inconclusive`: at least one unknown; this does not authorize implementation and causes
+  the control plane to issue another assessment
+
+`basis_refs` must name the issued Change, index, Contract, Decision, repository artifact,
+or prior assessment actually used. An empty repository is not evidence of `no-impact`.
+For a greenfield project, derive intended effects from the Change request and declare them
+even when there is no source code or Contract yet.
+
+The recommended model tier is advisory to the orchestrator. For this action it is normally
+`economy`. Escalate when the issued guidance says to do so, including before concluding
+`no-impact`, when authority is insufficient or contradictory, or when material security,
+privacy, payment, or irreversible-data risk is plausible.
+
+## `establish-impact-governance`
+
+This action follows a greenfield or otherwise ungoverned assessed impact. Create only the
+Contract clauses needed for the current Change by calling `adf_apply_contract`, then submit
+an outcome for every issued requirement instance. Cite the new Contract in `basis_refs` and
+include it in `output_refs`.
+
+If the Change request or existing accepted authority does not settle a product or
+architecture choice, do not create a rule from inference. Submit a decision request so the
+control plane can obtain and record a human decision first.
 
 ## `review-risk-signals`
 
@@ -122,6 +173,12 @@ The gap is the finding.
 Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it, stores it, and returns the next action. Repeat
 until it hands the work to another role.
+
+If the orchestrator already exposes execution measurements, include them in the optional
+`execution` object: `duration_ms`, `model`, `input_tokens`, `output_tokens`, `tool_calls`,
+`retries`, `started_at`, and `completed_at`. Do not run another model call, timer, or tracing
+step solely to collect them. ADF records the serialized Context size itself, and absent
+measurements remain unknown.
 
 If submission is rejected as stale, the inputs moved under you. Call `adf_next`
 again and redo the work against the fresh action - do not retry the old payload.

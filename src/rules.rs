@@ -16,7 +16,7 @@ pub const RULE_COMPILER_VERSION: &str = "1";
 
 const ALLOWED_PHASES: [&str; 2] = ["before-build", "before-merge"];
 const ALLOWED_ROLES: [&str; 4] = ["Analyst", "Human", "Builder", "Challenger"];
-const ALLOWED_CONTEXT_SELECTORS: [&str; 11] = [
+const ALLOWED_CONTEXT_SELECTORS: [&str; 12] = [
     "change",
     "repository-artifacts",
     "affected-code",
@@ -28,6 +28,7 @@ const ALLOWED_CONTEXT_SELECTORS: [&str; 11] = [
     "decisions",
     "results",
     "evidence",
+    "impact-assessment",
 ];
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

@@ -20,7 +20,7 @@ A change here is a break and needs a minor release.
 
 `project init`, `project observe`, `project validate-bindings`,
 `project promote-bindings`, `change init`, `next`, `explain`,
-`contract-health`, `mcp`, `release`, `binary`.
+`execution-log`, `contract-health`, `mcp`, `release`, `binary`.
 
 **Stored records**
 
@@ -39,6 +39,9 @@ and gate report. The contract health policy file a project owns is part of this.
 
 Tool names, their input and output schemas, the protocol version, and the error
 codes. An agent written against one release keeps working with the next.
+
+Optional execution measurements are observational metadata. Adding or omitting
+them does not change Result identity, freshness, or the next workflow action.
 
 **Distribution**
 

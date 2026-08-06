@@ -2,7 +2,7 @@
   "schema_version": "1",
   "compiler_version": "1",
   "schema_root": "../../../schemas/v1",
-  "schema_bundle_digest": "sha256:276b6ab5a101521471660f859ee4bad68f09e7cb1ef3ad106b39a006fcbc9556",
+  "schema_bundle_digest": "sha256:8fadea7c9cc7d3e00c85c63b40c9d2259bad9fa9e78b60c13d0b22ce6fe3b296",
   "cases": [
     {
       "case_id": "normalized-index",

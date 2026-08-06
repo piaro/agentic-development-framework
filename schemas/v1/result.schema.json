@@ -45,6 +45,22 @@
         "pattern": "^sha256:[0-9a-f]{64}$"
       }
     },
+    "execution": {
+      "type": "object",
+      "required": ["context_bytes"],
+      "properties": {
+        "context_bytes": {"type": "integer", "minimum": 0},
+        "started_at": {"type": "string", "minLength": 1},
+        "completed_at": {"type": "string", "minLength": 1},
+        "duration_ms": {"type": "integer", "minimum": 0},
+        "model": {"type": "string", "minLength": 1},
+        "input_tokens": {"type": "integer", "minimum": 0},
+        "output_tokens": {"type": "integer", "minimum": 0},
+        "tool_calls": {"type": "integer", "minimum": 0},
+        "retries": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
     "payload": {"type": "object"}
   },
   "additionalProperties": false

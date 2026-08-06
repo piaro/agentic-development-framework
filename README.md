@@ -38,9 +38,9 @@ this alone: the agent cannot decide, and the person should not have to
 reconstruct the question from scratch.
 
 **Every change is worked against them.** Before implementation, the contracts
-that govern the change are resolved and challenged. During it, they are what
-the implementation must satisfy. After it, the change completes only when each
-clause has evidence traceable to it.
+that govern the intended effects are resolved and challenged. During it, they
+are what the implementation must satisfy. After it, the change completes only
+when each clause has evidence traceable to it.
 
 **They grow.** A question answered once does not come back - the next change
 that touches deletion finds the clause and resolves against it instead of
@@ -94,6 +94,13 @@ in sixteen languages. A call they cannot account for stops the change instead of
 being passed over, and nothing is classified by name: `save` and `execute` mean
 different things in different frameworks, so they need a binding a person
 reviewed.
+
+**Intent is assessed before source detection decides the scope.** Every newly
+created Change begins with an Impact Assessment. Its result is explicitly one
+of `impacts-identified`, `no-impact`, or `inconclusive`; an empty result is never
+silently treated as no impact. This also gives an empty repository a valid
+bootstrap path: the first Change declares its intended effects, then creates
+only the Contracts needed to govern them before implementation starts.
 
 **Contracts going stale is a feature.** Each result is bound to digests of what
 it was based on, so changing a contract, the code, or the authority behind it
@@ -204,15 +211,15 @@ adf mcp --project /path/to/project
         adf change init
                 │
                 ▼
-    ┌──▶ adf next ──── one action, with the context for it
+    ┌──▶ adf next ──── one action, with only its required Context
     │           │
-    │           ├─ Analyst    review detected signals, confirm what the change
-    │           │             touches, write contracts, ask a person when no
-    │           │             authority settles it, record what they answered
+    │           ├─ Analyst    assess intended impact, review detected signals,
+    │           │             write contracts, ask a person when no authority
+    │           │             settles it, record what they answered
     │           ├─ Builder    implement, then record evidence per clause
     │           └─ Challenger try to falsify it, before and after the build
     │           │
-    └───────────┴─ adf submit ──── validated, stored, reevaluated
+    └───────────┴─ adf_submit ──── validated, stored, reevaluated
                 │
                 ▼
           ready to merge
@@ -224,6 +231,8 @@ runs in a context independent of the one that built it.
 
 | State | What is assigned |
 |---|---|
+| `needs-impact-assessment` | assess intended effects before implementation |
+| `needs-post-build-impact-assessment` | reassess because code or governance changed |
 | `needs-analysis` | review detected candidates, answer the requirements |
 | `needs-human-decision` | put the question to a person |
 | `needs-decision-recording` | record their answer as a decision and a contract |
@@ -234,6 +243,34 @@ runs in a context independent of the one that built it.
 | `ready-to-merge` | nothing |
 
 `adf explain <change-id>` says why the change is where it is.
+
+### Context reuse and model guidance
+
+`next` compiles a Context for one action instead of handing every action the
+entire repository history. Impact assessment receives compact repository,
+Contract, and Decision indexes plus at most three prior assessments. After an
+assessment is accepted, implementation receives that Result, matching
+governance, and matching artifacts. This makes the assessment a reusable input
+instead of asking later actions to rediscover the same scope.
+
+Each action also carries advisory execution guidance. Impact assessment
+normally recommends an economy model, while challenge recommends a
+high-accuracy model. The listed escalation conditions tell an orchestrator when
+to choose a more capable model. ADF does not invoke or select the model itself.
+
+### Lightweight execution log
+
+An orchestrator may attach measurements it already has to `adf_submit`:
+duration, model, input and output tokens, tool calls, retries, and timestamps.
+ADF records the serialized Context size while it is already validating the
+submission. It does not start a timer, call a model, or run another tracing pass
+to collect metrics, and it never estimates missing values.
+
+Read the per-action entries and totals with `adf_execution_log` over MCP or:
+
+```sh
+adf execution-log <change-id> --format json
+```
 
 ## Commands
 
@@ -246,6 +283,7 @@ runs in a context independent of the one that built it.
 | `change init` | start a change |
 | `next` | issue the next action |
 | `explain` | say why the change is where it is |
+| `execution-log` | aggregate Context size and any execution metrics already reported |
 | `contract-health` | check the contracts across the repository |
 | `mcp` | serve the same operations to agents over MCP |
 | `release` | build, fetch, install, switch, and roll back framework releases |

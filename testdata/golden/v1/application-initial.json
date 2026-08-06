@@ -245,19 +245,19 @@
       "protocols": {
         "application": "1",
         "canonicalization": "canonical-json-v1",
-        "context_compiler": "4",
-        "data_model": "3",
+        "context_compiler": "5",
+        "data_model": "4",
         "explanation": "2",
-        "kernel": "5",
-        "project_snapshot": "1",
+        "kernel": "6",
+        "project_snapshot": "2",
         "rule_compiler": "1"
       },
       "detectors": {
         "typed-repository-fact": "3"
       },
       "schema_bundle": {
-        "version": "2",
-        "digest": "sha256:276b6ab5a101521471660f859ee4bad68f09e7cb1ef3ad106b39a006fcbc9556"
+        "version": "3",
+        "digest": "sha256:8fadea7c9cc7d3e00c85c63b40c9d2259bad9fa9e78b60c13d0b22ce6fe3b296"
       },
       "rule_set": {
         "source_digest": "sha256:6fe7e6252e94c44901203395e6ac00ead20173dc857e0e630fe986c878af5855",
@@ -268,7 +268,7 @@
   "expected": {
     "snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
     "rule_index_digest": "sha256:175099cb33658a88160e59f31a600157f0d5b64cb046199efbae4b3a117adcbe",
-    "framework_lock_digest": "sha256:1993a9e9a000756b14e048c1942946e5c56437e198f462163f9c5b5455a74320",
+    "framework_lock_digest": "sha256:5af65217fb73809c4c7d25919078e377993c803020788a6a28786a4d8d53fe05",
     "decision": {
       "state": "needs-analysis",
       "action": {
