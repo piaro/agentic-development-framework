@@ -266,11 +266,60 @@ ADF records the serialized Context size while it is already validating the
 submission. It does not start a timer, call a model, or run another tracing pass
 to collect metrics, and it never estimates missing values.
 
+An external runner can also bracket an attempt with `adf_begin_execution` and
+`adf_complete_execution`. These append-only events are separate from Results,
+so a failed, interrupted, or still-incomplete attempt remains visible. A
+completion can be attached after `adf_submit`, when a non-interactive agent has
+reported its final token counts. Runner events do not affect Kernel state,
+Result identity, freshness, or Evidence validation. If a runner completion and
+the legacy `adf_submit.execution` describe the same Result, the execution log
+uses the runner completion and does not count the Result metrics twice.
+
 Read the per-action entries and totals with `adf_execution_log` over MCP or:
 
 ```sh
 adf execution-log <change-id> --format json
 ```
+
+### Experimental Codex runner
+
+`adf-codex-runner` is an optional adapter, not part of the ADF control plane.
+It runs only when a person or a primary agent invokes it. The first version
+accepts Challenger Actions only and starts a fresh ephemeral `codex exec`
+session for each invocation.
+
+The primary session first obtains the expected Action ID and Context digest,
+then invokes:
+
+```sh
+adf-codex-runner run \
+  --project /path/to/project \
+  --change change.example \
+  --expected-action action.example \
+  --expected-context sha256:...
+```
+
+The runner re-evaluates `adf next` before launch. The child Codex session must
+also call `adf_next` through its own MCP session and stop if the identifiers
+differ. It receives the complete Generated Context from ADF; the runner does
+not summarize the primary chat or turn that summary into authority. Durable
+requirements must already be in the Change, accepted Contracts, or accepted
+Decisions.
+
+The runner uses `codex exec --json --ephemeral`, an explicit
+`workspace-write` sandbox, and a JSON Schema for the final response. It records
+the `turn.completed` input, cached-input, output, and reasoning-output token
+counts after the Result has been submitted. Raw JSONL and the primary chat are
+not stored. See the official [Codex non-interactive mode documentation](https://learn.chatgpt.com/docs/non-interactive-mode)
+for the underlying CLI event contract. Build the experimental binary from
+source with:
+
+```sh
+cargo build --locked --bin adf-codex-runner
+```
+
+The signed binary release currently continues to publish only `adf`; runner
+distribution is a later compatibility milestone.
 
 ## Commands
 
@@ -284,6 +333,7 @@ adf execution-log <change-id> --format json
 | `next` | issue the next action |
 | `explain` | say why the change is where it is |
 | `execution-log` | aggregate Context size and any execution metrics already reported |
+| `execution begin/complete` | append an external runner attempt without launching an agent |
 | `contract-health` | check the contracts across the repository |
 | `mcp` | serve the same operations to agents over MCP |
 | `release` | build, fetch, install, switch, and roll back framework releases |

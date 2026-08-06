@@ -72,6 +72,10 @@ impl LoadedProject {
         &self.release_root
     }
 
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
     pub fn binding_validation_report(
         &self,
     ) -> Result<BindingValidationReport, ProjectRuntimeError> {

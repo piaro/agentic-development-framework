@@ -13,11 +13,16 @@ use adf::detector_audit::run_repository_detector_audit;
 use adf::detector_audit_baseline::check_repository_detector_audit_baseline;
 use adf::detector_benchmark::run_detector_benchmark;
 use adf::execution_log::ExecutionLog;
+use adf::execution_record::{
+    BeginExecutionRequest, CompleteExecutionRequest, ExecutionEventStore, ExecutionStatus,
+    RunnerIdentity,
+};
 use adf::mcp_server::run_stdio_server;
 use adf::migration::{
     apply_migration_candidate, draft_migration, generate_migration_candidate, inspect_migration,
     validate_migration_candidate, validate_migration_draft,
 };
+use adf::project_application::{IssuedActionKey, ProjectApplicationService};
 use adf::project_runtime::LoadedProject;
 use adf::project_setup::{
     ProjectInitOptions, default_candidate_root, initialize_change, initialize_project,
@@ -35,6 +40,7 @@ use adf::{
     verify_project_snapshot_suite, verify_result_submission_suite, verify_rule_compilation_suite,
     verify_schema_suite,
 };
+use serde_json::json;
 use std::env;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -178,6 +184,26 @@ fn main() -> ExitCode {
         return match run_change_management_command(&options) {
             Ok(output) => {
                 println!("{output}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if command == "execution" {
+        let options = match parse_execution_command(&arguments[2..]) {
+            Ok(options) => options,
+            Err(error) => {
+                eprintln!("{error}");
+                execution_usage();
+                return ExitCode::from(2);
+            }
+        };
+        return match run_execution_command(&options) {
+            Ok(output) => {
+                print!("{output}");
                 ExitCode::SUCCESS
             }
             Err(error) => {
@@ -1232,6 +1258,25 @@ struct ProjectCommand {
     require_clean: bool,
 }
 
+enum ExecutionOperation {
+    Begin {
+        key: IssuedActionKey,
+        runner: RunnerIdentity,
+        started_at: Option<String>,
+    },
+    Complete {
+        execution_id: String,
+        request: CompleteExecutionRequest,
+    },
+}
+
+struct ExecutionCommand {
+    operation: ExecutionOperation,
+    project_root: PathBuf,
+    release: Option<PathBuf>,
+    format: OutputFormat,
+}
+
 struct RepositoryCommand {
     project_root: PathBuf,
     release: Option<PathBuf>,
@@ -1746,6 +1791,207 @@ fn parse_project_command(command: &str, arguments: &[String]) -> Result<ProjectC
     })
 }
 
+fn parse_execution_command(arguments: &[String]) -> Result<ExecutionCommand, String> {
+    let operation_name = arguments
+        .first()
+        .map(String::as_str)
+        .ok_or_else(|| "execution requires begin or complete".to_owned())?;
+    let identifier = arguments
+        .get(1)
+        .filter(|value| !value.starts_with('-'))
+        .ok_or_else(|| format!("execution {operation_name} requires an identifier"))?
+        .clone();
+    let mut project_root = PathBuf::from(".");
+    let mut release = None;
+    let mut format = OutputFormat::Text;
+    let mut values = std::collections::BTreeMap::<String, String>::new();
+    let mut index = 2;
+    while index < arguments.len() {
+        let flag = arguments[index].as_str();
+        match flag {
+            "--project" => {
+                project_root = PathBuf::from(flag_value(arguments, &mut index, flag)?);
+            }
+            "--release" => {
+                release = Some(PathBuf::from(flag_value(arguments, &mut index, flag)?));
+            }
+            "--format" => {
+                format = match flag_value(arguments, &mut index, flag)? {
+                    "text" => OutputFormat::Text,
+                    "json" => OutputFormat::Json,
+                    other => return Err(format!("unsupported output format: {other}")),
+                };
+            }
+            value if value.starts_with("--") => {
+                let value = flag_value(arguments, &mut index, flag)?.to_owned();
+                if values.insert(flag.to_owned(), value).is_some() {
+                    return Err(format!("duplicate execution argument: {flag}"));
+                }
+            }
+            other => return Err(format!("unknown execution argument: {other}")),
+        }
+        index += 1;
+    }
+    let operation = match operation_name {
+        "begin" => ExecutionOperation::Begin {
+            key: IssuedActionKey {
+                change_id: identifier,
+                action_id: take_required(&mut values, "--action")?,
+                context_digest: take_required(&mut values, "--context")?,
+            },
+            runner: RunnerIdentity {
+                provider: take_required(&mut values, "--provider")?,
+                surface: take_required(&mut values, "--surface")?,
+                version: values.remove("--runner-version"),
+            },
+            started_at: values.remove("--started-at"),
+        },
+        "complete" => ExecutionOperation::Complete {
+            execution_id: identifier,
+            request: CompleteExecutionRequest {
+                change_id: take_required(&mut values, "--change")?,
+                status: parse_execution_status(&take_required(&mut values, "--status")?)?,
+                result_id: values.remove("--result"),
+                completed_at: values.remove("--completed-at"),
+                duration_ms: take_u64(&mut values, "--duration-ms")?,
+                model: values.remove("--model"),
+                input_tokens: take_u64(&mut values, "--input-tokens")?,
+                cached_input_tokens: take_u64(&mut values, "--cached-input-tokens")?,
+                output_tokens: take_u64(&mut values, "--output-tokens")?,
+                reasoning_output_tokens: take_u64(&mut values, "--reasoning-output-tokens")?,
+                tool_calls: take_u64(&mut values, "--tool-calls")?,
+                retries: take_u64(&mut values, "--retries")?,
+                thread_id: values.remove("--thread-id"),
+                exit_code: take_i32(&mut values, "--exit-code")?,
+                error_code: values.remove("--error-code"),
+            },
+        },
+        other => return Err(format!("unsupported execution operation: {other}")),
+    };
+    if let Some(flag) = values.keys().next() {
+        return Err(format!(
+            "argument {flag} is not valid for execution {operation_name}"
+        ));
+    }
+    Ok(ExecutionCommand {
+        operation,
+        project_root,
+        release,
+        format,
+    })
+}
+
+fn run_execution_command(options: &ExecutionCommand) -> Result<String, String> {
+    ensure_project_initialized(&options.project_root)?;
+    let value = match &options.operation {
+        ExecutionOperation::Begin {
+            key,
+            runner,
+            started_at,
+        } => {
+            let mut service =
+                ProjectApplicationService::new(&options.project_root, options.release.clone())
+                    .map_err(|error| error.to_string())?;
+            let issued = service
+                .next(&key.change_id, false)
+                .map_err(|error| error.to_string())?
+                .issued_action;
+            if issued.as_ref() != Some(key) {
+                return Err("the expected Action and Context are no longer current".to_owned());
+            }
+            serde_json::to_value(
+                service
+                    .begin_execution(
+                        key,
+                        BeginExecutionRequest {
+                            runner: runner.clone(),
+                            started_at: started_at.clone(),
+                        },
+                    )
+                    .map_err(|error| error.to_string())?,
+            )
+            .map_err(|error| error.to_string())?
+        }
+        ExecutionOperation::Complete {
+            execution_id,
+            request,
+        } => {
+            let store = ExecutionEventStore::open(&options.project_root)?;
+            let (completed, already_completed) = store
+                .complete_bound(execution_id, request.clone())
+                .map_err(|error| error.to_string())?;
+            json!({
+                "schema_version": "1",
+                "execution_id": completed.execution_id,
+                "already_completed": already_completed,
+            })
+        }
+    };
+    match options.format {
+        OutputFormat::Json => serde_json::to_string_pretty(&value)
+            .map(|value| value + "\n")
+            .map_err(|error| error.to_string()),
+        OutputFormat::Text => match &options.operation {
+            ExecutionOperation::Begin { .. } => Ok(format!(
+                "execution_id: {}\n",
+                value["execution_id"].as_str().unwrap_or("unknown")
+            )),
+            ExecutionOperation::Complete { .. } => Ok(format!(
+                "execution_id: {}\nalready_completed: {}\n",
+                value["execution_id"].as_str().unwrap_or("unknown"),
+                value["already_completed"].as_bool().unwrap_or(false)
+            )),
+        },
+    }
+}
+
+fn take_required(
+    values: &mut std::collections::BTreeMap<String, String>,
+    flag: &str,
+) -> Result<String, String> {
+    values
+        .remove(flag)
+        .ok_or_else(|| format!("{flag} is required"))
+}
+
+fn take_u64(
+    values: &mut std::collections::BTreeMap<String, String>,
+    flag: &str,
+) -> Result<Option<u64>, String> {
+    values
+        .remove(flag)
+        .map(|value| {
+            value
+                .parse::<u64>()
+                .map_err(|_| format!("{flag} must be a non-negative integer"))
+        })
+        .transpose()
+}
+
+fn take_i32(
+    values: &mut std::collections::BTreeMap<String, String>,
+    flag: &str,
+) -> Result<Option<i32>, String> {
+    values
+        .remove(flag)
+        .map(|value| {
+            value
+                .parse::<i32>()
+                .map_err(|_| format!("{flag} must be an integer"))
+        })
+        .transpose()
+}
+
+fn parse_execution_status(value: &str) -> Result<ExecutionStatus, String> {
+    match value {
+        "succeeded" => Ok(ExecutionStatus::Succeeded),
+        "failed" => Ok(ExecutionStatus::Failed),
+        "interrupted" => Ok(ExecutionStatus::Interrupted),
+        "stale" => Ok(ExecutionStatus::Stale),
+        other => Err(format!("unsupported execution status: {other}")),
+    }
+}
+
 fn flag_value<'a>(
     arguments: &'a [String],
     index: &mut usize,
@@ -1965,7 +2211,9 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
             let snapshot = application.snapshot(&options.change_id).map_err(|error| {
                 actionable_project_error(&error.to_string(), &options.change_id)
             })?;
-            let report = ExecutionLog::build(&snapshot);
+            let events = ExecutionEventStore::open(project.root())
+                .and_then(|store| store.events(&options.change_id))?;
+            let report = ExecutionLog::build_with_events(&snapshot, &events);
             match options.format {
                 OutputFormat::Text => Ok(report.render_text()),
                 OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
@@ -2116,6 +2364,7 @@ usage:\n\
   adf project promote-bindings --draft <path> [--project <root>]\n\
   adf change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
   adf <next|explain|execution-log> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  adf execution <begin|complete> <id> [options]\n\
   adf contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   adf mcp [--project <root>] [--release <root>]\n\
   adf release <public-key|build|fetch|install|install-archive|switch|rollback> ...\n\
@@ -2185,6 +2434,12 @@ fn project_usage(command: &str) {
         "usage: adf {command} <change-id> \
          [--project <root>] [--release <root>] \
          [--format <text|json>] [--require-clean]"
+    );
+}
+
+fn execution_usage() {
+    eprintln!(
+        "usage:\n  adf execution begin <change-id> --action <id> --context <digest> --provider <name> --surface <name> [--runner-version <version>] [--started-at <time>] [--project <root>] [--release <root>] [--format <text|json>]\n  adf execution complete <execution-id> --change <change-id> --status <succeeded|failed|interrupted|stale> [--result <id>] [--completed-at <time>] [--duration-ms <n>] [--model <name>] [--input-tokens <n>] [--cached-input-tokens <n>] [--output-tokens <n>] [--reasoning-output-tokens <n>] [--tool-calls <n>] [--retries <n>] [--thread-id <id>] [--exit-code <n>] [--error-code <code>] [--project <root>] [--release <root>] [--format <text|json>]"
     );
 }
 

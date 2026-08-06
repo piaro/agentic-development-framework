@@ -6,6 +6,7 @@ version = 4
 name = "agentic-development-framework"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "ed25519-dalek",
  "http",
  "regex",

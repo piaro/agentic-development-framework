@@ -8,6 +8,9 @@ use crate::application::{ApplicationResponse, ApplicationSubmission};
 use crate::cli_output::next_response_value;
 use crate::context::GeneratedContext;
 use crate::execution_log::ExecutionLog;
+use crate::execution_record::{
+    BeginExecutionRequest, CompleteExecutionRequest, ExecutionEventStore,
+};
 use crate::kernel::ProjectSnapshot;
 use crate::project_runtime::LoadedProject;
 use crate::submission::ResultSubmission;
@@ -84,6 +87,19 @@ pub struct RecordWriteResponse {
 pub struct AbandonActionResponse {
     pub schema_version: String,
     pub abandoned: bool,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct BeginExecutionResponse {
+    pub schema_version: String,
+    pub execution_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+pub struct CompleteExecutionResponse {
+    pub schema_version: String,
+    pub execution_id: String,
+    pub already_completed: bool,
 }
 
 pub struct ProjectApplicationService {
@@ -182,7 +198,48 @@ impl ProjectApplicationService {
         }
         let application = project.application().map_err(application_error)?;
         let snapshot = application.snapshot(change_id).map_err(application_error)?;
-        Ok(ExecutionLog::build(&snapshot).as_value())
+        let events = ExecutionEventStore::open(project.root())
+            .and_then(|store| store.events(change_id))
+            .map_err(project_error)?;
+        Ok(ExecutionLog::build_with_events(&snapshot, &events).as_value())
+    }
+
+    pub fn begin_execution(
+        &mut self,
+        key: &IssuedActionKey,
+        request: BeginExecutionRequest,
+    ) -> Result<BeginExecutionResponse, ServiceError> {
+        let entry = self.issued_entry(key)?;
+        let project = self.load(false)?;
+        let context_bytes = serde_json::to_vec(&entry.context)
+            .map_err(application_error)?
+            .len() as u64;
+        let role = required_context_string(&entry.context, &["action", "role"])?;
+        let result_schema =
+            required_context_string(&entry.context, &["action", "expected_result_schema"])?;
+        let started = ExecutionEventStore::open(project.root())
+            .and_then(|store| store.begin(key, role, result_schema, context_bytes, request))
+            .map_err(project_error)?;
+        Ok(BeginExecutionResponse {
+            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
+            execution_id: started.execution_id,
+        })
+    }
+
+    pub fn complete_execution(
+        &self,
+        execution_id: &str,
+        request: CompleteExecutionRequest,
+    ) -> Result<CompleteExecutionResponse, ServiceError> {
+        let store = ExecutionEventStore::open(&self.project_root).map_err(project_error)?;
+        let (completed, already_completed) = store
+            .complete_bound(execution_id, request)
+            .map_err(project_error)?;
+        Ok(CompleteExecutionResponse {
+            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
+            execution_id: completed.execution_id,
+            already_completed,
+        })
     }
 
     pub fn submit(

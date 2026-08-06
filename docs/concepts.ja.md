@@ -91,13 +91,31 @@ Challengerが行う反証とは、依頼・規範・実装が間違っている�
 
 各作業には、実行環境へ向けたモデルの推奨も含まれます。影響評価には通常、軽量なモデルを推奨します。ただし、影響なしと結論付ける場合、根拠が矛盾する場合、セキュリティ、プライバシー、決済、元に戻せないデータ変更の可能性がある場合は、精度の高いモデルへの切り替えを勧めます。ADF自体はモデルを選ばず、LLMも実行しません。
 
-実行環境がすでに把握している処理時間、モデル名、入出力Token数、ツール呼び出し数、再試行回数は、`adf_submit`で任意に記録できます。ADFは提出を検証する際に文脈のバイト数だけを計算します。計測のためにタイマーを起動したり、LLMを追加実行したり、別の追跡処理を走らせたりはしません。不明な値は推測せず、不明のまま残します。
+実行環境がすでに把握している処理時間、モデル名、入出力Token数、ツール呼び出し数、再試行回数は、`adf_submit`で任意に記録できます。外部Runnerは`adf_begin_execution`と`adf_complete_execution`を使い、Result提出後に確定したToken数や、失敗・中断した実行も追記できます。この実行RecordはADFの状態、Result ID、鮮度、Evidence検証には影響しません。同じResultに提出時の計測値とRunnerの完了Recordがある場合は、Runnerの値だけを集計します。
+
+ADFは文脈のバイト数だけを計算します。計測のためにLLMを起動したり、料金を推測したりしません。不明な値は不明のまま残します。
 
 記録はMCPの`adf_execution_log`、または次のコマンドで確認できます。
 
 ```sh
 adf execution-log <変更ID> --format json
 ```
+
+### Codex Runnerの試作
+
+`adf-codex-runner`はADF本体とは別の任意ツールです。ADFが自動で起動することはありません。ユーザーが利用しているメインセッションが、独立実行を必要とする場合だけ呼び出します。
+
+最初の版はChallenger Actionだけを受け付け、毎回新しい`codex exec --ephemeral`を起動します。Runnerは起動前にAction IDとContext digestを照合し、独立したCodexも自分のMCPセッションで`adf_next`を実行します。ContextはADFが生成した完全な値を使い、メインセッションの会話要約は渡しません。会話で決まった要求は、独立実行の前にChange、accepted Contract、accepted Decisionへ記録する必要があります。
+
+```sh
+adf-codex-runner run \
+  --project /path/to/project \
+  --change change.example \
+  --expected-action action.example \
+  --expected-context sha256:...
+```
+
+RunnerはCodexのJSONLをリポジトリへ保存せず、完了時に報告されたToken数と処理結果だけをADFへ記録します。現在の署名付き配布物にはRunnerを含めないため、試作を使う場合はソースから`adf-codex-runner`をビルドします。
 
 ## 使ってみる
 
