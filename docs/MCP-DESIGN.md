@@ -151,7 +151,7 @@ allowed_output_kinds: []
 registered_output_refs: []
 ```
 
-- RegistryはMCP sessionのmemoryにだけ保持する。memoryにないActionは、正本の再評価と一致するときに再構成する。
+- RegistryはMCP sessionのmemoryにだけ保持する。memoryにないActionは、正本の再評価と一致するときに再構成する。再構成後に`adf_next`を呼んだ場合も、同じChangeの正本に保存済みのEvidence、Decision、Contractは提出時の出力として参照できる。
 - Generated ContextをGit、Result、derived cacheへ保存しない。
 - Evidence、Decision、Contractの専用Toolが保存したrefだけを`registered_output_refs`へ追加する。
 - 正常な`submit`後にexact keyを消費し、再評価で返した次Actionを新しいentryとして登録する。
@@ -171,7 +171,7 @@ Action IDはAction本体のdigest、Context digestはその生成元入力のdig
 
 Generated Contextを正本化しない方針は変えません。受理の根拠はmemoryではなく、正本を再評価した結果との一致です。derived cacheのreadをAction認証へ流用してはいけません。
 
-再起動を跨いだAction では、そのActionがどのRecordを書いたかというsession記憶が失われます。この場合、`output_refs`のRecord参照は、そのRecordがChangeの正本に存在することで検査します。Recordは書込みを許可するAction経由でしか書けないため、これによって書込み範囲は広がりません。
+再起動を跨いだActionでは、そのActionがどのRecordを書いたかというsession記憶が失われます。再接続後に`adf_next`を呼ぶと新しいsession entryが作られますが、`output_refs`のRecord参照は、そのentryで記録した出力またはChangeの正本に存在するRecordで検査します。これにより、接続断前に保存したEvidenceを、正本の再評価で同じActionが返る場合に提出できます。
 
 ## 9. MCP Tool一覧
 
