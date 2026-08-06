@@ -294,6 +294,53 @@ impl ThinKernel {
             return decision(state, Some(action), instances, Vec::new());
         }
 
+        // A Decision Request that no Decision has answered outranks the work
+        // that raised it. The Analyst cannot satisfy a requirement whose rule is
+        // the very thing being asked about, so leaving it for later would issue
+        // that same Action again with the question still unasked.
+        if let Some(request_id) = pending_decision_request(snapshot) {
+            if !has_fresh_human_answer(snapshot, &request_id) {
+                let action = make_action(
+                    snapshot,
+                    "Human",
+                    "answer-decision-request",
+                    Vec::new(),
+                    format!("判断依頼 {request_id} への回答が必要です"),
+                    "result.human-answer",
+                    &request_id,
+                    Vec::new(),
+                );
+                return decision("needs-human-decision", Some(action), instances, Vec::new());
+            }
+            if !decision_is_recorded(snapshot, &request_id) {
+                let targets = instances
+                    .iter()
+                    .filter(|instance| {
+                        instance.status == "unsatisfied"
+                            && instance.role == "Analyst"
+                            && instance.phase == "before-build"
+                    })
+                    .cloned()
+                    .collect();
+                let action = make_action(
+                    snapshot,
+                    "Analyst",
+                    "record-human-decision",
+                    targets,
+                    format!("回答済みの判断 {request_id} をDecisionとContractへ反映してください"),
+                    "result.analysis",
+                    &request_id,
+                    Vec::new(),
+                );
+                return decision(
+                    "needs-decision-recording",
+                    Some(action),
+                    instances,
+                    Vec::new(),
+                );
+            }
+        }
+
         let pending_impact_governance: Vec<RequirementInstance> = instances
             .iter()
             .filter(|instance| {
@@ -338,49 +385,6 @@ impl ThinKernel {
                 instances,
                 Vec::new(),
             );
-        }
-
-        if let Some(request_id) = pending_decision_request(snapshot) {
-            if !has_fresh_human_answer(snapshot, &request_id) {
-                let action = make_action(
-                    snapshot,
-                    "Human",
-                    "answer-decision-request",
-                    Vec::new(),
-                    format!("判断依頼 {request_id} への回答が必要です"),
-                    "result.human-answer",
-                    &request_id,
-                    Vec::new(),
-                );
-                return decision("needs-human-decision", Some(action), instances, Vec::new());
-            }
-            if !decision_is_recorded(snapshot, &request_id) {
-                let targets = instances
-                    .iter()
-                    .filter(|instance| {
-                        instance.status == "unsatisfied"
-                            && instance.role == "Analyst"
-                            && instance.phase == "before-build"
-                    })
-                    .cloned()
-                    .collect();
-                let action = make_action(
-                    snapshot,
-                    "Analyst",
-                    "record-human-decision",
-                    targets,
-                    format!("回答済みの判断 {request_id} をDecisionとContractへ反映してください"),
-                    "result.analysis",
-                    &request_id,
-                    Vec::new(),
-                );
-                return decision(
-                    "needs-decision-recording",
-                    Some(action),
-                    instances,
-                    Vec::new(),
-                );
-            }
         }
 
         let before_build: Vec<RequirementInstance> = instances
@@ -1812,6 +1816,53 @@ mod tests {
         let action = decision.action.unwrap();
         assert_eq!(action.action, "establish-impact-governance");
         assert_eq!(action.requirement_instances.len(), 1);
+    }
+
+    #[test]
+    fn an_unanswered_request_outranks_the_governance_that_raised_it() {
+        // The Analyst reached establish-impact-governance, found that no
+        // authority settled the rule, and raised a Decision Request instead of
+        // inferring one. Reissuing that Action would ask the same unanswerable
+        // question forever, because only a Contract can satisfy the requirement
+        // and only a person can authorize the Contract.
+        let mut snapshot = impact_snapshot(
+            "impacts-identified",
+            json!([{
+                "signal": "persistent-data-write",
+                "bindings": {
+                    "data": "data.accounts",
+                    "operation": "operation.register-account"
+                },
+                "governing_refs": []
+            }]),
+            json!([]),
+        );
+        snapshot.results.push(json!({
+            "id": "result.request",
+            "result_schema": "result.analysis",
+            "role": "Analyst",
+            "input_refs": {"change.test": snapshot.artifact_digests["change.test"]},
+            "payload": {
+                "outcomes": [],
+                "decision_requests": [{
+                    "id": "decision-request.account-deletion",
+                    "question": "Does deleting an account delete its orders?",
+                    "known_fact_refs": ["change.test"]
+                }]
+            }
+        }));
+        snapshot.artifact_digests.insert(
+            "result.request".to_owned(),
+            format!("sha256:{}", "e".repeat(64)),
+        );
+
+        let decision =
+            ThinKernel.evaluate(&snapshot, &empty_rule_index(), &complete_empty_detection());
+
+        assert_eq!(decision.state, "needs-human-decision");
+        let action = decision.action.unwrap();
+        assert_eq!(action.action, "answer-decision-request");
+        assert_eq!(action.role, "Human");
     }
 
     #[test]

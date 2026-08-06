@@ -18,6 +18,14 @@ change, is written down in `COMPATIBILITY.md`.
   client that accepted it still had nothing telling it to send an object rather
   than a string.
 
+- An unanswered Decision Request now outranks the Impact Governance work that
+  raised it. `establish-impact-governance` was evaluated first, so an Analyst
+  that followed its own skill — raise a Decision Request rather than infer a rule
+  no authority settles — left the Change reissuing that same Action forever. The
+  requirement can only be satisfied by a Contract, the Contract can only be
+  authorized by a person, and the request that would have reached that person
+  was recorded as `open` and never issued.
+
 ### Changed
 
 - Accepted Decisions now remain available to later Changes, while proposed,
