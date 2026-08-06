@@ -14,6 +14,11 @@ change, is written down in `COMPATIBILITY.md`.
   Repository bindings and shared Contracts can therefore retain their recorded
   authority after the originating Change is complete.
 
+- Requirement dependencies now apply only to dependency instances selected for
+  the current Change. An unselected Signal-specific dependency no longer leaves
+  an otherwise valid workflow permanently blocked, while every selected
+  dependency instance must still be satisfied.
+
 - The project is the Agentic Development Framework. The binary is `adf`,
   projects keep their records in `.adf/`, the MCP tools are `adf_*`, the skills
   are `adf-analyst`, `adf-builder`, and `adf-challenger`, and the release

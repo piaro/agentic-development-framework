@@ -879,14 +879,15 @@ fn dependencies_satisfied(
     instances: &[RequirementInstance],
 ) -> bool {
     instance.depends_on.iter().all(|dependency| {
-        let matching: Vec<&RequirementInstance> = instances
+        let matching = instances
             .iter()
             .filter(|candidate| candidate.requirement_id == *dependency)
-            .collect();
-        !matching.is_empty()
-            && matching
-                .iter()
-                .all(|candidate| candidate.status == "satisfied")
+            .collect::<Vec<_>>();
+        // A dependency that no Rule selected is not applicable to this Change.
+        // Every selected instance of an applicable dependency must be satisfied.
+        matching
+            .iter()
+            .all(|candidate| candidate.status == "satisfied")
     })
 }
 
@@ -1092,6 +1093,190 @@ mod tests {
             assurance,
             status: "unsatisfied".to_owned(),
         }
+    }
+
+    fn dependency_instance(requirement_id: &str, status: &str) -> RequirementInstance {
+        RequirementInstance {
+            requirement_id: requirement_id.to_owned(),
+            subject_refs: vec!["operation.test".to_owned()],
+            instance_key: format!("{requirement_id}|operation.test"),
+            selected_by: vec!["test.rule".to_owned()],
+            definition_digest: format!("sha256:{}", "a".repeat(64)),
+            phase: "before-build".to_owned(),
+            role: "Analyst".to_owned(),
+            result_schema: "result.analysis".to_owned(),
+            depends_on: Vec::new(),
+            context: Vec::new(),
+            assurance: Assurance::Attestation,
+            status: status.to_owned(),
+        }
+    }
+
+    #[test]
+    fn an_unselected_dependency_is_not_applicable() {
+        let mut target = dependency_instance("design-challenged", "unsatisfied");
+        target.depends_on = vec![
+            "data-contracts-ready".to_owned(),
+            "distributed-effect-contracts-ready".to_owned(),
+        ];
+        let data_contract = dependency_instance("data-contracts-ready", "satisfied");
+
+        assert!(dependencies_satisfied(
+            &target,
+            &[target.clone(), data_contract]
+        ));
+    }
+
+    #[test]
+    fn a_selected_unsatisfied_dependency_blocks_downstream_work() {
+        let mut target = dependency_instance("design-challenged", "unsatisfied");
+        target.depends_on = vec![
+            "data-contracts-ready".to_owned(),
+            "distributed-effect-contracts-ready".to_owned(),
+        ];
+        let data_contract = dependency_instance("data-contracts-ready", "satisfied");
+        let distributed_contract =
+            dependency_instance("distributed-effect-contracts-ready", "unsatisfied");
+
+        assert!(!dependencies_satisfied(
+            &target,
+            &[target.clone(), data_contract, distributed_contract]
+        ));
+    }
+
+    #[test]
+    fn a_single_signal_workflow_reaches_its_challenge_without_unselected_dependencies() {
+        let data_definition = RequirementDefinition {
+            id: "data-contracts-ready".to_owned(),
+            phase: "before-build".to_owned(),
+            role: "Analyst".to_owned(),
+            result_schema: "result.analysis".to_owned(),
+            depends_on: Vec::new(),
+            context: Vec::new(),
+            assurance: Assurance::Attestation,
+            definition_digest: format!("sha256:{}", "c".repeat(64)),
+        };
+        let design_definition = RequirementDefinition {
+            id: "design-challenged".to_owned(),
+            phase: "before-build".to_owned(),
+            role: "Challenger".to_owned(),
+            result_schema: "result.challenge".to_owned(),
+            depends_on: vec![
+                "data-contracts-ready".to_owned(),
+                "distributed-effect-contracts-ready".to_owned(),
+            ],
+            context: Vec::new(),
+            assurance: Assurance::Attestation,
+            definition_digest: format!("sha256:{}", "d".repeat(64)),
+        };
+        let distributed_definition = RequirementDefinition {
+            id: "distributed-effect-contracts-ready".to_owned(),
+            phase: "before-build".to_owned(),
+            role: "Analyst".to_owned(),
+            result_schema: "result.analysis".to_owned(),
+            depends_on: Vec::new(),
+            context: Vec::new(),
+            assurance: Assurance::Attestation,
+            definition_digest: format!("sha256:{}", "e".repeat(64)),
+        };
+        let rule_index = RuleIndex {
+            requirements: BTreeMap::from([
+                (data_definition.id.clone(), data_definition.clone()),
+                (design_definition.id.clone(), design_definition),
+                (distributed_definition.id.clone(), distributed_definition),
+            ]),
+            rules: vec![
+                ActivationRule {
+                    id: "persistent-data.prepare-contracts".to_owned(),
+                    requirement_id: data_definition.id.clone(),
+                    condition: "signal".to_owned(),
+                    signal: Some("persistent-data-write".to_owned()),
+                    repository_phase: None,
+                    subjects: vec!["binding.data".to_owned()],
+                },
+                ActivationRule {
+                    id: "persistent-data.challenge-design".to_owned(),
+                    requirement_id: "design-challenged".to_owned(),
+                    condition: "signal".to_owned(),
+                    signal: Some("persistent-data-write".to_owned()),
+                    repository_phase: None,
+                    subjects: vec!["binding.operation".to_owned()],
+                },
+            ],
+            digest: String::new(),
+        };
+        let fingerprint = format!("sha256:{}", "f".repeat(64));
+        let detection = DetectionReport {
+            change_id: "change.test".to_owned(),
+            coverage: DetectionCoverage {
+                status: "complete".to_owned(),
+                scope: "declared-artifacts".to_owned(),
+                analyzed_refs: vec!["code.accounts".to_owned()],
+                gaps: Vec::new(),
+            },
+            candidates: vec![SignalCandidate {
+                signal: "persistent-data-write".to_owned(),
+                bindings: BTreeMap::from([
+                    ("data".to_owned(), "data.accounts".to_owned()),
+                    (
+                        "operation".to_owned(),
+                        "operation.register-account".to_owned(),
+                    ),
+                ]),
+                evidence_refs: vec!["code.accounts".to_owned()],
+                detector_id: "typed-repository-fact".to_owned(),
+                detector_version: "2".to_owned(),
+                fingerprint: fingerprint.clone(),
+                evidence_digest: format!("sha256:{}", "1".repeat(64)),
+            }],
+            digest: String::new(),
+        };
+        let snapshot = ProjectSnapshot {
+            change_id: "change.test".to_owned(),
+            change: json!({"id": "change.test"}),
+            contracts: Vec::new(),
+            decisions: Vec::new(),
+            results: vec![
+                json!({
+                    "result_schema": "result.risk-signal-review",
+                    "role": "Analyst",
+                    "input_refs": {},
+                    "payload": {
+                        "reviewed_candidates": [{
+                            "fingerprint": fingerprint,
+                            "status": "confirmed"
+                        }]
+                    }
+                }),
+                json!({
+                    "result_schema": "result.analysis",
+                    "role": "Analyst",
+                    "payload": {
+                        "outcomes": [{
+                            "instance_key": "data-contracts-ready|data.accounts",
+                            "definition_digest": data_definition.definition_digest,
+                            "status": "satisfied",
+                            "freshness_refs": {}
+                        }]
+                    }
+                }),
+            ],
+            evidence: Vec::new(),
+            repository: json!({"phase": "pre-build"}),
+            artifact_digests: BTreeMap::new(),
+            digest: String::new(),
+        };
+
+        let decision = ThinKernel.evaluate(&snapshot, &rule_index, &detection);
+
+        assert_eq!(decision.state, "needs-pre-build-challenge");
+        let action = decision.action.unwrap();
+        assert_eq!(action.role, "Challenger");
+        assert_eq!(action.requirement_instances.len(), 1);
+        assert_eq!(
+            action.requirement_instances[0].requirement_id,
+            "design-challenged"
+        );
     }
 
     fn evidence_snapshot() -> ProjectSnapshot {
