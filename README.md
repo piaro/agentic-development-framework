@@ -270,7 +270,9 @@ An external runner can also bracket an attempt with `adf_begin_execution` and
 `adf_complete_execution`. These append-only events are separate from Results,
 so a failed, interrupted, or still-incomplete attempt remains visible. A
 completion can be attached after `adf_submit`, when a non-interactive agent has
-reported its final token counts. Runner events do not affect Kernel state,
+reported its final token counts. External completion records may additionally
+carry cache-creation tokens, cached-input tokens, reasoning-output tokens, and
+provider-reported USD cost. ADF never estimates a missing cost. Runner events do not affect Kernel state,
 Result identity, freshness, or Evidence validation. If a runner completion and
 the legacy `adf_submit.execution` describe the same Result, the execution log
 uses the runner completion and does not count the Result metrics twice.
@@ -281,12 +283,12 @@ Read the per-action entries and totals with `adf_execution_log` over MCP or:
 adf execution-log <change-id> --format json
 ```
 
-### Experimental Codex runner
+### Experimental agent runners
 
-`adf-codex-runner` is an optional adapter, not part of the ADF control plane.
-It runs only when a person or a primary agent invokes it. The first version
-accepts Challenger Actions only and starts a fresh ephemeral `codex exec`
-session for each invocation.
+`adf-codex-runner` and `adf-claude-runner` are optional adapters, not part of
+the ADF control plane. They run only when a person or a primary agent invokes
+one of them. Both accept Challenger Actions only and start one independent
+non-interactive session per invocation.
 
 The primary session first obtains the expected Action ID and Context digest,
 then invokes:
@@ -299,23 +301,45 @@ adf-codex-runner run \
   --expected-context sha256:...
 ```
 
-The runner re-evaluates `adf next` before launch. The child Codex session must
+Use the same identifiers with Claude Code:
+
+```sh
+adf-claude-runner run \
+  --project /path/to/project \
+  --change change.example \
+  --expected-action action.example \
+  --expected-context sha256:...
+```
+
+Each runner re-evaluates `adf next` before launch. The child agent must
 also call `adf_next` through its own MCP session and stop if the identifiers
 differ. It receives the complete Generated Context from ADF; the runner does
 not summarize the primary chat or turn that summary into authority. Durable
 requirements must already be in the Change, accepted Contracts, or accepted
 Decisions.
 
-The runner uses `codex exec --json --ephemeral`, an explicit
+The Codex adapter uses `codex exec --json --ephemeral`, an explicit
 `workspace-write` sandbox, and a JSON Schema for the final response. It records
 the `turn.completed` input, cached-input, output, and reasoning-output token
 counts after the Result has been submitted. Raw JSONL and the primary chat are
 not stored. See the official [Codex non-interactive mode documentation](https://learn.chatgpt.com/docs/non-interactive-mode)
 for the underlying CLI event contract. Build the experimental binary from
-source with:
+source.
+
+The Claude Code adapter uses `claude -p --output-format json --json-schema`
+with `--no-session-persistence`. It deliberately does not use `--bare`, because
+the independent execution needs the project's MCP server, Skills, and
+instructions. It records input, cache-creation, cache-read, and output tokens,
+the actual model names, and `total_cost_usd` reported by Claude Code. The full
+Claude response and the primary chat are not stored. See the official
+[Claude Code programmatic execution documentation](https://code.claude.com/docs/en/headless)
+for the underlying CLI contract.
+
+Build either adapter from source with:
 
 ```sh
 cargo build --locked --bin adf-codex-runner
+cargo build --locked --bin adf-claude-runner
 ```
 
 The signed binary release currently continues to publish only `adf`; runner

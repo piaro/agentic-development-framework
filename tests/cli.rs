@@ -3414,9 +3414,11 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "duration_ms": 1000,
             "model": "codex-test-model",
             "input_tokens": 500,
+            "cache_creation_input_tokens": 50,
             "cached_input_tokens": 450,
             "output_tokens": 90,
             "reasoning_output_tokens": 10,
+            "cost_usd": 0.125,
             "tool_calls": 3,
             "retries": 0,
             "thread_id": "thread.test",
@@ -3441,7 +3443,9 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     let report = &execution_log["structuredContent"]["report"];
     validate_output_schema(report, "execution-log.schema.json");
     assert_eq!(report["totals"]["input_tokens"], 500);
+    assert_eq!(report["totals"]["cache_creation_input_tokens"], 50);
     assert_eq!(report["totals"]["cached_input_tokens"], 450);
+    assert_eq!(report["totals"]["cost_usd"], 0.125);
     assert_eq!(report["entries"][0]["model"], "codex-test-model");
     assert_eq!(report["entries"][0]["runner_surface"], "codex-exec");
     assert!(report["entries"][0]["context_bytes"].as_u64().unwrap() > 0);
@@ -3514,6 +3518,10 @@ fn execution_cli_records_a_failed_attempt_without_a_result() {
         "failed",
         "--duration-ms",
         "25",
+        "--cache-creation-input-tokens",
+        "12",
+        "--cost-usd",
+        "0.01",
         "--error-code",
         "test-failure",
         "--format",
@@ -3535,6 +3543,8 @@ fn execution_cli_records_a_failed_attempt_without_a_result() {
     assert_eq!(attempt["status"], "failed");
     assert_eq!(attempt["result_id"], Value::Null);
     assert_eq!(attempt["error_code"], "test-failure");
+    assert_eq!(attempt["cache_creation_input_tokens"], 12);
+    assert_eq!(attempt["cost_usd"], 0.01);
 }
 
 /// Work done before a restart must still be submittable afterwards.

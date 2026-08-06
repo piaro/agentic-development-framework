@@ -68,9 +68,10 @@ release, and the change may not be called out.
 - **External execution events and commands.** `execution begin`, `execution
   complete`, their stored event files, and the additional attempt fields in
   `execution-log` are being proven with real runners before becoming stable.
-- **The Codex runner.** `adf-codex-runner` is a source-built,
-  Challenger-only prototype. Its command line and structured final response may
-  change while permission and failure handling are validated.
+- **The agent runners.** `adf-codex-runner` and `adf-claude-runner` are
+  source-built, Challenger-only prototypes. Their command lines and structured
+  final responses may change while permission and failure handling are
+  validated.
 
 ## Not an interface at all
 

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentic-development-framework.dev/schemas/outputs/v1/execution-log.schema.json",
-  "title": "Execution Log v2",
+  "title": "Execution Log v3",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "change_id", "entries", "totals"],
   "properties": {
-    "schema_version": {"const": "2"},
+    "schema_version": {"const": "3"},
     "change_id": {"type": "string", "minLength": 1},
     "entries": {
       "type": "array",
@@ -17,7 +17,8 @@
           "execution_id", "result_id", "action_id", "role", "result_schema",
           "context_bytes", "status", "runner_provider", "runner_surface",
           "runner_version", "duration_ms", "model", "input_tokens",
-          "cached_input_tokens", "output_tokens", "reasoning_output_tokens",
+          "cache_creation_input_tokens", "cached_input_tokens", "output_tokens",
+          "reasoning_output_tokens", "cost_usd",
           "tool_calls", "retries", "started_at", "completed_at", "thread_id",
           "exit_code", "error_code"
         ],
@@ -35,9 +36,11 @@
           "duration_ms": {"type": ["integer", "null"], "minimum": 0},
           "model": {"type": ["string", "null"], "minLength": 1},
           "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+          "cache_creation_input_tokens": {"type": ["integer", "null"], "minimum": 0},
           "cached_input_tokens": {"type": ["integer", "null"], "minimum": 0},
           "output_tokens": {"type": ["integer", "null"], "minimum": 0},
           "reasoning_output_tokens": {"type": ["integer", "null"], "minimum": 0},
+          "cost_usd": {"type": ["number", "null"], "minimum": 0},
           "tool_calls": {"type": ["integer", "null"], "minimum": 0},
           "retries": {"type": ["integer", "null"], "minimum": 0},
           "started_at": {"type": ["string", "null"], "minLength": 1},
@@ -53,7 +56,8 @@
       "additionalProperties": false,
       "required": [
         "actions", "context_bytes", "duration_ms", "input_tokens",
-        "cached_input_tokens", "output_tokens", "reasoning_output_tokens",
+        "cache_creation_input_tokens", "cached_input_tokens", "output_tokens",
+        "reasoning_output_tokens", "cost_usd",
         "tool_calls", "retries", "entries_without_token_counts",
         "incomplete_executions"
       ],
@@ -62,9 +66,11 @@
         "context_bytes": {"type": "integer", "minimum": 0},
         "duration_ms": {"type": ["integer", "null"], "minimum": 0},
         "input_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cache_creation_input_tokens": {"type": ["integer", "null"], "minimum": 0},
         "cached_input_tokens": {"type": ["integer", "null"], "minimum": 0},
         "output_tokens": {"type": ["integer", "null"], "minimum": 0},
         "reasoning_output_tokens": {"type": ["integer", "null"], "minimum": 0},
+        "cost_usd": {"type": ["number", "null"], "minimum": 0},
         "tool_calls": {"type": ["integer", "null"], "minimum": 0},
         "retries": {"type": ["integer", "null"], "minimum": 0},
         "entries_without_token_counts": {"type": "integer", "minimum": 0},

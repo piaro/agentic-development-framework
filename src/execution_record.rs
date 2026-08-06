@@ -35,7 +35,7 @@ pub struct BeginExecutionRequest {
     pub started_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct CompleteExecutionRequest {
     pub change_id: String,
@@ -51,11 +51,15 @@ pub struct CompleteExecutionRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cached_input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reasoning_output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -77,7 +81,7 @@ pub enum ExecutionStatus {
     Stale,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionStarted {
     pub schema_version: String,
@@ -94,7 +98,7 @@ pub struct ExecutionStarted {
     pub started_at: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ExecutionCompleted {
     pub schema_version: String,
@@ -104,7 +108,7 @@ pub struct ExecutionCompleted {
     pub completion: CompleteExecutionRequest,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "event")]
 pub enum ExecutionEvent {
     #[serde(rename = "started")]
@@ -446,6 +450,12 @@ fn validate_completion(request: &CompleteExecutionRequest) -> Result<(), String>
     if let Some(result_id) = &request.result_id {
         validate_record_id(result_id, "result")?;
     }
+    if request
+        .cost_usd
+        .is_some_and(|cost| !cost.is_finite() || cost < 0.0)
+    {
+        return Err("cost_usd must be a finite non-negative number".to_owned());
+    }
     Ok(())
 }
 
@@ -494,9 +504,11 @@ mod tests {
             duration_ms: Some(10),
             model: None,
             input_tokens: Some(5),
+            cache_creation_input_tokens: Some(4),
             cached_input_tokens: Some(3),
             output_tokens: Some(2),
             reasoning_output_tokens: Some(1),
+            cost_usd: Some(0.25),
             tool_calls: Some(1),
             retries: Some(0),
             thread_id: None,
@@ -511,6 +523,16 @@ mod tests {
         assert_eq!(
             validate_completion(&request).unwrap_err(),
             "a succeeded execution requires result_id"
+        );
+    }
+
+    #[test]
+    fn completion_rejects_invalid_cost() {
+        let mut request = completion(ExecutionStatus::Failed, None);
+        request.cost_usd = Some(-0.01);
+        assert_eq!(
+            validate_completion(&request).unwrap_err(),
+            "cost_usd must be a finite non-negative number"
         );
     }
 
