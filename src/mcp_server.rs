@@ -2,7 +2,8 @@
 
 use crate::project_application::{
     AbandonActionResponse, IssuedActionKey, NextServiceResponse, ProjectApplicationService,
-    RecordWriteResponse, ServiceError, SubmitServiceResponse,
+    RecordWriteResponse, ServiceError, SubmitServiceResponse, expected_digest_schema,
+    json_object_schema,
 };
 use rmcp::{
     Json, ServerHandler, ServiceExt,
@@ -21,6 +22,7 @@ use tokio::sync::Mutex;
 #[derive(Debug, Clone, Serialize, JsonSchema)]
 pub struct ReportToolResponse {
     pub schema_version: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub report: Value,
 }
 
@@ -45,6 +47,7 @@ pub struct SubmitToolInput {
     pub change_id: String,
     pub action_id: String,
     pub context_digest: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub payload: Value,
     #[serde(default)]
     pub output_refs: Vec<String>,
@@ -58,6 +61,7 @@ pub struct EvidenceToolInput {
     pub change_id: String,
     pub action_id: String,
     pub context_digest: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub evidence: Value,
 }
 
@@ -67,7 +71,9 @@ pub struct DecisionToolInput {
     pub change_id: String,
     pub action_id: String,
     pub context_digest: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub decision: Value,
+    #[schemars(schema_with = "expected_digest_schema")]
     pub expected_digest: Value,
 }
 
@@ -77,7 +83,9 @@ pub struct ContractToolInput {
     pub change_id: String,
     pub action_id: String,
     pub context_digest: String,
+    #[schemars(schema_with = "json_object_schema")]
     pub contract: Value,
+    #[schemars(schema_with = "expected_digest_schema")]
     pub expected_digest: Value,
     #[serde(default)]
     pub expected_clause_digests: Option<BTreeMap<String, String>>,
