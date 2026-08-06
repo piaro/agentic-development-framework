@@ -1856,9 +1856,14 @@ fn parse_execution_command(arguments: &[String]) -> Result<ExecutionCommand, Str
                 duration_ms: take_u64(&mut values, "--duration-ms")?,
                 model: values.remove("--model"),
                 input_tokens: take_u64(&mut values, "--input-tokens")?,
+                cache_creation_input_tokens: take_u64(
+                    &mut values,
+                    "--cache-creation-input-tokens",
+                )?,
                 cached_input_tokens: take_u64(&mut values, "--cached-input-tokens")?,
                 output_tokens: take_u64(&mut values, "--output-tokens")?,
                 reasoning_output_tokens: take_u64(&mut values, "--reasoning-output-tokens")?,
+                cost_usd: take_f64(&mut values, "--cost-usd")?,
                 tool_calls: take_u64(&mut values, "--tool-calls")?,
                 retries: take_u64(&mut values, "--retries")?,
                 thread_id: values.remove("--thread-id"),
@@ -1978,6 +1983,20 @@ fn take_i32(
             value
                 .parse::<i32>()
                 .map_err(|_| format!("{flag} must be an integer"))
+        })
+        .transpose()
+}
+
+fn take_f64(
+    values: &mut std::collections::BTreeMap<String, String>,
+    flag: &str,
+) -> Result<Option<f64>, String> {
+    values
+        .remove(flag)
+        .map(|value| {
+            value
+                .parse::<f64>()
+                .map_err(|_| format!("{flag} must be a number"))
         })
         .transpose()
 }
@@ -2439,7 +2458,7 @@ fn project_usage(command: &str) {
 
 fn execution_usage() {
     eprintln!(
-        "usage:\n  adf execution begin <change-id> --action <id> --context <digest> --provider <name> --surface <name> [--runner-version <version>] [--started-at <time>] [--project <root>] [--release <root>] [--format <text|json>]\n  adf execution complete <execution-id> --change <change-id> --status <succeeded|failed|interrupted|stale> [--result <id>] [--completed-at <time>] [--duration-ms <n>] [--model <name>] [--input-tokens <n>] [--cached-input-tokens <n>] [--output-tokens <n>] [--reasoning-output-tokens <n>] [--tool-calls <n>] [--retries <n>] [--thread-id <id>] [--exit-code <n>] [--error-code <code>] [--project <root>] [--release <root>] [--format <text|json>]"
+        "usage:\n  adf execution begin <change-id> --action <id> --context <digest> --provider <name> --surface <name> [--runner-version <version>] [--started-at <time>] [--project <root>] [--release <root>] [--format <text|json>]\n  adf execution complete <execution-id> --change <change-id> --status <succeeded|failed|interrupted|stale> [--result <id>] [--completed-at <time>] [--duration-ms <n>] [--model <name>] [--input-tokens <n>] [--cache-creation-input-tokens <n>] [--cached-input-tokens <n>] [--output-tokens <n>] [--reasoning-output-tokens <n>] [--cost-usd <amount>] [--tool-calls <n>] [--retries <n>] [--thread-id <id>] [--exit-code <n>] [--error-code <code>] [--project <root>] [--release <root>] [--format <text|json>]"
     );
 }
 

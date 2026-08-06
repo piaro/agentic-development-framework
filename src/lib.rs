@@ -8,6 +8,7 @@ pub mod binary_install;
 pub mod binding_draft_validation;
 pub mod binding_validation;
 mod c_detection;
+pub mod claude_runner;
 pub mod cli_output;
 pub mod codex_runner;
 pub mod context;

@@ -9,9 +9,9 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const EXECUTION_LOG_SCHEMA_VERSION: &str = "2";
+pub const EXECUTION_LOG_SCHEMA_VERSION: &str = "3";
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ExecutionLogEntry {
     pub execution_id: Option<String>,
     pub result_id: Option<String>,
@@ -26,9 +26,11 @@ pub struct ExecutionLogEntry {
     pub duration_ms: Option<u64>,
     pub model: Option<String>,
     pub input_tokens: Option<u64>,
+    pub cache_creation_input_tokens: Option<u64>,
     pub cached_input_tokens: Option<u64>,
     pub output_tokens: Option<u64>,
     pub reasoning_output_tokens: Option<u64>,
+    pub cost_usd: Option<f64>,
     pub tool_calls: Option<u64>,
     pub retries: Option<u64>,
     pub started_at: Option<String>,
@@ -38,7 +40,7 @@ pub struct ExecutionLogEntry {
     pub error_code: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct ExecutionLog {
     pub schema_version: String,
     pub change_id: String,
@@ -80,9 +82,11 @@ impl ExecutionLog {
             "context_bytes": entries.iter().map(|item| item.context_bytes).sum::<u64>(),
             "duration_ms": sum_known(entries.iter().map(|item| item.duration_ms)),
             "input_tokens": sum_known(entries.iter().map(|item| item.input_tokens)),
+            "cache_creation_input_tokens": sum_known(entries.iter().map(|item| item.cache_creation_input_tokens)),
             "cached_input_tokens": sum_known(entries.iter().map(|item| item.cached_input_tokens)),
             "output_tokens": sum_known(entries.iter().map(|item| item.output_tokens)),
             "reasoning_output_tokens": sum_known(entries.iter().map(|item| item.reasoning_output_tokens)),
+            "cost_usd": sum_known_f64(entries.iter().map(|item| item.cost_usd)),
             "tool_calls": sum_known(entries.iter().map(|item| item.tool_calls)),
             "retries": sum_known(entries.iter().map(|item| item.retries)),
             "entries_without_token_counts": entries.iter().filter(|item| {
@@ -112,7 +116,7 @@ impl ExecutionLog {
         );
         for entry in &self.entries {
             output.push_str(&format!(
-                "- {} {} status={} context_bytes={} duration_ms={} tokens={}+{} model={}\n",
+                "- {} {} status={} context_bytes={} duration_ms={} tokens={}+{} cost_usd={} model={}\n",
                 entry.role,
                 entry.result_schema,
                 entry.status.as_deref().unwrap_or("unknown"),
@@ -120,6 +124,7 @@ impl ExecutionLog {
                 display_number(entry.duration_ms),
                 display_number(entry.input_tokens),
                 display_number(entry.output_tokens),
+                display_cost(entry.cost_usd),
                 entry.model.as_deref().unwrap_or("unknown"),
             ));
         }
@@ -143,9 +148,11 @@ fn result_entry(result: &Value) -> Option<ExecutionLogEntry> {
         duration_ms: number(execution, "duration_ms"),
         model: text(execution, "model"),
         input_tokens: number(execution, "input_tokens"),
+        cache_creation_input_tokens: None,
         cached_input_tokens: None,
         output_tokens: number(execution, "output_tokens"),
         reasoning_output_tokens: None,
+        cost_usd: None,
         tool_calls: number(execution, "tool_calls"),
         retries: number(execution, "retries"),
         started_at: text(execution, "started_at"),
@@ -218,6 +225,9 @@ fn runner_entries(events: &[ExecutionEvent]) -> Vec<ExecutionLogEntry> {
                     duration_ms: completion.as_ref().and_then(|item| item.duration_ms),
                     model: completion.as_ref().and_then(|item| item.model.clone()),
                     input_tokens: completion.as_ref().and_then(|item| item.input_tokens),
+                    cache_creation_input_tokens: completion
+                        .as_ref()
+                        .and_then(|item| item.cache_creation_input_tokens),
                     cached_input_tokens: completion
                         .as_ref()
                         .and_then(|item| item.cached_input_tokens),
@@ -225,6 +235,7 @@ fn runner_entries(events: &[ExecutionEvent]) -> Vec<ExecutionLogEntry> {
                     reasoning_output_tokens: completion
                         .as_ref()
                         .and_then(|item| item.reasoning_output_tokens),
+                    cost_usd: completion.as_ref().and_then(|item| item.cost_usd),
                     tool_calls: completion.as_ref().and_then(|item| item.tool_calls),
                     retries: completion.as_ref().and_then(|item| item.retries),
                     completed_at: completion
@@ -267,7 +278,19 @@ fn sum_known(values: impl Iterator<Item = Option<u64>>) -> Value {
         .unwrap_or(Value::Null)
 }
 
+fn sum_known_f64(values: impl Iterator<Item = Option<f64>>) -> Value {
+    let values = values.collect::<Option<Vec<_>>>();
+    values
+        .and_then(|values| serde_json::Number::from_f64(values.into_iter().sum::<f64>()))
+        .map(Value::Number)
+        .unwrap_or(Value::Null)
+}
+
 fn display_number(value: Option<u64>) -> String {
+    value.map_or_else(|| "unknown".to_owned(), |value| value.to_string())
+}
+
+fn display_cost(value: Option<f64>) -> String {
     value.map_or_else(|| "unknown".to_owned(), |value| value.to_string())
 }
 

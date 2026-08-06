@@ -280,9 +280,9 @@ Output:
 
 外部RunnerはAction実行前に`adf_begin_execution`を呼び、Change ID、Action ID、Context digestを現在のActionと照合します。ADFはContextの直列化サイズ、Role、Result Schemaを自分で記録します。Runnerの申告値で置き換えません。
 
-実行後は`adf_complete_execution`で成否、Result ID、Token数、処理時間を追記します。成功には同じActionとContextから作られたResult IDが必要です。失敗、中断、staleはResultなしで記録できます。開始と完了は別fileへ排他的に追記し、完了の再送は内容が同じ場合だけ冪等に受理します。
+実行後は`adf_complete_execution`で成否、Result ID、Token数、処理時間、実行環境が報告した費用を追記します。Token数は通常入力、キャッシュ作成、キャッシュ読取、出力、推論を区別します。成功には同じActionとContextから作られたResult IDが必要です。失敗、中断、staleはResultなしで記録できます。開始と完了は別fileへ排他的に追記し、完了の再送は内容が同じ場合だけ冪等に受理します。不明な利用量や費用は推測せず省略します。
 
-実行RecordはKernelへ渡しません。Action選択、Result ID、freshness、Evidenceの充足判定には影響しません。Agent会話、Generated Context全文、CodexのJSONLも保存しません。
+実行RecordはKernelへ渡しません。Action選択、Result ID、freshness、Evidenceの充足判定には影響しません。Agent会話、Generated Context全文、CodexのJSONL、Claude Codeの完全なJSON応答も保存しません。
 
 ### 10.3 `adf_add_evidence`
 

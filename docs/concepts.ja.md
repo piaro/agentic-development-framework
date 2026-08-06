@@ -91,7 +91,7 @@ Challengerが行う反証とは、依頼・規範・実装が間違っている�
 
 各作業には、実行環境へ向けたモデルの推奨も含まれます。影響評価には通常、軽量なモデルを推奨します。ただし、影響なしと結論付ける場合、根拠が矛盾する場合、セキュリティ、プライバシー、決済、元に戻せないデータ変更の可能性がある場合は、精度の高いモデルへの切り替えを勧めます。ADF自体はモデルを選ばず、LLMも実行しません。
 
-実行環境がすでに把握している処理時間、モデル名、入出力Token数、ツール呼び出し数、再試行回数は、`adf_submit`で任意に記録できます。外部Runnerは`adf_begin_execution`と`adf_complete_execution`を使い、Result提出後に確定したToken数や、失敗・中断した実行も追記できます。この実行RecordはADFの状態、Result ID、鮮度、Evidence検証には影響しません。同じResultに提出時の計測値とRunnerの完了Recordがある場合は、Runnerの値だけを集計します。
+実行環境がすでに把握している処理時間、モデル名、入出力Token数、ツール呼び出し数、再試行回数は、`adf_submit`で任意に記録できます。外部Runnerは`adf_begin_execution`と`adf_complete_execution`を使い、Result提出後に確定したToken数や、失敗・中断した実行も追記できます。外部実行では、キャッシュ作成Token、キャッシュ読取Token、推論Token、実行環境が報告した米ドル費用も記録できます。この実行RecordはADFの状態、Result ID、鮮度、Evidence検証には影響しません。同じResultに提出時の計測値とRunnerの完了Recordがある場合は、Runnerの値だけを集計します。
 
 ADFは文脈のバイト数だけを計算します。計測のためにLLMを起動したり、料金を推測したりしません。不明な値は不明のまま残します。
 
@@ -101,11 +101,11 @@ ADFは文脈のバイト数だけを計算します。計測のためにLLMを�
 adf execution-log <変更ID> --format json
 ```
 
-### Codex Runnerの試作
+### Codex・Claude Code Runnerの試作
 
-`adf-codex-runner`はADF本体とは別の任意ツールです。ADFが自動で起動することはありません。ユーザーが利用しているメインセッションが、独立実行を必要とする場合だけ呼び出します。
+`adf-codex-runner`と`adf-claude-runner`はADF本体とは別の任意ツールです。ADFが自動で起動することはありません。ユーザーが利用しているメインセッションが、独立実行を必要とする場合だけ、使用中のエージェントに合うRunnerを呼び出します。
 
-最初の版はChallenger Actionだけを受け付け、毎回新しい`codex exec --ephemeral`を起動します。Runnerは起動前にAction IDとContext digestを照合し、独立したCodexも自分のMCPセッションで`adf_next`を実行します。ContextはADFが生成した完全な値を使い、メインセッションの会話要約は渡しません。会話で決まった要求は、独立実行の前にChange、accepted Contract、accepted Decisionへ記録する必要があります。
+最初の版はChallenger Actionだけを受け付けます。Codexでは`codex exec --ephemeral`、Claude Codeでは`claude -p --no-session-persistence`を毎回起動します。Runnerは起動前にAction IDとContext digestを照合し、独立したエージェントも自分のMCPセッションで`adf_next`を実行します。ContextはADFが生成した完全な値を使い、メインセッションの会話要約は渡しません。会話で決まった要求は、独立実行の前にChange、accepted Contract、accepted Decisionへ記録する必要があります。
 
 ```sh
 adf-codex-runner run \
@@ -115,7 +115,17 @@ adf-codex-runner run \
   --expected-context sha256:...
 ```
 
-RunnerはCodexのJSONLをリポジトリへ保存せず、完了時に報告されたToken数と処理結果だけをADFへ記録します。現在の署名付き配布物にはRunnerを含めないため、試作を使う場合はソースから`adf-codex-runner`をビルドします。
+Claude Codeでも、同じ識別子を渡します。
+
+```sh
+adf-claude-runner run \
+  --project /path/to/project \
+  --change change.example \
+  --expected-action action.example \
+  --expected-context sha256:...
+```
+
+RunnerはCodexのJSONLやClaude Codeの完全なJSON応答をリポジトリへ保存しません。完了時に報告されたToken数、Claude Codeが報告した費用、処理結果だけをADFへ記録します。Claude Codeでは、プロジェクトのMCP、Skill、`CLAUDE.md`を読む必要があるため`--bare`を使いません。会話は`--no-session-persistence`で保存しません。現在の署名付き配布物にはRunnerを含めないため、試作を使う場合は対象のRunnerをソースからビルドします。
 
 ## 使ってみる
 
