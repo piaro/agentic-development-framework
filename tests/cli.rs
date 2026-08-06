@@ -25,7 +25,7 @@ fn help_version_and_uninitialized_project_have_actionable_cli_behavior() {
     let (stable, experimental) = help
         .split_once("experimental, may change in any release")
         .expect("usage separates the experimental commands");
-    assert!(stable.contains("adf <next|explain>"));
+    assert!(stable.contains("adf <next|explain|execution-log>"));
     assert!(!stable.contains("adf migration"));
     assert!(experimental.contains("adf migration"));
     assert!(experimental.contains("adf detector-audit"));
@@ -1396,11 +1396,56 @@ fn project_and_change_init_connect_an_empty_repository_to_next() {
     run_git(&root, &["commit", "--quiet", "-m", "initialize adf"]);
 
     let next = Command::new(env!("CARGO_BIN_EXE_adf"))
-        .args(["next", "change.example", "--require-clean", "--project"])
+        .args([
+            "next",
+            "change.example",
+            "--require-clean",
+            "--format",
+            "json",
+            "--project",
+        ])
         .arg(&root)
         .output()
         .unwrap();
     assert_success(&next);
+    let response: Value = serde_json::from_slice(&next.stdout).unwrap();
+    assert_eq!(response["state"], "needs-impact-assessment");
+    assert_eq!(response["next_action"]["role"], "Analyst");
+    assert_eq!(response["next_action"]["action"], "assess-change-impact");
+    assert_eq!(
+        response["next_action"]["result_schema"],
+        "result.impact-assessment"
+    );
+    assert_eq!(
+        response["next_action"]["execution_guidance"]["preferred_model_tier"],
+        "economy"
+    );
+    assert!(
+        response["context_stats"]["serialized_bytes"]
+            .as_u64()
+            .unwrap()
+            > 0
+    );
+    assert_eq!(
+        read_yaml(&root.join(".adf/changes/change.example/change.yaml"))["impact_assessment"],
+        "required"
+    );
+    let execution_log = Command::new(env!("CARGO_BIN_EXE_adf"))
+        .args([
+            "execution-log",
+            "change.example",
+            "--require-clean",
+            "--format",
+            "json",
+            "--project",
+        ])
+        .arg(&root)
+        .output()
+        .unwrap();
+    assert_success(&execution_log);
+    let execution_log: Value = serde_json::from_slice(&execution_log.stdout).unwrap();
+    validate_output_schema(&execution_log, "execution-log.schema.json");
+    assert_eq!(execution_log["totals"]["actions"], 0);
     let _ = fs::remove_dir_all(root);
 }
 
@@ -3139,6 +3184,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "adf_apply_contract",
             "adf_apply_decision",
             "adf_contract_health",
+            "adf_execution_log",
             "adf_explain",
             "adf_next",
             "adf_submit",
@@ -3225,6 +3271,14 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "outcomes": outcomes,
         },
         "output_refs": [],
+        "execution": {
+            "duration_ms": 120,
+            "model": "test-model",
+            "input_tokens": 400,
+            "output_tokens": 80,
+            "tool_calls": 2,
+            "retries": 0
+        }
     });
 
     let mut wrong_arguments = arguments.clone();
@@ -3271,6 +3325,20 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             .count(),
         1
     );
+
+    let execution_log = mcp_call(
+        &mut input,
+        &mut output,
+        7,
+        "adf_execution_log",
+        json!({"change_id": "change.place-order"}),
+    );
+    assert_eq!(execution_log["isError"], false);
+    let report = &execution_log["structuredContent"]["report"];
+    validate_output_schema(report, "execution-log.schema.json");
+    assert_eq!(report["totals"]["input_tokens"], 400);
+    assert_eq!(report["entries"][0]["model"], "test-model");
+    assert!(report["entries"][0]["context_bytes"].as_u64().unwrap() > 0);
 
     mcp_send(
         &mut input,

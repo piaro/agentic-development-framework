@@ -17,6 +17,12 @@ Through MCP, call `adf_next` with the change id. Without MCP, run
 The action's `context` holds the change, the contracts that govern it, the decisions
 behind them, and the affected code. Read every contract in that context before writing
 code. Use decisions for rationale only - the contract states the rule you must meet.
+The accepted Impact Assessment is included as a reusable Result. Work from its declared
+subjects and the matching artifacts in this Context; do not repeat repository-wide impact
+discovery.
+
+`action.execution_guidance` is advisory to the orchestrator. ADF does not choose or invoke
+a model.
 
 ## `implement-change`
 
@@ -61,6 +67,10 @@ Every residual risk needs someone who accepts it and a date by which it is revis
 Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it and returns the next action - usually a
 challenge run from a context independent of yours.
+
+If the orchestrator already knows execution time, model, token counts, tool calls, or
+retries, it may include them in the optional `execution` object. Do not add work solely to
+collect these metrics. ADF records Context size without an extra model invocation.
 
 If submission is rejected as stale, the inputs moved under you. Call `adf_next`
 again and work from the fresh action rather than retrying the old payload.

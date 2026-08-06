@@ -10,6 +10,7 @@
     "state",
     "next_action",
     "context",
+    "context_stats",
     "diagnostics"
   ],
   "properties": {
@@ -39,7 +40,8 @@
             "reason",
             "result_schema",
             "requirement_instances",
-            "candidate_fingerprints"
+            "candidate_fingerprints",
+            "execution_guidance"
           ],
           "properties": {
             "id": {
@@ -72,6 +74,18 @@
               "type": "array",
               "items": {
                 "type": "string"
+              }
+            },
+            "execution_guidance": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["preferred_model_tier", "escalation_conditions"],
+              "properties": {
+                "preferred_model_tier": {"type": "string", "minLength": 1},
+                "escalation_conditions": {
+                  "type": "array",
+                  "items": {"type": "string", "minLength": 1}
+                }
               }
             }
           }
@@ -184,6 +198,21 @@
               "type": "string",
               "minLength": 1
             }
+          }
+        }
+      ]
+    },
+    "context_stats": {
+      "anyOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["serialized_bytes", "source_count", "reused_result_count"],
+          "properties": {
+            "serialized_bytes": {"type": "integer", "minimum": 0},
+            "source_count": {"type": "integer", "minimum": 0},
+            "reused_result_count": {"type": "integer", "minimum": 0}
           }
         }
       ]

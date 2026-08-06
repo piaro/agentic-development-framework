@@ -24,6 +24,9 @@
       "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
       "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
     },
+    "execution": {
+      "context_bytes": 3814
+    },
     "payload": {
       "reviewed_candidates": [
         {

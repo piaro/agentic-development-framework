@@ -23,6 +23,9 @@ than letting the result imply independence.
 Through MCP, call `adf_next` with the change id. Without MCP, run
 `adf next <change-id>`. Stop if `role` is not `Challenger`.
 
+`action.execution_guidance` recommends `high-accuracy` for challenge work. It is advisory
+to the orchestrator; ADF does not choose or invoke the model.
+
 Take the phase from `state`, not from what you feel like checking:
 
 - `needs-pre-build-challenge`: the request, the authority behind each decision, and the
@@ -69,6 +72,10 @@ person who may decide.
 
 Call `adf_submit` with the action id, the context digest from the action, and the
 payload. The control plane validates it and returns the next action.
+
+If the orchestrator already knows execution time, model, token counts, tool calls, or
+retries, it may include them in the optional `execution` object. Do not run extra tracing
+or another model call solely to collect them.
 
 If submission is rejected as stale, the work moved under you. Call `adf_next` again
 and challenge the fresh state rather than retrying the old payload.

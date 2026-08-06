@@ -12,6 +12,7 @@ use adf::delivery::{
 use adf::detector_audit::run_repository_detector_audit;
 use adf::detector_audit_baseline::check_repository_detector_audit_baseline;
 use adf::detector_benchmark::run_detector_benchmark;
+use adf::execution_log::ExecutionLog;
 use adf::mcp_server::run_stdio_server;
 use adf::migration::{
     apply_migration_candidate, draft_migration, generate_migration_candidate, inspect_migration,
@@ -185,7 +186,7 @@ fn main() -> ExitCode {
             }
         };
     }
-    if matches!(command, "next" | "explain") {
+    if matches!(command, "next" | "explain" | "execution-log") {
         let options = match parse_project_command(command, &arguments[2..]) {
             Ok(options) => options,
             Err(error) => {
@@ -1960,6 +1961,18 @@ fn run_project_command(command: &str, options: &ProjectCommand) -> Result<String
                     .map_err(|error| error.to_string()),
             }
         }
+        "execution-log" => {
+            let snapshot = application.snapshot(&options.change_id).map_err(|error| {
+                actionable_project_error(&error.to_string(), &options.change_id)
+            })?;
+            let report = ExecutionLog::build(&snapshot);
+            match options.format {
+                OutputFormat::Text => Ok(report.render_text()),
+                OutputFormat::Json => serde_json::to_string_pretty(&report.as_value())
+                    .map(|value| value + "\n")
+                    .map_err(|error| error.to_string()),
+            }
+        }
         _ => unreachable!("project commands are checked before dispatch"),
     }
 }
@@ -2102,7 +2115,7 @@ usage:\n\
   adf project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   adf project promote-bindings --draft <path> [--project <root>]\n\
   adf change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
-  adf <next|explain> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
+  adf <next|explain|execution-log> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   adf contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
   adf mcp [--project <root>] [--release <root>]\n\
   adf release <public-key|build|fetch|install|install-archive|switch|rollback> ...\n\

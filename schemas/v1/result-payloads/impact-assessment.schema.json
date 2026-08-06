@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/v1/result-payloads/impact-assessment",
+  "x-result-schema": "result.impact-assessment",
+  "x-allowed-roles": ["Analyst"],
+  "type": "object",
+  "required": ["status", "summary", "impacts", "unknowns", "basis_refs"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["impacts-identified", "no-impact", "inconclusive"]
+    },
+    "summary": {"type": "string", "minLength": 1},
+    "impacts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "signal",
+          "bindings",
+          "description",
+          "risk",
+          "governing_refs"
+        ],
+        "properties": {
+          "signal": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9-]*$"
+          },
+          "bindings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "description": {"type": "string", "minLength": 1},
+          "risk": {
+            "type": "string",
+            "enum": ["low", "medium", "high"]
+          },
+          "governing_refs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^contract\\.[A-Za-z0-9._-]+#[A-Za-z0-9][A-Za-z0-9._-]*$"
+            },
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "basis_refs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  },
+  "additionalProperties": false
+}

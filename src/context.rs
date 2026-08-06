@@ -10,13 +10,19 @@ use crate::contract_scope::{
     effective_clause_applies_to,
 };
 use crate::detection::DetectionReport;
-use crate::kernel::{KernelDecision, NextAction, ProjectSnapshot, RequirementInstance};
+use crate::kernel::{
+    KernelDecision, NextAction, ProjectSnapshot, RequirementInstance, fresh_impact_assessment,
+};
+use crate::project::{
+    CONTRACT_INDEX_REF, DECISION_INDEX_REF, REPOSITORY_CONTENT_REF, REPOSITORY_REVISION_REF,
+};
 use crate::rules::Assurance;
+use crate::signal_catalog::SignalCatalogRegistry;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CONTEXT_COMPILER_VERSION: &str = "4";
+pub const CONTEXT_COMPILER_VERSION: &str = "5";
 pub const CONTRACT_CLAUSE_PROJECTION_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -230,6 +236,79 @@ impl ContextCompiler {
             "signal_candidates": signal_candidates,
             "sources": source_digests,
         });
+        if action.action == "assess-change-impact" {
+            let signal_catalog = SignalCatalogRegistry::built_in()
+                .expect("the built-in Signal Catalog is valid")
+                .catalog()
+                .as_value();
+            let prior_assessments = snapshot
+                .results
+                .iter()
+                .filter(|result| {
+                    result["result_schema"].as_str() == Some("result.impact-assessment")
+                })
+                .rev()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>();
+            let governance_index = snapshot
+                .contracts
+                .iter()
+                .map(|contract| {
+                    json!({
+                        "id": contract["id"],
+                        "applies_to": contract["applies_to"],
+                        "clauses": array_field(contract, "clauses").iter().map(|clause| {
+                            json!({
+                                "ref": clause_ref(contract, clause),
+                                "applies_to": effective_clause_applies_to(contract, clause),
+                                "authority_ref": clause["authority_ref"],
+                            })
+                        }).collect::<Vec<_>>(),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let repository_index = array_field(&snapshot.repository, "artifacts")
+                .iter()
+                .map(|artifact| {
+                    json!({
+                        "ref": artifact["ref"],
+                        "path": artifact["path"],
+                        "applies_to": artifact["applies_to"],
+                        "digest": artifact["digest"],
+                    })
+                })
+                .collect::<Vec<_>>();
+            let decision_index = snapshot
+                .decisions
+                .iter()
+                .map(|decision| {
+                    json!({
+                        "id": decision["id"],
+                        "status": decision["status"],
+                        "title": decision["title"],
+                        "resolves": decision["resolves"],
+                    })
+                })
+                .collect::<Vec<_>>();
+            let object = payload
+                .as_object_mut()
+                .expect("Context payload is an object");
+            object.insert("signal_catalog".to_owned(), signal_catalog);
+            object.insert(
+                "governance_index".to_owned(),
+                Value::Array(governance_index),
+            );
+            object.insert(
+                "repository_index".to_owned(),
+                Value::Array(repository_index),
+            );
+            object.insert("decision_index".to_owned(), Value::Array(decision_index));
+            object.insert(
+                "prior_impact_assessments".to_owned(),
+                Value::Array(prior_assessments),
+            );
+        }
         if action
             .requirement_instances
             .iter()
@@ -444,6 +523,9 @@ impl ContextCompiler {
         if selectors.contains("evidence") {
             references.extend(snapshot.evidence.iter().filter_map(value_id));
         }
+        if selectors.contains("impact-assessment") {
+            references.extend(fresh_impact_assessment(snapshot).and_then(value_id));
+        }
         references.into_iter().collect()
     }
 
@@ -527,20 +609,99 @@ impl ContextCompiler {
 
     fn action_source_refs(&self, action: &str, snapshot: &ProjectSnapshot) -> Vec<String> {
         let mut references = BTreeSet::from([snapshot.change_id.clone()]);
-        if action == "answer-decision-request" {
-            references.extend(snapshot.results.iter().filter_map(value_id));
-        } else if action == "implement-change" {
-            references.extend(snapshot.contracts.iter().filter_map(value_id));
-            references.extend(snapshot.decisions.iter().filter_map(value_id));
-            references.extend(snapshot.results.iter().filter_map(value_id));
+        if action == "assess-change-impact" {
+            references.extend([
+                REPOSITORY_REVISION_REF.to_owned(),
+                REPOSITORY_CONTENT_REF.to_owned(),
+                CONTRACT_INDEX_REF.to_owned(),
+                DECISION_INDEX_REF.to_owned(),
+            ]);
             references.extend(
-                array_field(&snapshot.repository, "artifacts")
+                snapshot
+                    .results
                     .iter()
+                    .filter(|result| {
+                        result["result_schema"].as_str() == Some("result.impact-assessment")
+                    })
+                    .rev()
+                    .take(3)
                     .filter_map(value_id),
             );
+        } else if action == "answer-decision-request" {
+            references.extend(snapshot.results.iter().filter_map(value_id));
+        } else if action == "implement-change" {
+            references.extend(implementation_source_refs(snapshot));
         }
         references.into_iter().collect()
     }
+}
+
+fn implementation_source_refs(snapshot: &ProjectSnapshot) -> BTreeSet<String> {
+    let Some(assessment) = fresh_impact_assessment(snapshot) else {
+        return snapshot
+            .contracts
+            .iter()
+            .chain(snapshot.decisions.iter())
+            .chain(snapshot.results.iter())
+            .filter_map(value_id)
+            .chain(
+                array_field(&snapshot.repository, "artifacts")
+                    .iter()
+                    .filter_map(value_id),
+            )
+            .collect();
+    };
+    let mut references = value_id(assessment).into_iter().collect::<BTreeSet<_>>();
+    let subjects = array_field(&assessment["payload"], "impacts")
+        .iter()
+        .flat_map(|impact| {
+            impact["bindings"]
+                .as_object()
+                .into_iter()
+                .flatten()
+                .filter_map(|(_, value)| value.as_str().map(str::to_owned))
+        })
+        .collect::<BTreeSet<_>>();
+    let explicit_governance = array_field(&assessment["payload"], "impacts")
+        .iter()
+        .flat_map(|impact| array_field(impact, "governing_refs"))
+        .filter_map(Value::as_str)
+        .collect::<BTreeSet<_>>();
+    references.extend(
+        explicit_governance
+            .iter()
+            .map(|reference| (*reference).to_owned()),
+    );
+    let subject_refs = subjects.iter().map(String::as_str).collect::<BTreeSet<_>>();
+    for contract in &snapshot.contracts {
+        let contract_id = contract["id"].as_str().unwrap_or_default();
+        let explicit_contract_prefix = format!("{contract_id}#");
+        if contract_matches_subjects(contract, &subject_refs)
+            || explicit_governance.contains(contract_id)
+            || explicit_governance
+                .iter()
+                .any(|reference| reference.starts_with(&explicit_contract_prefix))
+        {
+            references.insert(contract_id.to_owned());
+            references.extend(
+                array_field(contract, "clauses")
+                    .iter()
+                    .filter_map(|clause| clause["authority_ref"].as_str().map(str::to_owned)),
+            );
+        }
+    }
+    references.extend(
+        array_field(&snapshot.repository, "artifacts")
+            .iter()
+            .filter(|artifact| {
+                array_field(artifact, "applies_to")
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .any(|subject| subjects.contains(subject))
+            })
+            .filter_map(value_id),
+    );
+    references
 }
 
 fn matching_clauses<'a>(contract: &'a Value, subject_refs: &[String]) -> Vec<&'a Value> {
@@ -681,6 +842,91 @@ mod tests {
     use serde_json::json;
     use std::path::PathBuf;
 
+    #[test]
+    fn implementation_reuses_only_the_current_assessment_and_matching_sources() {
+        let current_change_digest = format!("sha256:{}", "a".repeat(64));
+        let snapshot = ProjectSnapshot {
+            change_id: "change.test".to_owned(),
+            change: json!({"id": "change.test", "impact_assessment": "required"}),
+            contracts: vec![
+                json!({
+                    "id": "contract.accounts",
+                    "applies_to": ["data.accounts"],
+                    "clauses": [{
+                        "id": "persist",
+                        "text": "Persist accounts",
+                        "authority_ref": "decision.accounts"
+                    }]
+                }),
+                json!({
+                    "id": "contract.unrelated",
+                    "applies_to": ["data.audit"],
+                    "clauses": [{"id": "retain", "text": "Retain audit records"}]
+                }),
+            ],
+            decisions: vec![
+                json!({"id": "decision.accounts"}),
+                json!({"id": "decision.unrelated"}),
+            ],
+            results: vec![
+                json!({
+                    "id": "result.current-impact",
+                    "role": "Analyst",
+                    "result_schema": "result.impact-assessment",
+                    "input_refs": {"change.test": current_change_digest},
+                    "payload": {
+                        "status": "impacts-identified",
+                        "impacts": [{
+                            "bindings": {
+                                "data": "data.accounts",
+                                "operation": "operation.register-account"
+                            },
+                            "governing_refs": ["contract.accounts#persist"]
+                        }]
+                    }
+                }),
+                json!({
+                    "id": "result.stale-impact",
+                    "role": "Analyst",
+                    "result_schema": "result.impact-assessment",
+                    "input_refs": {"change.test": format!("sha256:{}", "b".repeat(64))},
+                    "payload": {"status": "no-impact", "impacts": []}
+                }),
+            ],
+            evidence: Vec::new(),
+            repository: json!({
+                "artifacts": [
+                    {"ref": "code.accounts", "applies_to": ["data.accounts"]},
+                    {"ref": "code.audit", "applies_to": ["data.audit"]}
+                ]
+            }),
+            artifact_digests: BTreeMap::from([
+                ("change.test".to_owned(), current_change_digest),
+                (
+                    "result.current-impact".to_owned(),
+                    format!("sha256:{}", "c".repeat(64)),
+                ),
+                (
+                    "result.stale-impact".to_owned(),
+                    format!("sha256:{}", "d".repeat(64)),
+                ),
+            ]),
+            digest: String::new(),
+        };
+
+        let references = implementation_source_refs(&snapshot);
+
+        assert!(references.contains("result.current-impact"));
+        assert!(references.contains("contract.accounts"));
+        assert!(references.contains("contract.accounts#persist"));
+        assert!(references.contains("decision.accounts"));
+        assert!(references.contains("code.accounts"));
+        assert!(!references.contains("result.stale-impact"));
+        assert!(!references.contains("contract.unrelated"));
+        assert!(!references.contains("decision.unrelated"));
+        assert!(!references.contains("code.audit"));
+    }
+
     fn requirement(subject: &str) -> RequirementInstance {
         RequirementInstance {
             requirement_id: "contract-reviewed".to_owned(),
@@ -726,6 +972,10 @@ mod tests {
                 reason: "Contractを確認".to_owned(),
                 expected_result_schema: "result.analysis".to_owned(),
                 candidate_fingerprints: Vec::new(),
+                execution_guidance: crate::kernel::ExecutionGuidance {
+                    preferred_model_tier: "standard".to_owned(),
+                    escalation_conditions: Vec::new(),
+                },
             }),
             requirement_instances: vec![instance],
             diagnostics: Vec::new(),
@@ -937,6 +1187,10 @@ mod tests {
                 reason: "Contract条項を再検証".to_owned(),
                 expected_result_schema: "result.evidence".to_owned(),
                 candidate_fingerprints: Vec::new(),
+                execution_guidance: crate::kernel::ExecutionGuidance {
+                    preferred_model_tier: "standard".to_owned(),
+                    escalation_conditions: Vec::new(),
+                },
             }),
             requirement_instances: vec![instance],
             diagnostics: Vec::new(),

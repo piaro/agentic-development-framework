@@ -10,7 +10,12 @@ use serde_json::{Map, Value, json};
 use std::collections::BTreeMap;
 use std::fmt;
 
-pub const PROJECT_SNAPSHOT_PROTOCOL_VERSION: &str = "1";
+pub const PROJECT_SNAPSHOT_PROTOCOL_VERSION: &str = "2";
+
+pub const REPOSITORY_REVISION_REF: &str = "repository.revision";
+pub const REPOSITORY_CONTENT_REF: &str = "repository.content";
+pub const CONTRACT_INDEX_REF: &str = "contracts.index";
+pub const DECISION_INDEX_REF: &str = "decisions.index";
 
 pub fn build_project_snapshot(
     project: &Value,
@@ -75,11 +80,17 @@ pub fn build_project_snapshot(
             artifact_digests.insert(format!("{contract_id}#{clause_id}"), digest_value(clause)?);
         }
     }
-    for collection in [&decisions, &results, &evidence] {
-        for item in collection {
-            let item_id = required_id(item, "Project record")?;
-            artifact_digests.insert(item_id.to_owned(), digest_value(item)?);
-        }
+    for item in &decisions {
+        let item_id = required_id(item, "Decision")?;
+        artifact_digests.insert(item_id.to_owned(), digest_value(item)?);
+    }
+    for item in &results {
+        let item_id = required_id(item, "Result")?;
+        artifact_digests.insert(item_id.to_owned(), semantic_result_digest(item)?);
+    }
+    for item in &evidence {
+        let item_id = required_id(item, "Evidence")?;
+        artifact_digests.insert(item_id.to_owned(), digest_value(item)?);
     }
     for artifact in repository
         .get("artifacts")
@@ -97,12 +108,35 @@ pub fn build_project_snapshot(
             .unwrap_or(digest_value(artifact)?);
         artifact_digests.insert(reference.to_owned(), digest);
     }
+    if change["impact_assessment"].as_str() == Some("required") {
+        artifact_digests.insert(
+            REPOSITORY_REVISION_REF.to_owned(),
+            digest_value(&repository["revision"])?,
+        );
+        artifact_digests.insert(
+            REPOSITORY_CONTENT_REF.to_owned(),
+            digest_value(&json!({
+                "artifacts": repository["artifacts"],
+                "facts": repository["facts"],
+                "coverage": repository["coverage"],
+            }))?,
+        );
+        artifact_digests.insert(
+            CONTRACT_INDEX_REF.to_owned(),
+            digest_value(&Value::Array(contracts.clone()))?,
+        );
+        artifact_digests.insert(
+            DECISION_INDEX_REF.to_owned(),
+            digest_value(&Value::Array(decisions.clone()))?,
+        );
+    }
 
+    let semantic_results = results.iter().map(without_execution).collect::<Vec<_>>();
     let snapshot_body = json!({
         "change": change,
         "contracts": contracts,
         "decisions": decisions,
-        "results": results,
+        "results": semantic_results,
         "evidence": evidence,
         "repository": repository,
         "artifact_digests": artifact_digests,
@@ -113,7 +147,7 @@ pub fn build_project_snapshot(
         change: snapshot_body["change"].clone(),
         contracts: array_clone(&snapshot_body["contracts"]),
         decisions: array_clone(&snapshot_body["decisions"]),
-        results: array_clone(&snapshot_body["results"]),
+        results,
         evidence: array_clone(&snapshot_body["evidence"]),
         repository: snapshot_body["repository"].clone(),
         artifact_digests: object_string_map(&snapshot_body["artifact_digests"]),
@@ -253,6 +287,18 @@ fn required_id<'a>(value: &'a Value, label: &str) -> Result<&'a str, ProjectSnap
 
 fn digest_value(value: &Value) -> Result<String, ProjectSnapshotError> {
     canonical_digest(value).map_err(|error| ProjectSnapshotError::new(error.to_string()))
+}
+
+fn semantic_result_digest(value: &Value) -> Result<String, ProjectSnapshotError> {
+    digest_value(&without_execution(value))
+}
+
+fn without_execution(value: &Value) -> Value {
+    let mut value = value.clone();
+    if let Some(object) = value.as_object_mut() {
+        object.remove("execution");
+    }
+    value
 }
 
 fn array_clone(value: &Value) -> Vec<Value> {

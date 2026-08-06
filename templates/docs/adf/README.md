@@ -1,39 +1,74 @@
 # Agentic Development
 
-このRepositoryでは、いま正しいとしていることを`contracts/`、そう決めた理由を`decisions/`、それが満たされている証拠を`evidence/`に置きます。
+This repository keeps its current rules in `contracts/`, the reasons behind
+those rules in `decisions/`, and the facts that verify them in `evidence/`.
 
-## 変更を始める
+## Start a change
 
 ```sh
-adf change init <change-id> --title "変更タイトル"
+adf change init <change-id> --title "Change title" --intent "Why it exists"
 ```
 
-## 進め方
+## Follow the issued workflow
 
-次にやることは`adf next <change-id>`が返します。エージェントはその1件を実行し、結果を提出して、また次を受け取ります。手順の順番を覚えておく必要はありません。
+`adf next <change-id>` returns one action and the Context required for it. Do
+that action, submit its Result, and ask again. Do not reconstruct the workflow
+outside ADF.
 
 ```sh
 adf next <change-id>
 ```
 
-エージェントの通常経路はMCPです。`adf mcp`を起動すると、同じやり取りを`adf_next`と`adf_submit`で行えます。
+Agents normally use MCP. Start `adf mcp`, then use `adf_next` and `adf_submit`.
 
-受け取った作業の役割に応じてSkillを使い分けます。
+Use the Skill for the role in the issued action.
 
-| 役割 | Skill | 担当する作業 |
+| Role | Skill | Work |
 |---|---|---|
-| Analyst | `$adf-analyst` | 検出候補の確認、影響範囲と操作境界の確定、Contractの記入、人への判断依頼、回答の記録 |
-| Builder | `$adf-builder` | 実装と、Contract条項に対応する証拠の記録 |
-| Challenger | `$adf-challenger` | 実装前と実装後の反証 |
+| Analyst | `$adf-analyst` | Assess intended impact, review detected candidates, write Contracts, and raise and record decisions |
+| Builder | `$adf-builder` | Implement and record evidence for Contract clauses |
+| Challenger | `$adf-challenger` | Try to falsify the change before and after implementation |
 
-実装後の反証は、実装した文脈から独立した文脈で行います。
+A post-build challenge must use a context independent from the implementation
+context.
 
-判定の理由を知りたいときは`adf explain <change-id>`を実行します。
+Run `adf explain <change-id>` to see why the change is in its current state.
 
-## 決めてよいことの範囲
+## Impact assessment
 
-仕様を決めてよい根拠は、既存のaccepted Contract、依頼に明示された要求、記録された人の判断、accepted Decisionだけです。エージェントの推論、反証で見つけた指摘、Contractの不足、コード、テストは証拠であり、仕様を決める権限にはなりません。
+Every new Change starts with `assess-change-impact`. It classifies the outcome
+as `impacts-identified`, `no-impact`, or `inconclusive`. An empty repository is
+not automatically `no-impact`: the Analyst derives intended effects from the
+Change request and creates only the minimum governance needed for those effects.
 
-権限のある根拠で決められない場合は、選択肢、影響、推奨、必要な決定者を添えて人へ戻します。人が答えたら、判断の理由を`decisions/`へ、そこから決まった現在の規範を`contracts/`へ記録します。質問そのものは一時的な情報なので、以降の成果物から参照しません。
+The assessment receives a compact repository, Contract, and Decision index. It
+may reuse up to three prior assessments after inputs change. Later actions
+receive the accepted assessment and only matching governance and artifacts,
+so they do not repeat repository-wide investigation.
 
-Feature Contractから上位Contractを暗黙に変更しません。全体の判断が未確定なら、その変更を止めて先にContractを決めます。
+## Authority
+
+Only an accepted Contract, an explicit requirement in the request, a recorded
+human decision, or an accepted Decision can authorize a specification. Agent
+inference, challenge findings, missing Contracts, source code, and tests are
+evidence, not authority.
+
+When no authority settles a question, return it to a person with options,
+impact, a recommendation, and the required decision-maker. After the answer,
+record the rationale in `decisions/` and the current rule in `contracts/`.
+
+Do not use a Feature Contract to change a higher-level rule implicitly. Stop
+the change and settle the governing Contract first.
+
+## Cost visibility
+
+Each action includes advisory model guidance. The orchestrator may use an
+economy model for impact assessment and should escalate when the action lists
+an escalation condition. ADF does not select or invoke the model.
+
+The `adf_submit` call may include execution time, model, token counts, tool
+calls, and retry counts already known to the orchestrator. ADF records the
+serialized Context size itself. It does not start timers, call a model, or run
+extra tracing to collect these values. Use `adf_execution_log` or
+`adf execution-log <change-id>` to read the stored totals; missing values remain
+unknown rather than estimated.

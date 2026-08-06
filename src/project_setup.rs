@@ -320,6 +320,7 @@ pub fn initialize_change(
         "id": change_id,
         "title": title,
         "intent": intent,
+        "impact_assessment": "required",
     });
     let yaml = serde_yaml::to_string(&value).map_err(|error| setup_error(error.to_string()))?;
     write_new(&path, yaml.as_bytes())?;

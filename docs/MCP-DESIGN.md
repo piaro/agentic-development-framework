@@ -182,6 +182,7 @@ Tool名は広いMCP client互換性を優先し、ASCII英数字とunderscoreだ
 | `adf_next` | read | 現在State、Next Action、Contextを発行する |
 | `adf_explain` | read | 現在の判定理由を説明する |
 | `adf_contract_health` | read | Repository全体のContract healthを表示する |
+| `adf_execution_log` | read | 保存済みResultからContextサイズと任意の実行計測値を集計する |
 | `adf_submit` | write | 発行済みActionのResultを検証・保存し、再評価する |
 | `adf_add_evidence` | write | 発行済みEvidence ActionへEvidenceを追記する |
 | `adf_apply_decision` | write | Human回答を解決するDecisionを保存する |
@@ -241,6 +242,12 @@ Input:
   "action_id": "action.example",
   "context_digest": "sha256:...",
   "payload": {},
+  "execution": {
+    "duration_ms": 1200,
+    "model": "example-model",
+    "input_tokens": 900,
+    "output_tokens": 180
+  },
   "output_refs": []
 }
 ```
@@ -264,6 +271,8 @@ Output:
 - Repository artifactの`output_refs`は`implement-change` Actionだけに許可する。
 - 同じ内容のtransport retryは、Registry消費後でも既存Resultと提出内容が一致すれば成功として返せるようにする。
 - 同じAction／Contextに異なる内容が既にあれば競合として拒否する。
+- `execution`は実行環境がすでに持つ値だけを任意で受け取る。ADFはContextサイズを提出検証中に計算し、計測のためのLLM実行、タイマー、追跡処理を追加しない。
+- `execution`はResult ID、freshness、Kernel判断に影響しない。不明な値は推測せず省略する。
 
 ### 10.3 `adf_add_evidence`
 
@@ -286,7 +295,7 @@ Input:
 
 ### 10.4 `adf_apply_decision`
 
-- 発行Actionが`record-human-decision`でなければ拒否する。
+- 発行Actionが`record-human-decision`または`establish-impact-governance`でなければ拒否する。
 - Decisionの`change_id`がActionと一致しなければ拒否する。
 - `resolves`がContext内の回答済みDecision Requestを含まなければ拒否する。
 - accepted Decisionは対応するHuman Resultが現在Snapshotに存在する場合だけ受理する。
@@ -300,7 +309,7 @@ InputにはContract Recordと`expected_digest`を必須とし、条項単位で�
 `{条項ID: 読取り時の条項digest}`のmappingです。
 
 - 発行Actionが`record-human-decision`でなければ拒否する。
-- Contract変更が、同じActionで記録したDecisionまたはContext内の既存Decisionをauthorityとして参照することを検査する。
+- `record-human-decision`では、Contract変更が同じActionで記録したDecisionまたはContext内の既存Decisionをauthorityとして参照することを検査する。`establish-impact-governance`では、エージェントが現在のChangeに明示された要求で決まる最小限のContractだけを作る。内容が最小限かどうかは機械判定しない。
 - `expected_digest`と`expected_clause_digests`の同時指定を拒否する。
 - 全体更新では`expected_digest`省略、現在digestとの不一致を拒否する。
 - 条項更新では`contract.clauses`をpatchとして扱う。変更する既存条項はpayloadとdigestの両方へ含め、削除する条項はdigestだけへ含める。対象外の条項はどちらにも含めない。
@@ -320,6 +329,8 @@ InputにはContract Recordと`expected_digest`を必須とし、条項単位で�
 
 | Action | 許可する事前書込み |
 |---|---|
+| `assess-change-impact` | なし |
+| `establish-impact-governance` | Contract |
 | `review-risk-signals` | なし |
 | `analyze-requirements` | なし |
 | `answer-decision-request` | なし。回答はResult payloadとして提出 |

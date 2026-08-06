@@ -32,6 +32,19 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Added
 
+- Every newly created Change now starts with an intent-first Impact Assessment.
+  It distinguishes identified impact, no impact, and an inconclusive assessment,
+  and gives empty greenfield repositories a bootstrap path that creates only the
+  governance needed for the first Change.
+- Action-specific Contexts reuse accepted Impact Assessment Results and select
+  matching governance and repository artifacts for implementation. Each action
+  also exposes an advisory model tier and explicit escalation conditions.
+- Result submissions may carry execution measurements already known to the
+  orchestrator. `execution-log` and the read-only `adf_execution_log` MCP tool
+  aggregate them with measured Context sizes without invoking a model, starting
+  a timer, or estimating missing data. Execution metadata does not affect Result
+  identity, freshness, or workflow decisions.
+
 - English documentation: the README is the entry point, `docs/limits.md` states
   which languages are analyzed and which calls are not resolved, and the
   Japanese material moves to `docs/concepts.ja.md`. Where the two disagree, the

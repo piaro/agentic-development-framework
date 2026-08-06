@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "schema_bundle_version": "2",
-  "schema_bundle_digest": "sha256:276b6ab5a101521471660f859ee4bad68f09e7cb1ef3ad106b39a006fcbc9556",
+  "schema_bundle_version": "3",
+  "schema_bundle_digest": "sha256:8fadea7c9cc7d3e00c85c63b40c9d2259bad9fa9e78b60c13d0b22ce6fe3b296",
   "schema_root": "../../../schemas/v1",
   "cases": [
     {
@@ -71,6 +71,50 @@
               }
             }
           ]
+        }
+      },
+      "valid": true
+    },
+    {
+      "case_id": "valid-impact-assessment-result",
+      "record_kind": "result",
+      "record": {
+        "schema_version": "1",
+        "id": "result.golden-impact",
+        "change_id": "change.golden",
+        "action_id": "action.golden-impact",
+        "role": "Analyst",
+        "result_schema": "result.impact-assessment",
+        "context_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "input_refs": {
+          "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "output_refs": [],
+        "freshness_refs": {
+          "change.golden": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        "execution": {
+          "context_bytes": 128,
+          "input_tokens": 40,
+          "output_tokens": 20
+        },
+        "payload": {
+          "status": "impacts-identified",
+          "summary": "The Change will persist account data.",
+          "impacts": [
+            {
+              "signal": "persistent-data-write",
+              "bindings": {
+                "operation": "operation.account.create",
+                "data": "data.account"
+              },
+              "description": "Create and persist an account.",
+              "risk": "medium",
+              "governing_refs": []
+            }
+          ],
+          "unknowns": [],
+          "basis_refs": ["change.golden"]
         }
       },
       "valid": true

@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "kernel_version": "5",
+  "kernel_version": "6",
   "schema_root": "../../../schemas/v1",
   "common": {
     "change_id": "change.place-order",

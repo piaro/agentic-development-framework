@@ -13,9 +13,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const KERNEL_VERSION: &str = "5";
+pub const KERNEL_VERSION: &str = "6";
 const SIGNAL_APPLICABILITY_REVIEW_REQUIREMENT: &str = "risk-signal-applicability-reviewed";
 const CONTRACT_CLAUSE_REVALIDATION_REQUIREMENT: &str = "contract-clause-revalidated";
+const IMPACT_GOVERNANCE_REQUIREMENT: &str = "impact-governance-established";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct CandidateDisposition {
@@ -54,6 +55,12 @@ pub struct RequirementInstance {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ExecutionGuidance {
+    pub preferred_model_tier: String,
+    pub escalation_conditions: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct NextAction {
     pub id: String,
     pub role: String,
@@ -62,6 +69,8 @@ pub struct NextAction {
     pub reason: String,
     pub expected_result_schema: String,
     pub candidate_fingerprints: Vec<String>,
+    #[serde(skip)]
+    pub execution_guidance: ExecutionGuidance,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -127,6 +136,31 @@ impl ThinKernel {
         detection: &DetectionReport,
         contract_health: Option<&ContractHealthReport>,
     ) -> KernelDecision {
+        let assessment = fresh_impact_assessment(snapshot);
+        let assessment_required = snapshot.change["impact_assessment"].as_str() == Some("required");
+        if assessment_required && assessment.is_none() {
+            let previous = current_impact_assessments(snapshot);
+            let action = make_action(
+                snapshot,
+                "Analyst",
+                "assess-change-impact",
+                Vec::new(),
+                if previous.is_empty() {
+                    "Assess the intended effects before implementation.".to_owned()
+                } else {
+                    "Reassess the intended effects because the prior assessment is inconclusive or stale. Reuse its findings where they still apply.".to_owned()
+                },
+                "result.impact-assessment",
+                &previous.join("|"),
+                Vec::new(),
+            );
+            let state = if repository_phase(snapshot) == "post-build" {
+                "needs-post-build-impact-assessment"
+            } else {
+                "needs-impact-assessment"
+            };
+            return decision(state, Some(action), Vec::new(), Vec::new());
+        }
         if detection.coverage.status != "complete" {
             let diagnostics = detection
                 .coverage
@@ -145,16 +179,18 @@ impl ThinKernel {
                 .collect();
             return decision("blocked-detection", None, Vec::new(), diagnostics);
         }
+        let declared_candidates = assessment
+            .map(|assessment| impact_candidates(assessment, snapshot))
+            .unwrap_or_default();
         let dispositions = candidate_dispositions(snapshot);
         let build_results = fresh_build_results(snapshot);
-        let mut confirmed: Vec<&SignalCandidate> = detection
-            .candidates
+        let mut confirmed: Vec<&SignalCandidate> = declared_candidates
             .iter()
-            .filter(|candidate| {
+            .chain(detection.candidates.iter().filter(|candidate| {
                 dispositions
                     .get(&candidate.fingerprint)
                     .is_some_and(|disposition| disposition.status == "confirmed")
-            })
+            }))
             .collect();
         let mut applicability_reviews = Vec::new();
         for candidate in detection.candidates.iter().filter(|candidate| {
@@ -204,6 +240,9 @@ impl ThinKernel {
                 return decision("invalid", None, Vec::new(), vec![error]);
             }
         };
+        if let Some(assessment) = assessment {
+            instances.extend(impact_governance_instances(assessment));
+        }
         instances.extend(applicability_reviews);
         if let Some(contract_health) = contract_health {
             instances.extend(contract_revalidation_instances(contract_health, &instances));
@@ -246,6 +285,34 @@ impl ThinKernel {
                 "result.risk-signal-review",
                 "",
                 fingerprints,
+            );
+            let state = if repository_phase(snapshot) == "post-build" {
+                "needs-post-build-analysis"
+            } else {
+                "needs-analysis"
+            };
+            return decision(state, Some(action), instances, Vec::new());
+        }
+
+        let pending_impact_governance: Vec<RequirementInstance> = instances
+            .iter()
+            .filter(|instance| {
+                instance.requirement_id == IMPACT_GOVERNANCE_REQUIREMENT
+                    && instance.status == "unsatisfied"
+            })
+            .cloned()
+            .collect();
+        if !pending_impact_governance.is_empty() {
+            let action = make_action(
+                snapshot,
+                "Analyst",
+                "establish-impact-governance",
+                pending_impact_governance,
+                "Establish only the Decisions and Contracts needed for the assessed impacts."
+                    .to_owned(),
+                "result.analysis",
+                "",
+                Vec::new(),
             );
             let state = if repository_phase(snapshot) == "post-build" {
                 "needs-post-build-analysis"
@@ -394,6 +461,111 @@ impl ThinKernel {
         }
         decision("ready-to-merge", None, instances, Vec::new())
     }
+}
+
+fn current_impact_assessments(snapshot: &ProjectSnapshot) -> Vec<String> {
+    snapshot
+        .results
+        .iter()
+        .filter(|result| {
+            string_field(result, "result_schema") == Some("result.impact-assessment")
+                && string_field(result, "role") == Some("Analyst")
+        })
+        .filter_map(|result| string_field(result, "id").map(str::to_owned))
+        .rev()
+        .take(3)
+        .collect()
+}
+
+pub(crate) fn fresh_impact_assessment(snapshot: &ProjectSnapshot) -> Option<&Value> {
+    snapshot.results.iter().find(|result| {
+        string_field(result, "result_schema") == Some("result.impact-assessment")
+            && string_field(result, "role") == Some("Analyst")
+            && matches!(
+                nested_string(result, &["payload", "status"]),
+                Some("impacts-identified" | "no-impact")
+            )
+            && result_is_fresh(result, snapshot)
+    })
+}
+
+fn impact_candidates(assessment: &Value, snapshot: &ProjectSnapshot) -> Vec<SignalCandidate> {
+    let assessment_id = string_field(assessment, "id").unwrap_or("result.impact-assessment");
+    let assessment_digest = snapshot
+        .artifact_digests
+        .get(assessment_id)
+        .cloned()
+        .unwrap_or_else(|| "missing".to_owned());
+    nested_array(assessment, &["payload", "impacts"])
+        .iter()
+        .filter_map(|impact| {
+            let signal = string_field(impact, "signal")?.to_owned();
+            let bindings = string_map(impact.get("bindings"));
+            let fingerprint = canonical_digest(&json!({
+                "source": "declared-impact-assessment-v1",
+                "signal": signal,
+                "bindings": bindings,
+            }))
+            .expect("validated impact candidates are canonical");
+            Some(SignalCandidate {
+                signal,
+                bindings,
+                evidence_refs: vec![assessment_id.to_owned()],
+                detector_id: "declared-impact-assessment".to_owned(),
+                detector_version: "1".to_owned(),
+                fingerprint,
+                evidence_digest: assessment_digest.clone(),
+            })
+        })
+        .collect()
+}
+
+fn impact_governance_instances(assessment: &Value) -> Vec<RequirementInstance> {
+    nested_array(assessment, &["payload", "impacts"])
+        .iter()
+        .filter(|impact| nested_array(impact, &["governing_refs"]).is_empty())
+        .filter_map(|impact| {
+            let signal = string_field(impact, "signal")?;
+            let bindings = string_map(impact.get("bindings"));
+            let mut subjects = bindings.values().cloned().collect::<Vec<_>>();
+            subjects.sort();
+            subjects.dedup();
+            let fingerprint = canonical_digest(&json!({
+                "signal": signal,
+                "bindings": bindings,
+            }))
+            .expect("validated impacts are canonical");
+            let definition = json!({
+                "id": IMPACT_GOVERNANCE_REQUIREMENT,
+                "phase": "before-build",
+                "role": "Analyst",
+                "result_schema": "result.analysis",
+                "depends_on": [],
+                "context": ["change", "impact-assessment", "matching-contracts", "matching-decisions"],
+            });
+            let definition_digest = canonical_digest(&definition)
+                .expect("built-in impact governance definition is canonical");
+            Some(RequirementInstance {
+                requirement_id: IMPACT_GOVERNANCE_REQUIREMENT.to_owned(),
+                subject_refs: subjects,
+                instance_key: format!("{IMPACT_GOVERNANCE_REQUIREMENT}|{fingerprint}"),
+                selected_by: vec!["kernel.impact-governance-v1".to_owned()],
+                definition_digest,
+                phase: "before-build".to_owned(),
+                role: "Analyst".to_owned(),
+                result_schema: "result.analysis".to_owned(),
+                depends_on: Vec::new(),
+                context: vec![
+                    "change".to_owned(),
+                    "impact-assessment".to_owned(),
+                    "matching-contracts".to_owned(),
+                    "matching-decisions".to_owned(),
+                ],
+                assurance: Assurance::Attestation,
+                status: "unsatisfied".to_owned(),
+            })
+        })
+        .collect()
 }
 
 fn decision(
@@ -1034,11 +1206,43 @@ fn make_action(
         reason,
         expected_result_schema: expected_result_schema.to_owned(),
         candidate_fingerprints,
+        execution_guidance: execution_guidance(action),
+    }
+}
+
+fn execution_guidance(action: &str) -> ExecutionGuidance {
+    match action {
+        "assess-change-impact" => ExecutionGuidance {
+            preferred_model_tier: "economy".to_owned(),
+            escalation_conditions: vec![
+                "The assessment would conclude no-impact.".to_owned(),
+                "The available authority is insufficient or contradictory.".to_owned(),
+                "A security, privacy, payment, or irreversible-data risk is plausible.".to_owned(),
+            ],
+        },
+        "challenge-result" => ExecutionGuidance {
+            preferred_model_tier: "high-accuracy".to_owned(),
+            escalation_conditions: Vec::new(),
+        },
+        _ => ExecutionGuidance {
+            preferred_model_tier: "standard".to_owned(),
+            escalation_conditions: vec![
+                "The action cannot be completed from its issued Context.".to_owned(),
+            ],
+        },
     }
 }
 
 fn string_field<'a>(value: &'a Value, field: &str) -> Option<&'a str> {
     value.get(field).and_then(Value::as_str)
+}
+
+fn nested_string<'a>(value: &'a Value, path: &[&str]) -> Option<&'a str> {
+    let mut current = value;
+    for field in path {
+        current = current.get(*field)?;
+    }
+    current.as_str()
 }
 
 fn string_map(value: Option<&Value>) -> BTreeMap<String, String> {
@@ -1463,6 +1667,7 @@ mod tests {
                 }]
             }),
             output_refs: Vec::new(),
+            execution: None,
         };
         let result = prepare_result(&context, snapshot, &submission, &schema_registry).unwrap();
         snapshot.results.push(result);
@@ -1483,6 +1688,178 @@ mod tests {
         };
         assert!(result_is_fresh(&json!({}), &snapshot));
         assert!(outcome_is_fresh(&json!({}), &json!({}), &snapshot));
+    }
+
+    fn impact_snapshot(status: &str, impacts: Value, unknowns: Value) -> ProjectSnapshot {
+        let change_digest = format!("sha256:{}", "a".repeat(64));
+        let result_digest = format!("sha256:{}", "b".repeat(64));
+        ProjectSnapshot {
+            change_id: "change.test".to_owned(),
+            change: json!({
+                "id": "change.test",
+                "impact_assessment": "required"
+            }),
+            contracts: Vec::new(),
+            decisions: Vec::new(),
+            results: if status.is_empty() {
+                Vec::new()
+            } else {
+                vec![json!({
+                    "id": "result.impact",
+                    "result_schema": "result.impact-assessment",
+                    "role": "Analyst",
+                    "input_refs": {"change.test": change_digest},
+                    "payload": {
+                        "status": status,
+                        "impacts": impacts,
+                        "unknowns": unknowns
+                    }
+                })]
+            },
+            evidence: Vec::new(),
+            repository: json!({"phase": "pre-build"}),
+            artifact_digests: BTreeMap::from([
+                ("change.test".to_owned(), change_digest),
+                ("result.impact".to_owned(), result_digest),
+            ]),
+            digest: String::new(),
+        }
+    }
+
+    fn empty_rule_index() -> RuleIndex {
+        RuleIndex {
+            requirements: BTreeMap::new(),
+            rules: Vec::new(),
+            digest: String::new(),
+        }
+    }
+
+    fn complete_empty_detection() -> DetectionReport {
+        DetectionReport {
+            change_id: "change.test".to_owned(),
+            coverage: DetectionCoverage {
+                status: "complete".to_owned(),
+                scope: "declared-artifacts".to_owned(),
+                analyzed_refs: Vec::new(),
+                gaps: Vec::new(),
+            },
+            candidates: Vec::new(),
+            digest: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_new_empty_project_requires_impact_assessment_before_building() {
+        let snapshot = impact_snapshot("", json!([]), json!([]));
+
+        let decision =
+            ThinKernel.evaluate(&snapshot, &empty_rule_index(), &complete_empty_detection());
+
+        assert_eq!(decision.state, "needs-impact-assessment");
+        let action = decision.action.unwrap();
+        assert_eq!(action.action, "assess-change-impact");
+        assert_eq!(action.expected_result_schema, "result.impact-assessment");
+        assert_eq!(action.execution_guidance.preferred_model_tier, "economy");
+    }
+
+    #[test]
+    fn an_explicit_no_impact_assessment_can_reach_build() {
+        let snapshot = impact_snapshot("no-impact", json!([]), json!([]));
+
+        let decision =
+            ThinKernel.evaluate(&snapshot, &empty_rule_index(), &complete_empty_detection());
+
+        assert_eq!(decision.state, "ready-to-build");
+        assert_eq!(decision.action.unwrap().action, "implement-change");
+    }
+
+    #[test]
+    fn changed_assessment_inputs_require_reassessment() {
+        let mut snapshot = impact_snapshot("no-impact", json!([]), json!([]));
+        snapshot.results[0]["input_refs"]["repository.content"] =
+            json!(format!("sha256:{}", "c".repeat(64)));
+        snapshot.artifact_digests.insert(
+            "repository.content".to_owned(),
+            format!("sha256:{}", "d".repeat(64)),
+        );
+
+        let decision =
+            ThinKernel.evaluate(&snapshot, &empty_rule_index(), &complete_empty_detection());
+
+        assert_eq!(decision.state, "needs-impact-assessment");
+        assert_eq!(decision.action.unwrap().action, "assess-change-impact");
+    }
+
+    #[test]
+    fn a_declared_greenfield_effect_requires_minimal_governance() {
+        let snapshot = impact_snapshot(
+            "impacts-identified",
+            json!([{
+                "signal": "persistent-data-write",
+                "bindings": {
+                    "data": "data.accounts",
+                    "operation": "operation.register-account"
+                },
+                "governing_refs": []
+            }]),
+            json!([]),
+        );
+
+        let decision =
+            ThinKernel.evaluate(&snapshot, &empty_rule_index(), &complete_empty_detection());
+
+        assert_eq!(decision.state, "needs-analysis");
+        let action = decision.action.unwrap();
+        assert_eq!(action.action, "establish-impact-governance");
+        assert_eq!(action.requirement_instances.len(), 1);
+    }
+
+    #[test]
+    fn a_declared_effect_selects_signal_rules_without_detected_code() {
+        let mut snapshot = impact_snapshot(
+            "impacts-identified",
+            json!([{
+                "signal": "persistent-data-write",
+                "bindings": {
+                    "data": "data.accounts",
+                    "operation": "operation.register-account"
+                },
+                "governing_refs": ["contract.accounts"]
+            }]),
+            json!([]),
+        );
+        snapshot.contracts.push(json!({"id": "contract.accounts"}));
+        let definition = RequirementDefinition {
+            id: "account-data-confirmed".to_owned(),
+            phase: "before-build".to_owned(),
+            role: "Analyst".to_owned(),
+            result_schema: "result.analysis".to_owned(),
+            depends_on: Vec::new(),
+            context: vec!["change".to_owned()],
+            assurance: Assurance::Attestation,
+            definition_digest: format!("sha256:{}", "c".repeat(64)),
+        };
+        let rules = RuleIndex {
+            requirements: BTreeMap::from([(definition.id.clone(), definition)]),
+            rules: vec![ActivationRule {
+                id: "persistent-data.account".to_owned(),
+                requirement_id: "account-data-confirmed".to_owned(),
+                condition: "signal".to_owned(),
+                signal: Some("persistent-data-write".to_owned()),
+                repository_phase: None,
+                subjects: vec!["binding.data".to_owned()],
+            }],
+            digest: String::new(),
+        };
+
+        let decision = ThinKernel.evaluate(&snapshot, &rules, &complete_empty_detection());
+
+        assert_eq!(decision.state, "needs-analysis");
+        assert_eq!(decision.action.unwrap().action, "analyze-requirements");
+        assert_eq!(
+            decision.requirement_instances[0].subject_refs,
+            ["data.accounts"]
+        );
     }
 
     #[test]
