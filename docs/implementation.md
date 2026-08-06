@@ -87,14 +87,14 @@ Rust版のRequirement定義は、保証の強さを`assurance`で区別します
 標準Ruleでは`data-evidence-recorded`、`distributed-effect-evidence-recorded`、`security-evidence-recorded`を`evidence-backed`とし、分析・設計・Challenge Requirementは`attestation`のままにしています。Security Signalは、build前のoperation境界・Contract確認と設計Challenge、build後の実行証拠・実装Challengeを要求します。
 
 - 対象Requirement InstanceとChangeが一致する
-- `git_revision`が現在のRepository revisionと一致する
+- `input_refs`に記録したコード、Contract、Decision、Changeのdigestが現在値と一致する。`input_refs`のない従来Recordだけは`git_revision`を現在のRepository revisionと比較する
 - `outcome`が`passed`である
 - 対象に適用されるContractの全条項を`contract_clause_refs`で覆う
 - `method`と、`artifact.uri`、`artifact.digest`、終了コード`artifact.exit_code: 0`がある
 
-EvidenceはAction発行後に`Application::add_evidence`で追記し、Resultの`basis_refs`と`output_refs`から参照します。同じEvidence IDは上書きできません。
+EvidenceはAction発行後に`Application::add_evidence`で追記し、Resultの`basis_refs`と`output_refs`から参照します。MCP Applicationは発行済みRequirementの入力digestをEvidenceの`input_refs`へ追加します。同じEvidence IDは上書きできません。
 
-この段階で保証するのは「再現情報を持つ成功Evidence Recordが、現在revisionと条項に対応して記録されていること」です。EvidenceをCIが実際に生成したことまでは保証しません。そこまで保証する場合は、CI／runnerの署名と導入先Trust Storeによる検証を追加する必要があります。
+この段階で保証するのは「再現情報を持つ成功Evidence Recordが、現在の確認対象と条項に対応して記録されていること」です。`git_revision`は実行時点の追跡情報として保持し、後続するADF Recordだけのcommitでは書き換えません。EvidenceをCIが実際に生成したことまでは保証しません。そこまで保証する場合は、CI／runnerの署名と導入先Trust Storeによる検証を追加する必要があります。
 
 ### Standard Signal Domains
 

@@ -60,6 +60,11 @@ the path proves nothing about it. Where you could not establish the requirement,
 `inconclusive` and say what would settle it. Reporting `satisfied` because the change
 looks correct defeats the whole mechanism.
 
+`adf_add_evidence` binds the Evidence to the issued Requirement inputs. This content
+binding keeps the Evidence current when only ADF Result or Evidence Records are committed,
+while a change to the code, Contract, Decision, or Change it verified makes it stale. Keep
+`git_revision` as execution provenance; do not rewrite it to the later Record-only commit.
+
 Every residual risk needs someone who accepts it and a date by which it is revisited.
 
 ## Submit and continue

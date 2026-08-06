@@ -105,7 +105,8 @@ only the Contracts needed to govern them before implementation starts.
 **Contracts going stale is a feature.** Each result is bound to digests of what
 it was based on, so changing a contract, the code, or the authority behind it
 marks the work that depended on it stale and asks for it again. A contract that
-drifted from the code does not silently keep passing.
+drifted from the code does not silently keep passing. Committing only ADF Result
+or Evidence Records does not invalidate the product inputs those records verify.
 
 **Nothing reviews its own work.** Implementation and challenge are separate
 roles, and a post-build challenge runs in a context that did not build the

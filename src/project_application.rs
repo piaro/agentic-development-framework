@@ -373,7 +373,7 @@ impl ProjectApplicationService {
     pub fn add_evidence(
         &mut self,
         key: &IssuedActionKey,
-        evidence: Value,
+        mut evidence: Value,
     ) -> Result<RecordWriteResponse, ServiceError> {
         let entry = self.issued_entry(key)?;
         assert_action(&entry, Some("record-evidence"), Some("result.evidence"))?;
@@ -387,6 +387,11 @@ impl ProjectApplicationService {
                 false,
             ));
         }
+        let input_refs = evidence_input_refs(&entry.context, &evidence_instances);
+        evidence
+            .as_object_mut()
+            .expect("Evidence is validated as an object before persistence")
+            .insert("input_refs".to_owned(), Value::Object(input_refs));
         let evidence_id = required_record_id(&evidence, "Evidence")?.to_owned();
         let project = self.load(false)?;
         let mut application = project.application().map_err(application_error)?;
@@ -610,6 +615,18 @@ impl ProjectApplicationService {
             key
         })
     }
+}
+
+fn evidence_input_refs(
+    context: &GeneratedContext,
+    instance_keys: &BTreeSet<&str>,
+) -> serde_json::Map<String, Value> {
+    instance_keys
+        .iter()
+        .filter_map(|instance_key| context.instance_source_digests.get(*instance_key))
+        .flat_map(|refs| refs.iter())
+        .map(|(reference, digest)| (reference.clone(), Value::String(digest.clone())))
+        .collect()
 }
 
 fn submitted_payload_matches(stored: &Value, submitted: &Value) -> bool {
@@ -984,5 +1001,48 @@ mod tests {
         };
 
         validate_output_refs(&entry, &["evidence.persisted".to_owned()], &snapshot).unwrap();
+    }
+
+    #[test]
+    fn evidence_inputs_are_derived_from_the_issued_requirement_instances() {
+        let digest = |character: char| format!("sha256:{}", character.to_string().repeat(64));
+        let context = GeneratedContext {
+            action_id: "action.record-evidence".to_owned(),
+            role: "Builder".to_owned(),
+            source_refs: Vec::new(),
+            source_digests: BTreeMap::new(),
+            instance_source_digests: BTreeMap::from([
+                (
+                    "tests-passed|operation.one".to_owned(),
+                    BTreeMap::from([("code.one".to_owned(), digest('1'))]),
+                ),
+                (
+                    "tests-passed|operation.two".to_owned(),
+                    BTreeMap::from([
+                        ("code.two".to_owned(), digest('2')),
+                        ("contract.shared#rule".to_owned(), digest('3')),
+                    ]),
+                ),
+            ]),
+            contract_clause_projection_version: "1".to_owned(),
+            contract_clauses: Vec::new(),
+            contract_clauses_digest: digest('4'),
+            payload: json!({}),
+            digest: digest('5'),
+        };
+        let instance_keys =
+            BTreeSet::from(["tests-passed|operation.one", "tests-passed|operation.two"]);
+
+        assert_eq!(
+            evidence_input_refs(&context, &instance_keys),
+            serde_json::Map::from_iter([
+                ("code.one".to_owned(), Value::String(digest('1'))),
+                ("code.two".to_owned(), Value::String(digest('2'))),
+                (
+                    "contract.shared#rule".to_owned(),
+                    Value::String(digest('3')),
+                ),
+            ])
+        );
     }
 }
