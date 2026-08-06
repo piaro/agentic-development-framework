@@ -26,6 +26,14 @@
       "uniqueItems": true
     },
     "git_revision": {"type": "string", "minLength": 1},
+    "input_refs": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[0-9a-fA-F]{64}$"
+      }
+    },
     "method": {"type": "string", "minLength": 1},
     "condition": {"type": "string", "minLength": 1},
     "outcome": {"type": "string", "enum": ["passed", "failed", "inconclusive"]},

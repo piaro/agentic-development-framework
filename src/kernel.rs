@@ -869,7 +869,6 @@ pub(crate) fn outcome_has_current_evidence(
     snapshot: &ProjectSnapshot,
 ) -> bool {
     let basis_refs = string_array_set(&outcome["basis_refs"]);
-    let current_revision = string_field(&snapshot.repository, "revision");
     let required_clauses = matching_contract_clauses(instance, snapshot);
     let mut covered_clauses = BTreeSet::new();
     let mut found = false;
@@ -880,8 +879,7 @@ pub(crate) fn outcome_has_current_evidence(
         };
         if !basis_refs.contains(evidence_id)
             || string_field(evidence, "change_id") != Some(snapshot.change_id.as_str())
-            || current_revision.is_none()
-            || string_field(evidence, "git_revision") != current_revision
+            || !evidence_matches_inputs(evidence, &string_map(outcome.get("input_refs")), snapshot)
             || string_field(evidence, "outcome") != Some("passed")
             || !array_contains(
                 &evidence["requirement_instances"],
@@ -900,6 +898,24 @@ pub(crate) fn outcome_has_current_evidence(
     }
 
     found && required_clauses.is_subset(&covered_clauses)
+}
+
+pub(crate) fn evidence_matches_inputs(
+    evidence: &Value,
+    required_inputs: &BTreeMap<String, String>,
+    snapshot: &ProjectSnapshot,
+) -> bool {
+    let recorded_inputs = string_map(evidence.get("input_refs"));
+    if recorded_inputs.is_empty() {
+        return string_field(&snapshot.repository, "revision")
+            .is_some_and(|revision| string_field(evidence, "git_revision") == Some(revision));
+    }
+    required_inputs
+        .iter()
+        .all(|(reference, digest)| recorded_inputs.get(reference) == Some(digest))
+        && recorded_inputs
+            .iter()
+            .all(|(reference, digest)| snapshot.artifact_digests.get(reference) == Some(digest))
 }
 
 fn matching_contract_clauses(
@@ -1947,6 +1963,37 @@ mod tests {
         let mut missing_report = snapshot;
         missing_report.evidence[0]["artifact"] = json!({});
         assert!(!is_satisfied(&instance, &missing_report));
+    }
+
+    #[test]
+    fn content_bound_evidence_survives_a_record_only_revision_change() {
+        let instance = evidence_instance(Assurance::EvidenceBacked);
+        let mut snapshot = evidence_snapshot();
+        let input_digest = format!("sha256:{}", "c".repeat(64));
+        snapshot.results[0]["payload"]["outcomes"][0]["input_refs"] = json!({
+            "change.test": input_digest
+        });
+        snapshot.results[0]["payload"]["outcomes"][0]["freshness_refs"] = json!({
+            "change.test": input_digest,
+            "evidence.test": format!("sha256:{}", "d".repeat(64))
+        });
+        snapshot.evidence[0]["input_refs"] = json!({"change.test": input_digest});
+        snapshot.evidence[0]["git_revision"] = json!("revision-before-record-commit");
+        snapshot
+            .artifact_digests
+            .insert("change.test".to_owned(), input_digest.clone());
+        snapshot.artifact_digests.insert(
+            "evidence.test".to_owned(),
+            format!("sha256:{}", "d".repeat(64)),
+        );
+
+        assert!(is_satisfied(&instance, &snapshot));
+
+        snapshot.artifact_digests.insert(
+            "change.test".to_owned(),
+            format!("sha256:{}", "e".repeat(64)),
+        );
+        assert!(!is_satisfied(&instance, &snapshot));
     }
 
     #[test]

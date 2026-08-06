@@ -7,8 +7,8 @@ use crate::APPLICATION_PROTOCOL_VERSION;
 use crate::canonical_digest;
 use crate::context::GeneratedContext;
 use crate::contract_scope::{clause_matches_subjects, contract_matches_subjects};
-use crate::kernel::ProjectSnapshot;
-use crate::project::{CONTRACT_INDEX_REF, DECISION_INDEX_REF};
+use crate::kernel::{ProjectSnapshot, evidence_matches_inputs};
+use crate::project::{CONTRACT_INDEX_REF, DECISION_INDEX_REF, REPOSITORY_REVISION_REF};
 use crate::schema::SchemaRegistry;
 use crate::signal_catalog::{
     SignalCatalogRegistry, TYPED_FACT_DETECTOR_ID, TYPED_FACT_DETECTOR_VERSION,
@@ -93,6 +93,10 @@ pub fn prepare_result(
     }
     let mut input_refs = context.source_digests.clone();
     let mut freshness_refs = context.source_digests.clone();
+    if submission.result_schema == "result.impact-assessment" {
+        input_refs.remove(REPOSITORY_REVISION_REF);
+        freshness_refs.remove(REPOSITORY_REVISION_REF);
+    }
     for index_ref in [CONTRACT_INDEX_REF, DECISION_INDEX_REF] {
         if index_change_is_output(index_ref, &output_ref_set)
             && let Some(digest) = current.artifact_digests.get(index_ref)
@@ -112,7 +116,8 @@ pub fn prepare_result(
         .validate_result_payload(&submission.result_schema, &payload)
         .map_err(|validation| error(validation.to_string()))?;
     if submission.result_schema == "result.impact-assessment" {
-        let selected_inputs = validate_impact_assessment(context, current, &payload)?;
+        let mut selected_inputs = validate_impact_assessment(context, current, &payload)?;
+        selected_inputs.remove(REPOSITORY_REVISION_REF);
         input_refs.extend(selected_inputs.clone());
         freshness_refs.extend(selected_inputs);
     }
@@ -457,7 +462,7 @@ fn enrich_outcomes(
             )));
         }
         if assurances.get(instance_key) == Some(&"evidence-backed") {
-            validate_evidence_basis(instance_key, outcome, current)?;
+            validate_evidence_basis(instance_key, instance_inputs, outcome, current)?;
         }
         let object = outcome
             .as_object_mut()
@@ -530,6 +535,7 @@ fn output_is_relevant(
 
 fn validate_evidence_basis(
     instance_key: &str,
+    instance_inputs: &BTreeMap<String, String>,
     outcome: &Value,
     current: &ProjectSnapshot,
 ) -> Result<(), ResultSubmissionError> {
@@ -539,6 +545,7 @@ fn validate_evidence_basis(
             .as_str()
             .is_some_and(|evidence_id| basis_refs.contains(evidence_id))
             && string_set(&evidence["requirement_instances"]).contains(instance_key)
+            && evidence_matches_inputs(evidence, instance_inputs, current)
     });
     if !matching {
         return Err(error(format!(
@@ -721,6 +728,39 @@ mod tests {
         );
     }
 
+    #[test]
+    fn evidence_backed_submission_uses_content_binding_across_revision_changes() {
+        let mut snapshot = snapshot();
+        snapshot.evidence[0]["git_revision"] = json!("revision-before-record-commit");
+        snapshot.evidence[0]["input_refs"] = json!({
+            "change.test": format!("sha256:{}", "a".repeat(64))
+        });
+
+        prepare_result(
+            &context(),
+            &snapshot,
+            &submission(json!(["evidence.test"]), vec!["evidence.test".to_owned()]),
+            &registry(),
+        )
+        .unwrap();
+
+        snapshot.evidence[0]["input_refs"] = json!({
+            "change.test": format!("sha256:{}", "f".repeat(64))
+        });
+        let error = prepare_result(
+            &context(),
+            &snapshot,
+            &submission(json!(["evidence.test"]), vec!["evidence.test".to_owned()]),
+            &registry(),
+        )
+        .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("evidence-backed outcome requires an Evidence Record")
+        );
+    }
+
     fn impact_context() -> GeneratedContext {
         let digest = |character: char| format!("sha256:{}", character.to_string().repeat(64));
         GeneratedContext {
@@ -728,11 +768,13 @@ mod tests {
             role: "Analyst".to_owned(),
             source_refs: vec![
                 "change.test".to_owned(),
+                "repository.revision".to_owned(),
                 "repository.content".to_owned(),
                 "contracts.index".to_owned(),
             ],
             source_digests: BTreeMap::from([
                 ("change.test".to_owned(), digest('a')),
+                ("repository.revision".to_owned(), digest('9')),
                 ("repository.content".to_owned(), digest('b')),
                 ("contracts.index".to_owned(), digest('c')),
             ]),
@@ -767,6 +809,7 @@ mod tests {
             repository: json!({}),
             artifact_digests: BTreeMap::from([
                 ("change.test".to_owned(), digest('a')),
+                ("repository.revision".to_owned(), digest('9')),
                 ("repository.content".to_owned(), digest('b')),
                 ("contracts.index".to_owned(), digest('c')),
                 ("code.accounts".to_owned(), digest('e')),
@@ -829,6 +872,12 @@ mod tests {
         .unwrap();
 
         assert_eq!(result["execution"]["duration_ms"], 25);
+        assert!(result["input_refs"].get("repository.revision").is_none());
+        assert!(
+            result["freshness_refs"]
+                .get("repository.revision")
+                .is_none()
+        );
         assert_eq!(result["execution"]["model"], "economy-test");
         assert!(result["execution"]["context_bytes"].as_u64().unwrap() > 0);
         assert_eq!(

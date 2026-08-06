@@ -153,7 +153,7 @@ registered_output_refs: []
 
 - RegistryはMCP sessionのmemoryにだけ保持する。memoryにないActionは、正本の再評価と一致するときに再構成する。再構成後に`adf_next`を呼んだ場合も、同じChangeの正本に保存済みのEvidence、Decision、Contractは提出時の出力として参照できる。
 - Generated ContextをGit、Result、derived cacheへ保存しない。
-- Evidence、Decision、Contractの専用Toolが保存したrefだけを`registered_output_refs`へ追加する。
+- Evidence、Decision、Contractの専用Toolが保存したrefだけを`registered_output_refs`へ追加する。Evidenceには、発行済みRequirementが参照した入力digestを`input_refs`として付与する。
 - 正常な`submit`後にexact keyを消費し、再評価で返した次Actionを新しいentryとして登録する。
 - submit失敗時は、修正して再試行できるようentryを残す。
 - 同じkeyへ複数提出が競合した場合、Filesystem Storeのexclusive createを最終防衛線とする。

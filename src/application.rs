@@ -185,7 +185,20 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
         submission: &ResultSubmission,
     ) -> Result<ApplicationSubmission, ApplicationError> {
         let snapshot = self.snapshot(&submission.change_id)?;
-        let result = prepare_result(context, &snapshot, submission, self.schema_registry)
+        self.submit_issued_with_snapshot(context, submission, &snapshot)
+    }
+
+    /// Submit against a Snapshot that the caller already loaded for validation.
+    ///
+    /// The post-submit evaluation still loads a new Snapshot so the response
+    /// includes the Result that was just persisted.
+    pub(crate) fn submit_issued_with_snapshot(
+        &mut self,
+        context: &GeneratedContext,
+        submission: &ResultSubmission,
+        snapshot: &ProjectSnapshot,
+    ) -> Result<ApplicationSubmission, ApplicationError> {
+        let result = prepare_result(context, snapshot, submission, self.schema_registry)
             .map_err(|error| application_error(error.to_string()))?;
         // The append completes before consuming the issued Context. A failed
         // persistence attempt can therefore be retried without recreating state.

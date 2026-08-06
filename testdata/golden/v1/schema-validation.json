@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
   "schema_bundle_version": "3",
-  "schema_bundle_digest": "sha256:8fadea7c9cc7d3e00c85c63b40c9d2259bad9fa9e78b60c13d0b22ce6fe3b296",
+  "schema_bundle_digest": "sha256:0196f53c3c694679e75d3d120fc76e7376ac372224669c5d59de20c40092a8c9",
   "schema_root": "../../../schemas/v1",
   "cases": [
     {
@@ -242,6 +242,42 @@
       },
       "valid": false,
       "error_path": "$.payload.reviewed_candidates[0].status"
+    },
+    {
+      "case_id": "valid-content-bound-evidence",
+      "record_kind": "evidence",
+      "record": {
+        "schema_version": "1",
+        "id": "evidence.golden-content-bound",
+        "change_id": "change.golden",
+        "requirement_instances": ["tests-passed|operation.golden"],
+        "git_revision": "revision-before-record-commit",
+        "input_refs": {
+          "code.golden": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "method": "cargo test --locked",
+        "outcome": "passed",
+        "summary": "The current source inputs passed the test."
+      },
+      "valid": true
+    },
+    {
+      "case_id": "invalid-evidence-input-digest",
+      "record_kind": "evidence",
+      "record": {
+        "schema_version": "1",
+        "id": "evidence.golden-invalid-input",
+        "change_id": "change.golden",
+        "requirement_instances": ["tests-passed|operation.golden"],
+        "input_refs": {
+          "code.golden": "not-a-digest"
+        },
+        "method": "cargo test --locked",
+        "outcome": "passed",
+        "summary": "The digest is malformed."
+      },
+      "valid": false,
+      "error_path": "$.input_refs.code.golden"
     },
     {
       "case_id": "valid-human-answer",
