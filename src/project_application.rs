@@ -33,10 +33,6 @@ struct IssuedActionEntry {
     framework_lock_digest: String,
     rule_index_digest: String,
     registered_output_refs: BTreeSet<String>,
-    /// False once the entry was rebuilt after a restart rather than issued by
-    /// this process. Such an entry has no memory of which records the Action
-    /// wrote, so their provenance is established from the store instead.
-    issued_in_this_session: bool,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -469,7 +465,7 @@ impl ProjectApplicationService {
         drop(application);
         drop(project);
 
-        let Some((current_key, mut entry)) = issued_entry(
+        let Some((current_key, entry)) = issued_entry(
             &key.change_id,
             &response,
             &rule_index_digest,
@@ -496,7 +492,6 @@ impl ProjectApplicationService {
                 false,
             ));
         }
-        entry.issued_in_this_session = false;
         self.issued.insert(key.clone(), entry.clone());
         Ok(entry)
     }
@@ -583,7 +578,6 @@ fn issued_entry(
             framework_lock_digest: framework_lock_digest.to_owned(),
             rule_index_digest: rule_index_digest.to_owned(),
             registered_output_refs: BTreeSet::new(),
-            issued_in_this_session: true,
         },
     ))
 }
@@ -620,15 +614,14 @@ fn validate_output_refs(
             .split_once('.')
             .map_or(output_ref.as_str(), |item| item.0);
         if matches!(kind, "contract" | "decision" | "evidence") {
-            // An Action resumed after a restart has no memory of what it wrote,
-            // so the record itself has to stand for that: it must exist and
-            // belong to this change. Records are only written through an Action
-            // that permits them, which is what keeps this from widening.
-            let written = if entry.issued_in_this_session {
-                entry.registered_output_refs.contains(output_ref)
-            } else {
-                change_holds_record(snapshot, kind, output_ref)
-            };
+            // A record written through this session is known immediately. After
+            // reconnecting, `next` reissues the same Action and creates a fresh
+            // registry entry, so it must also accept a record that is already
+            // present in the current Change snapshot. Otherwise a caller that
+            // correctly starts with `next` cannot submit work completed before
+            // the reconnect.
+            let written = entry.registered_output_refs.contains(output_ref)
+                || change_holds_record(snapshot, kind, output_ref);
             if !written {
                 return Err(service_error(
                     "OUTPUT_REF_INVALID",
@@ -877,5 +870,39 @@ mod tests {
         )
         .unwrap_err();
         assert_eq!(error.code, "ACTION_NOT_ALLOWED");
+    }
+
+    #[test]
+    fn submit_accepts_persisted_evidence_after_next_reissues_the_action() {
+        let entry = IssuedActionEntry {
+            context: GeneratedContext {
+                action_id: "action.record-evidence".to_owned(),
+                role: "Builder".to_owned(),
+                source_refs: Vec::new(),
+                source_digests: BTreeMap::new(),
+                instance_source_digests: BTreeMap::new(),
+                contract_clause_projection_version: "1".to_owned(),
+                contract_clauses: Vec::new(),
+                contract_clauses_digest: "sha256:test".to_owned(),
+                payload: json!({"action": {"action": "record-evidence"}}),
+                digest: "sha256:test".to_owned(),
+            },
+            framework_lock_digest: "sha256:test".to_owned(),
+            rule_index_digest: "sha256:test".to_owned(),
+            registered_output_refs: BTreeSet::new(),
+        };
+        let snapshot = ProjectSnapshot {
+            change_id: "change.place-order".to_owned(),
+            change: json!({}),
+            contracts: Vec::new(),
+            decisions: Vec::new(),
+            results: Vec::new(),
+            evidence: vec![json!({"id": "evidence.persisted"})],
+            repository: json!({}),
+            artifact_digests: BTreeMap::new(),
+            digest: "sha256:test".to_owned(),
+        };
+
+        validate_output_refs(&entry, &["evidence.persisted".to_owned()], &snapshot).unwrap();
     }
 }

@@ -513,7 +513,7 @@ Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナ�
 adf mcp --project .
 ```
 
-MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、同じsessionで`adf_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。未提出Actionはprocess終了時に失効するため、再接続後は`adf_next`を再実行してください。
+MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、`adf_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。再接続後は`adf_next`を再実行します。正本を再評価して同じActionが返る場合は、接続断前に保存したEvidence、Decision、Contractを提出時の出力として参照できます。
 
 ```sh
 sh scripts/tests/test-rust.sh
