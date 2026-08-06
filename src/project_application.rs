@@ -282,7 +282,7 @@ impl ProjectApplicationService {
             execution,
         };
         let ApplicationSubmission { result, response } = application
-            .submit_issued(&entry.context, &submission)
+            .submit_issued_with_snapshot(&entry.context, &submission, &snapshot)
             .map_err(application_error)?;
         let rule_index_digest = application.rule_index_digest().to_owned();
         let framework_lock_digest = application.framework_lock_digest().to_owned();
