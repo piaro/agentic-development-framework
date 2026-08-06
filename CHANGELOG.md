@@ -9,6 +9,11 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Changed
 
+- Accepted Decisions now remain available to later Changes, while proposed,
+  rejected, and superseded Decisions remain scoped to their originating Change.
+  Repository bindings and shared Contracts can therefore retain their recorded
+  authority after the originating Change is complete.
+
 - The project is the Agentic Development Framework. The binary is `adf`,
   projects keep their records in `.adf/`, the MCP tools are `adf_*`, the skills
   are `adf-analyst`, `adf-builder`, and `adf-challenger`, and the release
