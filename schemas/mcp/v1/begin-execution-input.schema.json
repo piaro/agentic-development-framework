@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/mcp/v1/begin-execution-input",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["change_id", "action_id", "context_digest", "runner"],
+  "properties": {
+    "change_id": {"type": "string"},
+    "action_id": {"type": "string"},
+    "context_digest": {"type": "string"},
+    "runner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "surface"],
+      "properties": {
+        "provider": {"type": "string", "minLength": 1},
+        "surface": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
+      }
+    },
+    "started_at": {"type": "string", "minLength": 1}
+  }
+}

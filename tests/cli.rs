@@ -3183,6 +3183,8 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             "adf_add_evidence",
             "adf_apply_contract",
             "adf_apply_decision",
+            "adf_begin_execution",
+            "adf_complete_execution",
             "adf_contract_health",
             "adf_execution_log",
             "adf_explain",
@@ -3326,6 +3328,33 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
         }
     });
 
+    let begun = mcp_call(
+        &mut input,
+        &mut output,
+        30,
+        "adf_begin_execution",
+        json!({
+            "change_id": key["change_id"],
+            "action_id": key["action_id"],
+            "context_digest": key["context_digest"],
+            "runner": {
+                "provider": "openai",
+                "surface": "codex-exec",
+                "version": "test"
+            },
+            "started_at": "2026-08-06T00:00:00Z"
+        }),
+    );
+    assert_eq!(begun["isError"], false);
+    validate_mcp_schema(
+        &begun["structuredContent"],
+        "begin-execution-output.schema.json",
+    );
+    let execution_id = begun["structuredContent"]["execution_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
     let mut wrong_arguments = arguments.clone();
     wrong_arguments["action_id"] = Value::String("action.not-issued".to_owned());
     mcp_send(
@@ -3371,6 +3400,36 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
         1
     );
 
+    let completed = mcp_call(
+        &mut input,
+        &mut output,
+        31,
+        "adf_complete_execution",
+        json!({
+            "execution_id": execution_id,
+            "change_id": "change.place-order",
+            "status": "succeeded",
+            "result_id": submitted["result_id"],
+            "completed_at": "2026-08-06T00:00:01Z",
+            "duration_ms": 1000,
+            "model": "codex-test-model",
+            "input_tokens": 500,
+            "cached_input_tokens": 450,
+            "output_tokens": 90,
+            "reasoning_output_tokens": 10,
+            "tool_calls": 3,
+            "retries": 0,
+            "thread_id": "thread.test",
+            "exit_code": 0
+        }),
+    );
+    assert_eq!(completed["isError"], false);
+    validate_mcp_schema(
+        &completed["structuredContent"],
+        "complete-execution-output.schema.json",
+    );
+    assert_eq!(completed["structuredContent"]["already_completed"], false);
+
     let execution_log = mcp_call(
         &mut input,
         &mut output,
@@ -3381,8 +3440,10 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     assert_eq!(execution_log["isError"], false);
     let report = &execution_log["structuredContent"]["report"];
     validate_output_schema(report, "execution-log.schema.json");
-    assert_eq!(report["totals"]["input_tokens"], 400);
-    assert_eq!(report["entries"][0]["model"], "test-model");
+    assert_eq!(report["totals"]["input_tokens"], 500);
+    assert_eq!(report["totals"]["cached_input_tokens"], 450);
+    assert_eq!(report["entries"][0]["model"], "codex-test-model");
+    assert_eq!(report["entries"][0]["runner_surface"], "codex-exec");
     assert!(report["entries"][0]["context_bytes"].as_u64().unwrap() > 0);
 
     mcp_send(
@@ -3403,6 +3464,77 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
 
     drop(input);
     assert!(child.wait().unwrap().success());
+}
+
+#[test]
+fn execution_cli_records_a_failed_attempt_without_a_result() {
+    let project = TestProject::new();
+    let next = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&next);
+    let next: Value = serde_json::from_slice(&next.stdout).unwrap();
+    let action_id = next["next_action"]["id"].as_str().unwrap();
+    let context_digest = next["context"]["digest"].as_str().unwrap();
+
+    let begun = project.run(&[
+        "execution",
+        "begin",
+        "change.place-order",
+        "--action",
+        action_id,
+        "--context",
+        context_digest,
+        "--provider",
+        "openai",
+        "--surface",
+        "codex-exec",
+        "--format",
+        "json",
+    ]);
+    assert_success(&begun);
+    let begun: Value = serde_json::from_slice(&begun.stdout).unwrap();
+    let execution_id = begun["execution_id"].as_str().unwrap();
+
+    let next_after_begin = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&next_after_begin);
+    let next_after_begin: Value = serde_json::from_slice(&next_after_begin.stdout).unwrap();
+    assert_eq!(next_after_begin["next_action"]["id"], action_id);
+    assert_eq!(next_after_begin["context"]["digest"], context_digest);
+
+    let source_path = project.root.join("src/place_order.py");
+    let original_source = fs::read(&source_path).unwrap();
+    fs::write(&source_path, b"def place_order(:\n").unwrap();
+
+    let completed = project.run(&[
+        "execution",
+        "complete",
+        execution_id,
+        "--change",
+        "change.place-order",
+        "--status",
+        "failed",
+        "--duration-ms",
+        "25",
+        "--error-code",
+        "test-failure",
+        "--format",
+        "json",
+    ]);
+    assert_success(&completed);
+    fs::write(&source_path, original_source).unwrap();
+
+    let log = project.run(&["execution-log", "change.place-order", "--format", "json"]);
+    assert_success(&log);
+    let log: Value = serde_json::from_slice(&log.stdout).unwrap();
+    validate_output_schema(&log, "execution-log.schema.json");
+    let attempt = log["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["execution_id"].as_str() == Some(execution_id))
+        .unwrap();
+    assert_eq!(attempt["status"], "failed");
+    assert_eq!(attempt["result_id"], Value::Null);
+    assert_eq!(attempt["error_code"], "test-failure");
 }
 
 /// Work done before a restart must still be submittable afterwards.

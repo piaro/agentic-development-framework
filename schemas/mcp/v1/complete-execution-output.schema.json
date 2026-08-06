@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/mcp/v1/complete-execution-output",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "execution_id", "already_completed"],
+  "properties": {
+    "schema_version": {"const": "1"},
+    "execution_id": {"type": "string", "pattern": "^execution\\.[A-Za-z0-9._-]+$"},
+    "already_completed": {"type": "boolean"}
+  }
+}

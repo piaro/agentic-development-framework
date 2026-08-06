@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/mcp/v1/complete-execution-input",
+  "type": "object",
+  "required": ["execution_id", "change_id", "status"],
+  "properties": {
+    "execution_id": {"type": "string"},
+    "change_id": {"type": "string"},
+    "status": {"enum": ["succeeded", "failed", "interrupted", "stale"]},
+    "result_id": {"type": "string"},
+    "completed_at": {"type": "string"},
+    "duration_ms": {"type": "integer", "minimum": 0},
+    "model": {"type": "string"},
+    "input_tokens": {"type": "integer", "minimum": 0},
+    "cached_input_tokens": {"type": "integer", "minimum": 0},
+    "output_tokens": {"type": "integer", "minimum": 0},
+    "reasoning_output_tokens": {"type": "integer", "minimum": 0},
+    "tool_calls": {"type": "integer", "minimum": 0},
+    "retries": {"type": "integer", "minimum": 0},
+    "thread_id": {"type": "string"},
+    "exit_code": {"type": "integer"},
+    "error_code": {"type": "string"}
+  },
+  "additionalProperties": false
+}

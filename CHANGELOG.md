@@ -51,6 +51,14 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Added
 
+- External runners can append execution start and completion events without
+  asking ADF to launch an agent. The events retain failed and interrupted
+  attempts, add cached-input and reasoning-output token counts, and remain
+  outside Kernel decisions, Result identity, freshness, and Evidence checks.
+  `adf-codex-runner` is an experimental Challenger-only adapter that verifies
+  the current Action and Context, starts a fresh ephemeral `codex exec`, and
+  records the final `turn.completed` usage after Result submission.
+
 - Every newly created Change now starts with an intent-first Impact Assessment.
   It distinguishes identified impact, no impact, and an inconclusive assessment,
   and gives empty greenfield repositories a bootstrap path that creates only the

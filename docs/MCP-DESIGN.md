@@ -182,7 +182,9 @@ Tool名は広いMCP client互換性を優先し、ASCII英数字とunderscoreだ
 | `adf_next` | read | 現在State、Next Action、Contextを発行する |
 | `adf_explain` | read | 現在の判定理由を説明する |
 | `adf_contract_health` | read | Repository全体のContract healthを表示する |
-| `adf_execution_log` | read | 保存済みResultからContextサイズと任意の実行計測値を集計する |
+| `adf_execution_log` | read | 保存済みResultと実行RecordからContextサイズと計測値を集計する |
+| `adf_begin_execution` | write | 現在のActionに対する外部実行の開始を追記する。Agentは起動しない |
+| `adf_complete_execution` | write | 外部実行の成否と確定済みの利用量を追記する |
 | `adf_submit` | write | 発行済みActionのResultを検証・保存し、再評価する |
 | `adf_add_evidence` | write | 発行済みEvidence ActionへEvidenceを追記する |
 | `adf_apply_decision` | write | Human回答を解決するDecisionを保存する |
@@ -273,6 +275,14 @@ Output:
 - 同じAction／Contextに異なる内容が既にあれば競合として拒否する。
 - `execution`は実行環境がすでに持つ値だけを任意で受け取る。ADFはContextサイズを提出検証中に計算し、計測のためのLLM実行、タイマー、追跡処理を追加しない。
 - `execution`はResult ID、freshness、Kernel判断に影響しない。不明な値は推測せず省略する。
+
+### 10.2.1 外部実行Record
+
+外部RunnerはAction実行前に`adf_begin_execution`を呼び、Change ID、Action ID、Context digestを現在のActionと照合します。ADFはContextの直列化サイズ、Role、Result Schemaを自分で記録します。Runnerの申告値で置き換えません。
+
+実行後は`adf_complete_execution`で成否、Result ID、Token数、処理時間を追記します。成功には同じActionとContextから作られたResult IDが必要です。失敗、中断、staleはResultなしで記録できます。開始と完了は別fileへ排他的に追記し、完了の再送は内容が同じ場合だけ冪等に受理します。
+
+実行RecordはKernelへ渡しません。Action選択、Result ID、freshness、Evidenceの充足判定には影響しません。Agent会話、Generated Context全文、CodexのJSONLも保存しません。
 
 ### 10.3 `adf_add_evidence`
 
@@ -447,8 +457,9 @@ MCP実装後も、既存CLIを削除しません。
 - `contract-health --policy`: Repository全体の定期CIゲート
 - `release`、`binary`、`verify-*`: 配布・互換性検査用
 - `mcp`: Agentの通常経路
+- `execution begin/complete`: 外部RunnerがAction実行の前後に使う操作Record経路
 
-write CLIはMCP v1の必須範囲に含めません。one-shot CLIでは発行時Contextをprocess間で安全に渡す追加protocolが必要だからです。
+Result、Evidence、Decision、Contractのwrite CLIはMCP v1の必須範囲に含めません。one-shot CLIでは発行時Contextをprocess間で安全に渡す追加protocolが必要だからです。実行Recordだけは例外です。`execution begin`が現在のActionを再評価して完全一致を確認し、`execution complete`は保存済みの開始Recordへだけ追記するため、Result生成処理をCLIへ複製しません。
 
 将来write CLIを追加する場合は、MCP Toolと同じI/O Schemaと
 `ProjectApplicationService`を利用し、独自のResult生成処理を持たせません。

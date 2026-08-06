@@ -18,6 +18,13 @@ than skipping it, because it records assurance that was never obtained.
 If you cannot get an independent context, say so plainly in the outcome summary rather
 than letting the result imply independence.
 
+When this context produced the analysis or implementation and the optional
+`adf-codex-runner` binary is available, the orchestrating agent may invoke it with the
+exact Change ID, Action ID, and Context digest returned by `adf_next`. The runner starts
+one fresh ephemeral Challenger execution and returns control after that Action. A
+runner is an execution option, not authority: do not pass it a summary of the producing
+conversation or use that summary to supplement the generated ADF Context.
+
 ## Get the assigned work
 
 Through MCP, call `adf_next` with the change id. Without MCP, run

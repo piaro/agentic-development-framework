@@ -65,6 +65,12 @@ release, and the change may not be called out.
 - **The Framework Detection Catalog format.** The rules a signed Framework
   Release carries for framework-specific APIs.
 - **`catalog signal-domains`** output.
+- **External execution events and commands.** `execution begin`, `execution
+  complete`, their stored event files, and the additional attempt fields in
+  `execution-log` are being proven with real runners before becoming stable.
+- **The Codex runner.** `adf-codex-runner` is a source-built,
+  Challenger-only prototype. Its command line and structured final response may
+  change while permission and failure handling are validated.
 
 ## Not an interface at all
 

@@ -1,9 +1,10 @@
 //! Local stdio MCP adapter for one fixed Project root.
 
+use crate::execution_record::{BeginExecutionRequest, CompleteExecutionRequest, RunnerIdentity};
 use crate::project_application::{
-    AbandonActionResponse, IssuedActionKey, NextServiceResponse, ProjectApplicationService,
-    RecordWriteResponse, ServiceError, SubmitServiceResponse, expected_digest_schema,
-    json_object_schema,
+    AbandonActionResponse, BeginExecutionResponse, CompleteExecutionResponse, IssuedActionKey,
+    NextServiceResponse, ProjectApplicationService, RecordWriteResponse, ServiceError,
+    SubmitServiceResponse, expected_digest_schema, json_object_schema,
 };
 use rmcp::{
     Json, ServerHandler, ServiceExt,
@@ -99,6 +100,25 @@ pub struct ActionToolInput {
     pub context_digest: String,
 }
 
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct BeginExecutionToolInput {
+    pub change_id: String,
+    pub action_id: String,
+    pub context_digest: String,
+    pub runner: RunnerIdentity,
+    #[serde(default)]
+    pub started_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct CompleteExecutionToolInput {
+    pub execution_id: String,
+    #[serde(flatten)]
+    pub completion: CompleteExecutionRequest,
+}
+
 impl From<&SubmitToolInput> for IssuedActionKey {
     fn from(input: &SubmitToolInput) -> Self {
         action_key(&input.change_id, &input.action_id, &input.context_digest)
@@ -125,6 +145,12 @@ impl From<&ContractToolInput> for IssuedActionKey {
 
 impl From<&ActionToolInput> for IssuedActionKey {
     fn from(input: &ActionToolInput) -> Self {
+        action_key(&input.change_id, &input.action_id, &input.context_digest)
+    }
+}
+
+impl From<&BeginExecutionToolInput> for IssuedActionKey {
+    fn from(input: &BeginExecutionToolInput) -> Self {
         action_key(&input.change_id, &input.action_id, &input.context_digest)
     }
 }
@@ -241,6 +267,55 @@ impl AgenticMcpServer {
                     report,
                 })
             })
+    }
+
+    /// Append the start of one external execution for the current Action.
+    #[tool(
+        name = "adf_begin_execution",
+        description = "Record that an external runner started the current Action without launching an agent.",
+        annotations(
+            title = "Agentic Begin Execution",
+            read_only_hint = false,
+            destructive_hint = false
+        )
+    )]
+    async fn adf_begin_execution(
+        &self,
+        Parameters(input): Parameters<BeginExecutionToolInput>,
+    ) -> Result<Json<BeginExecutionResponse>, ServiceError> {
+        let key = IssuedActionKey::from(&input);
+        self.service
+            .lock()
+            .await
+            .begin_execution(
+                &key,
+                BeginExecutionRequest {
+                    runner: input.runner,
+                    started_at: input.started_at,
+                },
+            )
+            .map(Json)
+    }
+
+    /// Append the completion and usage of one previously started execution.
+    #[tool(
+        name = "adf_complete_execution",
+        description = "Record completion and available usage for an external execution. This does not change ADF state.",
+        annotations(
+            title = "Agentic Complete Execution",
+            read_only_hint = false,
+            destructive_hint = false
+        )
+    )]
+    async fn adf_complete_execution(
+        &self,
+        Parameters(input): Parameters<CompleteExecutionToolInput>,
+    ) -> Result<Json<CompleteExecutionResponse>, ServiceError> {
+        self.service
+            .lock()
+            .await
+            .complete_execution(&input.execution_id, input.completion)
+            .map(Json)
     }
 
     /// Validate and persist the Result for an Action issued in this MCP session.
