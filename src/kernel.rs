@@ -6,9 +6,13 @@
 
 use crate::canonical_digest;
 use crate::contract_health::{ClauseHealth, ContractHealthReport};
-use crate::contract_scope::{clause_matches_subjects, contract_matches_subjects};
+use crate::contract_scope::{
+    ClauseEvidenceMode, clause_matches_subjects, contract_matches_subjects,
+    effective_clause_evidence_mode,
+};
 use crate::detection::{DetectionReport, SignalCandidate};
 use crate::rules::{Assurance, RequirementDefinition, RuleIndex};
+use crate::signal_catalog::SignalCatalogRegistry;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -240,6 +244,13 @@ impl ThinKernel {
                 return decision("invalid", None, Vec::new(), vec![error]);
             }
         };
+        instances.retain(|instance| {
+            if instance.assurance != Assurance::EvidenceBacked {
+                return true;
+            }
+            let clauses = matching_contract_clauses(instance, snapshot);
+            !clauses.has_matching_clauses || !clauses.required().is_empty()
+        });
         if let Some(assessment) = assessment {
             instances.extend(impact_governance_instances(assessment));
         }
@@ -494,6 +505,8 @@ pub(crate) fn fresh_impact_assessment(snapshot: &ProjectSnapshot) -> Option<&Val
 }
 
 fn impact_candidates(assessment: &Value, snapshot: &ProjectSnapshot) -> Vec<SignalCandidate> {
+    let signal_registry = SignalCatalogRegistry::built_in()
+        .expect("the built-in Signal Catalog is validated by construction");
     let assessment_id = string_field(assessment, "id").unwrap_or("result.impact-assessment");
     let assessment_digest = snapshot
         .artifact_digests
@@ -502,24 +515,36 @@ fn impact_candidates(assessment: &Value, snapshot: &ProjectSnapshot) -> Vec<Sign
         .unwrap_or_else(|| "missing".to_owned());
     nested_array(assessment, &["payload", "impacts"])
         .iter()
-        .filter_map(|impact| {
-            let signal = string_field(impact, "signal")?.to_owned();
+        .flat_map(|impact| {
+            let Some(declared_signal) = string_field(impact, "signal") else {
+                return Vec::new();
+            };
+            let Some(definition) = signal_registry.signal_definition(declared_signal) else {
+                return Vec::new();
+            };
             let bindings = string_map(impact.get("bindings"));
-            let fingerprint = canonical_digest(&json!({
-                "source": "declared-impact-assessment-v1",
-                "signal": signal,
-                "bindings": bindings,
-            }))
-            .expect("validated impact candidates are canonical");
-            Some(SignalCandidate {
-                signal,
-                bindings,
-                evidence_refs: vec![assessment_id.to_owned()],
-                detector_id: "declared-impact-assessment".to_owned(),
-                detector_version: "1".to_owned(),
-                fingerprint,
-                evidence_digest: assessment_digest.clone(),
-            })
+            definition
+                .activates
+                .iter()
+                .map(|signal| {
+                    let fingerprint = canonical_digest(&json!({
+                        "source": "declared-impact-assessment-v2",
+                        "declared_signal": declared_signal,
+                        "signal": signal,
+                        "bindings": bindings,
+                    }))
+                    .expect("validated impact candidates are canonical");
+                    SignalCandidate {
+                        signal: signal.clone(),
+                        bindings: bindings.clone(),
+                        evidence_refs: vec![assessment_id.to_owned()],
+                        detector_id: "declared-impact-assessment".to_owned(),
+                        detector_version: "2".to_owned(),
+                        fingerprint,
+                        evidence_digest: assessment_digest.clone(),
+                    }
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }
@@ -870,6 +895,7 @@ pub(crate) fn outcome_has_current_evidence(
 ) -> bool {
     let basis_refs = string_array_set(&outcome["basis_refs"]);
     let required_clauses = matching_contract_clauses(instance, snapshot);
+    let required = required_clauses.required();
     let mut covered_clauses = BTreeSet::new();
     let mut found = false;
 
@@ -893,11 +919,27 @@ pub(crate) fn outcome_has_current_evidence(
             .into_iter()
             .map(str::to_owned)
             .collect::<BTreeSet<_>>();
-        covered_clauses.extend(clause_refs.intersection(&required_clauses).cloned());
+        let claim_refs = nested_array(evidence, &["claims"])
+            .iter()
+            .filter_map(|claim| string_field(claim, "contract_clause_ref"))
+            .filter(|clause_ref| clause_refs.contains(*clause_ref))
+            .map(str::to_owned)
+            .collect::<BTreeSet<_>>();
+        covered_clauses.extend(
+            clause_refs
+                .intersection(&required_clauses.legacy_direct)
+                .cloned(),
+        );
+        covered_clauses.extend(claim_refs.intersection(&required_clauses.direct).cloned());
+        covered_clauses.extend(
+            clause_refs
+                .intersection(&required_clauses.inherited)
+                .cloned(),
+        );
         found = true;
     }
 
-    found && required_clauses.is_subset(&covered_clauses)
+    found && required.is_subset(&covered_clauses)
 }
 
 pub(crate) fn evidence_matches_inputs(
@@ -918,10 +960,29 @@ pub(crate) fn evidence_matches_inputs(
             .all(|(reference, digest)| snapshot.artifact_digests.get(reference) == Some(digest))
 }
 
+#[derive(Default)]
+struct MatchingContractClauses {
+    has_matching_clauses: bool,
+    legacy_direct: BTreeSet<String>,
+    direct: BTreeSet<String>,
+    inherited: BTreeSet<String>,
+}
+
+impl MatchingContractClauses {
+    fn required(&self) -> BTreeSet<String> {
+        self.legacy_direct
+            .iter()
+            .chain(&self.direct)
+            .chain(&self.inherited)
+            .cloned()
+            .collect()
+    }
+}
+
 fn matching_contract_clauses(
     instance: &RequirementInstance,
     snapshot: &ProjectSnapshot,
-) -> BTreeSet<String> {
+) -> MatchingContractClauses {
     let subjects = instance
         .subject_refs
         .iter()
@@ -932,7 +993,7 @@ fn matching_contract_clauses(
         .filter(|subject| subject.contains('#'))
         .copied()
         .collect::<BTreeSet<_>>();
-    let mut clause_refs = BTreeSet::new();
+    let mut clause_refs = MatchingContractClauses::default();
     for contract in &snapshot.contracts {
         if !contract_matches_subjects(contract, &subjects) {
             continue;
@@ -947,7 +1008,19 @@ fn matching_contract_clauses(
                     explicit_clause_refs.contains(clause_ref.as_str())
                 };
                 if matches {
-                    clause_refs.insert(clause_ref);
+                    clause_refs.has_matching_clauses = true;
+                    match effective_clause_evidence_mode(contract, clause) {
+                        ClauseEvidenceMode::LegacyDirect => {
+                            clause_refs.legacy_direct.insert(clause_ref);
+                        }
+                        ClauseEvidenceMode::Direct => {
+                            clause_refs.direct.insert(clause_ref);
+                        }
+                        ClauseEvidenceMode::Inherited => {
+                            clause_refs.inherited.insert(clause_ref);
+                        }
+                        ClauseEvidenceMode::Review => {}
+                    }
                 }
             }
         }
@@ -1930,6 +2003,31 @@ mod tests {
     }
 
     #[test]
+    fn a_precise_declared_signal_also_activates_its_broad_control_signal() {
+        let snapshot = impact_snapshot(
+            "impacts-identified",
+            json!([{
+                "signal": "external-system-call",
+                "bindings": {
+                    "integration": "integration.news-provider",
+                    "operation": "operation.collect-news"
+                },
+                "governing_refs": ["contract.news#source"]
+            }]),
+            json!([]),
+        );
+
+        let candidates = impact_candidates(&snapshot.results[0], &snapshot);
+        assert_eq!(
+            candidates
+                .iter()
+                .map(|candidate| candidate.signal.as_str())
+                .collect::<Vec<_>>(),
+            ["distributed-effect", "external-system-call"]
+        );
+    }
+
+    #[test]
     fn attestation_accepts_a_fresh_satisfied_result() {
         let snapshot = evidence_snapshot();
         assert!(is_satisfied(
@@ -1963,6 +2061,30 @@ mod tests {
         let mut missing_report = snapshot;
         missing_report.evidence[0]["artifact"] = json!({});
         assert!(!is_satisfied(&instance, &missing_report));
+    }
+
+    #[test]
+    fn selective_evidence_modes_require_claims_only_for_explicit_direct_clauses() {
+        let instance = evidence_instance(Assurance::EvidenceBacked);
+
+        let mut direct = evidence_snapshot();
+        direct.contracts[0]["evidence_mode"] = json!("direct");
+        assert!(!is_satisfied(&instance, &direct));
+        direct.evidence[0]["claims"] = json!([{
+            "contract_clause_ref": "contract.test#stable-output",
+            "assertion": "The report demonstrates stable output."
+        }]);
+        assert!(is_satisfied(&instance, &direct));
+
+        let mut inherited = evidence_snapshot();
+        inherited.contracts[0]["evidence_mode"] = json!("inherited");
+        assert!(is_satisfied(&instance, &inherited));
+
+        let mut review = evidence_snapshot();
+        review.contracts[0]["evidence_mode"] = json!("review");
+        let matching = matching_contract_clauses(&instance, &review);
+        assert!(matching.has_matching_clauses);
+        assert!(matching.required().is_empty());
     }
 
     #[test]
@@ -2141,6 +2263,7 @@ mod tests {
             text: "test clause".to_owned(),
             applies_to: vec![target.to_owned()],
             authority_ref: None,
+            evidence_mode: "direct".to_owned(),
             status: status.to_owned(),
             evidence_refs: Vec::new(),
             verification_result_ids: Vec::new(),
@@ -2155,6 +2278,7 @@ mod tests {
                 stale: 1,
                 unverified: 1,
                 failed: 1,
+                review: 0,
             },
             clauses: vec![
                 clause("contract.orders#persistence", "data.orders", "stale"),

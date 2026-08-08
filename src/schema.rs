@@ -12,7 +12,7 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-pub const SCHEMA_BUNDLE_VERSION: &str = "3";
+pub const SCHEMA_BUNDLE_VERSION: &str = "4";
 const RECORD_KINDS: [&str; 5] = ["change", "contract", "decision", "evidence", "result"];
 const RESULT_SCHEMA_IDS: [&str; 7] = [
     "result.analysis",

@@ -60,6 +60,12 @@ the path proves nothing about it. Where you could not establish the requirement,
 `inconclusive` and say what would settle it. Reporting `satisfied` because the change
 looks correct defeats the whole mechanism.
 
+For every affected `direct` clause, include one `claims` entry in the Evidence Record with
+the exact `contract_clause_ref` and a short `assertion` saying what the artifact proves.
+The same reproducible artifact may support several claims. List `inherited` clauses in
+`contract_clause_refs`; they do not need a separate claim. `review` clauses do not require
+an Evidence Record and should not cause extra work.
+
 `adf_add_evidence` binds the Evidence to the issued Requirement inputs. This content
 binding keeps the Evidence current when only ADF Result or Evidence Records are committed,
 while a change to the code, Contract, Decision, or Change it verified makes it stale. Keep

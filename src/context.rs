@@ -7,7 +7,7 @@ use crate::canonical_digest;
 use crate::contract_health::ContractHealthReport;
 use crate::contract_scope::{
     clause_matches_subjects, contract_matches_subjects, contract_uses_clause_scopes,
-    effective_clause_applies_to,
+    effective_clause_applies_to, effective_clause_evidence_mode,
 };
 use crate::detection::DetectionReport;
 use crate::kernel::{
@@ -22,8 +22,8 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const CONTEXT_COMPILER_VERSION: &str = "5";
-pub const CONTRACT_CLAUSE_PROJECTION_VERSION: &str = "1";
+pub const CONTEXT_COMPILER_VERSION: &str = "6";
+pub const CONTRACT_CLAUSE_PROJECTION_VERSION: &str = "2";
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ContractClauseContext {
@@ -33,6 +33,7 @@ pub struct ContractClauseContext {
     pub text: String,
     pub applies_to: Vec<String>,
     pub authority_ref: Option<String>,
+    pub evidence_mode: String,
     pub digest: String,
     pub selected_for: Vec<String>,
 }
@@ -258,11 +259,13 @@ impl ContextCompiler {
                     json!({
                         "id": contract["id"],
                         "applies_to": contract["applies_to"],
+                        "evidence_mode": contract["evidence_mode"],
                         "clauses": array_field(contract, "clauses").iter().map(|clause| {
                             json!({
                                 "ref": clause_ref(contract, clause),
                                 "applies_to": effective_clause_applies_to(contract, clause),
                                 "authority_ref": clause["authority_ref"],
+                                "evidence_mode": effective_clause_evidence_mode(contract, clause).as_str(),
                             })
                         }).collect::<Vec<_>>(),
                     })
@@ -769,6 +772,9 @@ fn insert_clause_context(
                 text: text.to_owned(),
                 applies_to: effective_clause_applies_to(contract, clause),
                 authority_ref: clause["authority_ref"].as_str().map(str::to_owned),
+                evidence_mode: effective_clause_evidence_mode(contract, clause)
+                    .as_str()
+                    .to_owned(),
                 digest,
                 selected_for: Vec::new(),
             },
@@ -996,6 +1002,7 @@ mod tests {
                 "schema_version": "1",
                 "id": "contract.order",
                 "applies_to": ["data.orders", "integration.events"],
+                "evidence_mode": "review",
                 "clauses": [
                     {
                         "id": "no-duplicates",
@@ -1007,7 +1014,8 @@ mod tests {
                         "id": "retry-event",
                         "text": "event送信失敗時は再試行する",
                         "applies_to": ["integration.events"],
-                        "authority_ref": "decision.event"
+                        "authority_ref": "decision.event",
+                        "evidence_mode": "direct"
                     }
                 ]
             })],
@@ -1055,6 +1063,7 @@ mod tests {
         assert_eq!(clause.clause_ref, "contract.order#retry-event");
         assert_eq!(clause.text, "event送信失敗時は再試行する");
         assert_eq!(clause.applies_to, ["integration.events"]);
+        assert_eq!(clause.evidence_mode, "direct");
         assert_eq!(clause.digest, event_clause_digest);
     }
 
@@ -1149,6 +1158,7 @@ mod tests {
                 stale: 1,
                 unverified: 0,
                 failed: 1,
+                review: 0,
             },
             clauses: vec![
                 ClauseHealth {
@@ -1158,6 +1168,7 @@ mod tests {
                     text: "注文を重複作成しない".to_owned(),
                     applies_to: vec!["data.orders".to_owned()],
                     authority_ref: None,
+                    evidence_mode: "direct".to_owned(),
                     status: "stale".to_owned(),
                     evidence_refs: vec!["evidence.old".to_owned()],
                     verification_result_ids: vec!["result.old".to_owned()],
@@ -1170,6 +1181,7 @@ mod tests {
                     text: "合計金額を維持する".to_owned(),
                     applies_to: vec!["data.orders".to_owned()],
                     authority_ref: None,
+                    evidence_mode: "direct".to_owned(),
                     status: "failed".to_owned(),
                     evidence_refs: vec!["evidence.failed".to_owned()],
                     verification_result_ids: vec!["result.failed".to_owned()],

@@ -40,7 +40,16 @@ reconstruct the question from scratch.
 **Every change is worked against them.** Before implementation, the contracts
 that govern the intended effects are resolved and challenged. During it, they
 are what the implementation must satisfy. After it, the change completes only
-when each clause has evidence traceable to it.
+when every `direct` or `inherited` clause affected by the change has traceable
+evidence and every `review` clause has been available to the independent
+challenge.
+
+Contract authors choose that cost explicitly with `evidence_mode`. `direct`
+requires an Evidence claim that names the clause and states what the artifact
+demonstrates. `inherited` may reuse an Evidence artifact that covers the clause.
+`review` requires no Evidence Record and remains in Challenger context. A
+Contract without `evidence_mode` keeps the original all-direct behavior, so a
+framework update never weakens an existing Contract silently.
 
 **They grow.** A question answered once does not come back - the next change
 that touches deletion finds the clause and resolves against it instead of
@@ -217,7 +226,7 @@ adf mcp --project /path/to/project
     │           ├─ Analyst    assess intended impact, review detected signals,
     │           │             write contracts, ask a person when no authority
     │           │             settles it, record what they answered
-    │           ├─ Builder    implement, then record evidence per clause
+    │           ├─ Builder    implement, then record required clause evidence
     │           └─ Challenger try to falsify it, before and after the build
     │           │
     └───────────┴─ adf_submit ──── validated, stored, reevaluated
@@ -239,7 +248,7 @@ runs in a context independent of the one that built it.
 | `needs-decision-recording` | record their answer as a decision and a contract |
 | `needs-pre-build-challenge` | falsify the request, the authority, the contracts |
 | `ready-to-build` | implement |
-| `needs-evidence` | record evidence for each clause |
+| `needs-evidence` | record evidence for affected `direct` and `inherited` clauses |
 | `needs-post-build-challenge` | falsify the implementation |
 | `ready-to-merge` | nothing |
 

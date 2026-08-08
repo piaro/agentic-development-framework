@@ -6,6 +6,25 @@
 use serde_json::Value;
 use std::collections::BTreeSet;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ClauseEvidenceMode {
+    /// Contracts written before selective Evidence retain their old behavior.
+    LegacyDirect,
+    Direct,
+    Inherited,
+    Review,
+}
+
+impl ClauseEvidenceMode {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::LegacyDirect | Self::Direct => "direct",
+            Self::Inherited => "inherited",
+            Self::Review => "review",
+        }
+    }
+}
+
 pub(crate) fn effective_clause_applies_to(contract: &Value, clause: &Value) -> Vec<String> {
     clause["applies_to"]
         .as_array()
@@ -18,6 +37,21 @@ pub(crate) fn effective_clause_applies_to(contract: &Value, clause: &Value) -> V
                 .collect()
         })
         .unwrap_or_default()
+}
+
+pub(crate) fn effective_clause_evidence_mode(
+    contract: &Value,
+    clause: &Value,
+) -> ClauseEvidenceMode {
+    match clause["evidence_mode"]
+        .as_str()
+        .or_else(|| contract["evidence_mode"].as_str())
+    {
+        Some("direct") => ClauseEvidenceMode::Direct,
+        Some("inherited") => ClauseEvidenceMode::Inherited,
+        Some("review") => ClauseEvidenceMode::Review,
+        _ => ClauseEvidenceMode::LegacyDirect,
+    }
 }
 
 pub(crate) fn clause_matches_subjects(
