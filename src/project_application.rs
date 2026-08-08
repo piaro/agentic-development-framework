@@ -387,6 +387,7 @@ impl ProjectApplicationService {
                 false,
             ));
         }
+        validate_evidence_claims(&evidence)?;
         let input_refs = evidence_input_refs(&entry.context, &evidence_instances);
         evidence
             .as_object_mut()
@@ -615,6 +616,35 @@ impl ProjectApplicationService {
             key
         })
     }
+}
+
+fn validate_evidence_claims(evidence: &Value) -> Result<(), ServiceError> {
+    let declared_clauses = string_set(&evidence["contract_clause_refs"]);
+    let mut claimed_clauses = BTreeSet::new();
+    for claim in evidence["claims"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+    {
+        let Some(clause_ref) = claim["contract_clause_ref"].as_str() else {
+            continue;
+        };
+        if !declared_clauses.contains(clause_ref) {
+            return Err(service_error(
+                "INVALID_EVIDENCE_CLAIM",
+                format!("Evidence claim is not listed in contract_clause_refs: {clause_ref}"),
+                false,
+            ));
+        }
+        if !claimed_clauses.insert(clause_ref) {
+            return Err(service_error(
+                "INVALID_EVIDENCE_CLAIM",
+                format!("Evidence contains duplicate claims for: {clause_ref}"),
+                false,
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn evidence_input_refs(
@@ -1043,6 +1073,48 @@ mod tests {
                     Value::String(digest('3')),
                 ),
             ])
+        );
+    }
+
+    #[test]
+    fn evidence_claims_are_unique_and_declared_as_clause_refs() {
+        let valid = json!({
+            "contract_clause_refs": ["contract.test#one"],
+            "claims": [{
+                "contract_clause_ref": "contract.test#one",
+                "assertion": "The test exercises the required behavior."
+            }]
+        });
+        validate_evidence_claims(&valid).unwrap();
+
+        let undeclared = json!({
+            "contract_clause_refs": [],
+            "claims": [{
+                "contract_clause_ref": "contract.test#one",
+                "assertion": "The test exercises the required behavior."
+            }]
+        });
+        assert_eq!(
+            validate_evidence_claims(&undeclared).unwrap_err().code,
+            "INVALID_EVIDENCE_CLAIM"
+        );
+
+        let duplicate = json!({
+            "contract_clause_refs": ["contract.test#one"],
+            "claims": [
+                {
+                    "contract_clause_ref": "contract.test#one",
+                    "assertion": "First assertion."
+                },
+                {
+                    "contract_clause_ref": "contract.test#one",
+                    "assertion": "Second assertion."
+                }
+            ]
+        });
+        assert_eq!(
+            validate_evidence_claims(&duplicate).unwrap_err().code,
+            "INVALID_EVIDENCE_CLAIM"
         );
     }
 }

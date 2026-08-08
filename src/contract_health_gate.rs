@@ -193,6 +193,7 @@ mod tests {
             text: "test clause".to_owned(),
             applies_to: vec![],
             authority_ref: None,
+            evidence_mode: "direct".to_owned(),
             status: status.to_owned(),
             evidence_refs: vec![],
             verification_result_ids: vec![],
@@ -210,6 +211,7 @@ mod tests {
                 stale: 1,
                 unverified: 1,
                 failed: 1,
+                review: 0,
             },
             clauses: vec![
                 clause("failed", "failed"),
@@ -247,6 +249,7 @@ mod tests {
                 stale: 0,
                 unverified: 0,
                 failed: 0,
+                review: 0,
             },
             ..health()
         };

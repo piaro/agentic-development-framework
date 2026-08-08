@@ -73,6 +73,19 @@ Contract clauses needed for the current Change by calling `adf_apply_contract`, 
 an outcome for every issued requirement instance. Cite the new Contract in `basis_refs` and
 include it in `output_refs`.
 
+Set `evidence_mode` deliberately. Prefer a Contract-level `review` default, then override
+only clauses that need stronger proof:
+
+- `direct`: failure can leak data, corrupt state, duplicate an irreversible effect, or the
+  clause cannot be established without executing the relevant path
+- `inherited`: another reproducible test or probe for the same Change can also establish
+  this clause
+- `review`: a policy, product direction, or qualitative expectation whose correctness is
+  better attacked by the independent Challenger than reduced to a binary artifact
+
+Do not choose `direct` merely to increase coverage. Contracts without this field retain
+legacy all-direct behavior, but new Contracts should state the intended mode explicitly.
+
 If the Change request or existing accepted authority does not settle a product or
 architecture choice, do not create a rule from inference. Submit a decision request so the
 control plane can obtain and record a human decision first.

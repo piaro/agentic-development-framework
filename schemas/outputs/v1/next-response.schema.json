@@ -143,7 +143,7 @@
               }
             },
             "contract_clause_projection_version": {
-              "const": "1"
+              "const": "2"
             },
             "contract_clauses": {
               "type": "array",
@@ -157,6 +157,7 @@
                   "text",
                   "applies_to",
                   "authority_ref",
+                  "evidence_mode",
                   "digest",
                   "selected_for"
                 ],
@@ -176,6 +177,9 @@
                       {"type": "string", "minLength": 1},
                       {"type": "null"}
                     ]
+                  },
+                  "evidence_mode": {
+                    "enum": ["direct", "inherited", "review"]
                   },
                   "digest": {"type": "string", "minLength": 1},
                   "selected_for": {

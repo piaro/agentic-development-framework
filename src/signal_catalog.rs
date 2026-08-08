@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
-pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "3";
+pub const SIGNAL_DOMAIN_CATALOG_VERSION: &str = "4";
 pub const TYPED_FACT_DETECTOR_ID: &str = "typed-repository-fact";
 pub const TYPED_FACT_DETECTOR_VERSION: &str = "3";
 
@@ -29,6 +29,13 @@ pub struct SignalDefinition {
     pub detector_id: String,
     pub detector_version: String,
     pub bindings: Vec<String>,
+    /// Rule signals selected when an Analyst declares this signal directly.
+    ///
+    /// Typed repository facts already emit both a broad control signal and a
+    /// more precise observation signal. Declared Impact Assessments must take
+    /// the same route so that choosing the precise signal cannot bypass the
+    /// broad control.
+    pub activates: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -143,6 +150,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["authorization", "operation"]),
+                    activates: strings(&["authorization-control-change"]),
                 },
                 SignalDefinition {
                     id: "distributed-effect".to_owned(),
@@ -150,6 +158,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["integration", "operation"]),
+                    activates: strings(&["distributed-effect"]),
                 },
                 SignalDefinition {
                     id: "external-system-call".to_owned(),
@@ -157,6 +166,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["integration", "operation"]),
+                    activates: strings(&["distributed-effect", "external-system-call"]),
                 },
                 SignalDefinition {
                     id: "message-or-event-publish".to_owned(),
@@ -164,6 +174,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["integration", "operation"]),
+                    activates: strings(&["distributed-effect", "message-or-event-publish"]),
                 },
                 SignalDefinition {
                     id: "object-storage-write".to_owned(),
@@ -171,6 +182,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["data", "operation"]),
+                    activates: strings(&["object-storage-write", "persistent-data-write"]),
                 },
                 SignalDefinition {
                     id: "persistent-data-write".to_owned(),
@@ -178,6 +190,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["data", "operation"]),
+                    activates: strings(&["persistent-data-write"]),
                 },
                 SignalDefinition {
                     id: "sensitive-data-access".to_owned(),
@@ -185,6 +198,7 @@ impl SignalCatalogRegistry {
                     detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
                     detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
                     bindings: strings(&["data", "operation"]),
+                    activates: strings(&["sensitive-data-access"]),
                 },
             ],
             vec![
@@ -392,6 +406,7 @@ pub(crate) fn test_signal_registry() -> SignalCatalogRegistry {
             detector_id: TYPED_FACT_DETECTOR_ID.to_owned(),
             detector_version: TYPED_FACT_DETECTOR_VERSION.to_owned(),
             bindings: strings(&["operation", "target"]),
+            activates: strings(&["test-resource-write"]),
         }],
         vec![RepositoryFactDefinition {
             id: "test_write".to_owned(),
@@ -523,6 +538,40 @@ fn validate_catalog(
             &format!("signal {} bindings", signal.id),
             signal.bindings.iter().map(String::as_str),
         )?;
+        let activated = unique_nonempty_values(
+            &format!("signal {} activations", signal.id),
+            signal.activates.iter().map(String::as_str),
+        )?;
+        if !activated.contains(signal.id.as_str()) {
+            return Err(SignalCatalogError::new(format!(
+                "signal {} activations must include itself",
+                signal.id
+            )));
+        }
+        for activated_signal in activated {
+            let definition = signals.get(activated_signal).ok_or_else(|| {
+                SignalCatalogError::new(format!(
+                    "signal {} activates unknown signal {}",
+                    signal.id, activated_signal
+                ))
+            })?;
+            let activated_bindings = definition
+                .bindings
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            let signal_bindings = signal
+                .bindings
+                .iter()
+                .map(String::as_str)
+                .collect::<BTreeSet<_>>();
+            if activated_bindings != signal_bindings {
+                return Err(SignalCatalogError::new(format!(
+                    "signal {} activations must use the same bindings",
+                    signal.id
+                )));
+            }
+        }
     }
     let mut emitted_signals = BTreeSet::new();
     for fact in fact_kinds.values() {

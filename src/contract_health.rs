@@ -5,7 +5,9 @@
 //! the Contract or treating an unknown state as verified.
 
 use crate::canonical_digest;
-use crate::contract_scope::effective_clause_applies_to;
+use crate::contract_scope::{
+    ClauseEvidenceMode, effective_clause_applies_to, effective_clause_evidence_mode,
+};
 use crate::schema::SchemaRegistry;
 use serde::Serialize;
 use serde_json::Value;
@@ -21,6 +23,7 @@ pub struct ContractHealthSummary {
     pub stale: usize,
     pub unverified: usize,
     pub failed: usize,
+    pub review: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -31,6 +34,7 @@ pub struct ClauseHealth {
     pub text: String,
     pub applies_to: Vec<String>,
     pub authority_ref: Option<String>,
+    pub evidence_mode: String,
     pub status: String,
     pub evidence_refs: Vec<String>,
     pub verification_result_ids: Vec<String>,
@@ -55,12 +59,13 @@ impl ContractHealthReport {
         let mut lines = vec![
             format!("repository_revision: {revision}"),
             format!(
-                "clauses: total={} verified={} stale={} unverified={} failed={}",
+                "clauses: total={} verified={} stale={} unverified={} failed={} review={}",
                 self.summary.total,
                 self.summary.verified,
                 self.summary.stale,
                 self.summary.unverified,
-                self.summary.failed
+                self.summary.failed,
+                self.summary.review
             ),
         ];
         for clause in &self.clauses {
@@ -124,12 +129,14 @@ pub fn build_contract_health_report(
                 )));
             }
             let clause_applies_to = effective_clause_applies_to(contract, clause);
+            let evidence_mode = effective_clause_evidence_mode(contract, clause);
             clauses.push(clause_health(
                 contract_id,
                 clause_id,
                 &clause_ref,
                 clause,
                 &clause_applies_to,
+                evidence_mode,
                 results,
                 &evidence_by_id,
                 &current_digests,
@@ -144,6 +151,7 @@ pub fn build_contract_health_report(
         stale: count_status(&clauses, "stale"),
         unverified: count_status(&clauses, "unverified"),
         failed: count_status(&clauses, "failed"),
+        review: count_status(&clauses, "review"),
     };
     Ok(ContractHealthReport {
         schema_version: CONTRACT_HEALTH_REPORT_SCHEMA_VERSION.to_owned(),
@@ -163,6 +171,7 @@ fn clause_health(
     clause_ref: &str,
     clause: &Value,
     applies_to: &[String],
+    evidence_mode: ClauseEvidenceMode,
     results: &[Value],
     evidence_by_id: &BTreeMap<String, &Value>,
     current_digests: &BTreeMap<String, String>,
@@ -175,7 +184,7 @@ fn clause_health(
     let mut historical_verification = false;
 
     for (evidence_id, evidence) in evidence_by_id {
-        if !string_array(&evidence["contract_clause_refs"]).contains(&clause_ref.to_owned()) {
+        if !evidence_covers_clause(evidence, clause_ref, evidence_mode) {
             continue;
         }
         evidence_refs.insert(evidence_id.clone());
@@ -219,7 +228,9 @@ fn clause_health(
         }
     }
 
-    let status = if current_success {
+    let status = if evidence_mode == ClauseEvidenceMode::Review {
+        "review"
+    } else if current_success {
         "verified"
     } else if current_failure {
         "failed"
@@ -238,11 +249,31 @@ fn clause_health(
         text: clause["text"].as_str().unwrap_or_default().to_owned(),
         applies_to: applies_to.to_vec(),
         authority_ref: clause["authority_ref"].as_str().map(str::to_owned),
+        evidence_mode: evidence_mode.as_str().to_owned(),
         status: status.to_owned(),
         evidence_refs: evidence_refs.into_iter().collect(),
         verification_result_ids: verification_result_ids.into_iter().collect(),
         stale_refs: stale_refs.into_iter().collect(),
     }
+}
+
+fn evidence_covers_clause(
+    evidence: &Value,
+    clause_ref: &str,
+    evidence_mode: ClauseEvidenceMode,
+) -> bool {
+    if !string_array(&evidence["contract_clause_refs"]).contains(&clause_ref.to_owned()) {
+        return false;
+    }
+    if evidence_mode != ClauseEvidenceMode::Direct {
+        return true;
+    }
+    evidence["claims"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or(&[])
+        .iter()
+        .any(|claim| claim["contract_clause_ref"].as_str() == Some(clause_ref))
 }
 
 fn evidence_verifies_outcome(evidence: &Value, outcome: &Value) -> bool {
@@ -570,6 +601,48 @@ mod tests {
         let report = build_contract_health_report(&project, &registry()).unwrap();
         assert_eq!(report.clauses[0].status, "unverified");
         assert_eq!(report.summary.unverified, 1);
+    }
+
+    #[test]
+    fn selective_modes_keep_review_out_of_the_evidence_gate_and_require_direct_claims() {
+        let mut review = project_with_evidence("passed", "satisfied");
+        review["contracts"][0]["evidence_mode"] = Value::String("review".to_owned());
+        review["results"] = json!([]);
+        review["evidence"] = json!([]);
+        let report = build_contract_health_report(&review, &registry()).unwrap();
+        assert_eq!(report.clauses[0].status, "review");
+        assert_eq!(report.summary.review, 1);
+        assert_eq!(report.summary.unverified, 0);
+
+        let mut direct = project_with_evidence("passed", "satisfied");
+        direct["contracts"][0]["evidence_mode"] = Value::String("direct".to_owned());
+        let contract_digest = digest_value(&direct["contracts"][0]).unwrap();
+        direct["results"][0]["input_refs"]["contract.test"] =
+            Value::String(contract_digest.clone());
+        direct["results"][0]["freshness_refs"]["contract.test"] =
+            Value::String(contract_digest.clone());
+        direct["results"][0]["payload"]["outcomes"][0]["input_refs"]["contract.test"] =
+            Value::String(contract_digest.clone());
+        direct["results"][0]["payload"]["outcomes"][0]["freshness_refs"]["contract.test"] =
+            Value::String(contract_digest);
+        let without_claim = build_contract_health_report(&direct, &registry()).unwrap();
+        assert_eq!(without_claim.clauses[0].status, "unverified");
+
+        direct["evidence"][0]["claims"] = json!([{
+            "contract_clause_ref": "contract.test#stable-output",
+            "assertion": "The report demonstrates stable output."
+        }]);
+        let evidence_digest = digest_value(&direct["evidence"][0]).unwrap();
+        direct["results"][0]["input_refs"]["evidence.test"] =
+            Value::String(evidence_digest.clone());
+        direct["results"][0]["freshness_refs"]["evidence.test"] =
+            Value::String(evidence_digest.clone());
+        direct["results"][0]["payload"]["outcomes"][0]["input_refs"]["evidence.test"] =
+            Value::String(evidence_digest.clone());
+        direct["results"][0]["payload"]["outcomes"][0]["freshness_refs"]["evidence.test"] =
+            Value::String(evidence_digest);
+        let with_claim = build_contract_health_report(&direct, &registry()).unwrap();
+        assert_eq!(with_claim.clauses[0].status, "verified");
     }
 
     #[test]

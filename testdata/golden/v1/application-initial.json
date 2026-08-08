@@ -245,7 +245,7 @@
       "protocols": {
         "application": "1",
         "canonicalization": "canonical-json-v1",
-        "context_compiler": "5",
+        "context_compiler": "6",
         "data_model": "4",
         "explanation": "2",
         "kernel": "6",
@@ -256,8 +256,8 @@
         "typed-repository-fact": "3"
       },
       "schema_bundle": {
-        "version": "3",
-      "digest": "sha256:0196f53c3c694679e75d3d120fc76e7376ac372224669c5d59de20c40092a8c9"
+        "version": "4",
+        "digest": "sha256:500fe6b6b0cadaa3706a515fa3e0d58f3dc047796c92fd7d22dbc4c626cdac81"
       },
       "rule_set": {
         "source_digest": "sha256:6fe7e6252e94c44901203395e6ac00ead20173dc857e0e630fe986c878af5855",
@@ -268,7 +268,7 @@
   "expected": {
     "snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
     "rule_index_digest": "sha256:175099cb33658a88160e59f31a600157f0d5b64cb046199efbae4b3a117adcbe",
-    "framework_lock_digest": "sha256:1d409735d9f774b07c1d85b1b70abd49997d1e33ca48702178197a8ce29e86d8",
+    "framework_lock_digest": "sha256:e3354d9da1d28a7d6b8afe05657288330475fd4def7ef9883b39508bcebef6db",
     "decision": {
       "state": "needs-analysis",
       "action": {

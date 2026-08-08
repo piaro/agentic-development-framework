@@ -25,6 +25,21 @@
       "items": {"type": "string", "minLength": 1},
       "uniqueItems": true
     },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["contract_clause_ref", "assertion"],
+        "properties": {
+          "contract_clause_ref": {
+            "type": "string",
+            "pattern": "^contract\\.[A-Za-z0-9._-]+#[A-Za-z0-9][A-Za-z0-9._-]*$"
+          },
+          "assertion": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    },
     "git_revision": {"type": "string", "minLength": 1},
     "input_refs": {
       "type": "object",

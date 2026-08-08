@@ -49,7 +49,7 @@ Contractは変更のたびに増えます。障害から学んだことはテス
 │       │
 │       ├─ Analyst    影響と仕様を分析する。足りない規範はContractに書き、
 │       │             決められない問いは人へ渡し、答えを記録する
-│       ├─ Builder    実装し、条項ごとに証拠を記録する
+│       ├─ Builder    実装し、必要な条項の証拠を記録する
 │       └─ Challenger 実装の前後で反証する
 │       │
 └───────┴─ adf_submit ─── 結果を検証して保存し、状態を進める
@@ -63,7 +63,7 @@ Contractは変更のたびに増えます。障害から学んだことはテス
 | 役割 | スキル | 担当 |
 |---|---|---|
 | Analyst | `$adf-analyst` | 仕様の分析。検出候補の確認、Contractの記入、人への判断依頼と回答の記録 |
-| Builder | `$adf-builder` | 実装と、条項ごとの証拠の記録 |
+| Builder | `$adf-builder` | 実装と、必要な条項の証拠の記録 |
 | Challenger | `$adf-challenger` | 実装前と実装後の反証 |
 
 Challengerが行う反証とは、依頼・規範・実装が間違っている可能性を、作った本人とは別の立場から探して確かめる作業です。実装後の反証は、実装した文脈から独立した文脈で行います。同じ文脈での自己レビューを反証として記録することはできません。
@@ -79,13 +79,15 @@ Challengerが行う反証とは、依頼・規範・実装が間違っている�
 | `needs-decision-recording` | 人の答えをDecisionとContractへ記録する |
 | `needs-pre-build-challenge` | 実装前に、依頼・根拠・Contractを反証する |
 | `ready-to-build` | 実装する |
-| `needs-evidence` | 条項ごとに証拠を記録する |
+| `needs-evidence` | 対象となる`direct`または`inherited`条項の証拠を記録する |
 | `needs-post-build-challenge` | 実装後に、独立した文脈から実装を反証する |
 | `ready-to-merge` | なし。完了 |
 
 変更がいまどの状態にあり、なぜそこにいるのかは、`adf explain <変更ID>`で確認できます。変更ごとの記録は`.adf/changes/<変更ID>/`に残ります。
 
 ResultとEvidenceの鮮度は、それぞれが確認したコード、Contract、Decision、Changeの内容で判定します。実行時のGit revisionは追跡情報として残しますが、ADFのResultやEvidenceだけをcommitしてHEADが進んでも、確認対象の内容が同じなら再確認は要求しません。
+
+Contractまたは条項の`evidence_mode`で、検証に掛ける費用を選べます。`direct`は、その条項を何によって確認したかをEvidenceの`claims`へ明示します。`inherited`は、別の条項と共通するテストや実証結果を再利用できます。`review`はEvidenceを要求せず、独立したChallengerによる反証の対象にします。設定のない既存Contractは従来どおり全条項を`direct`として扱います。新しいContractでは、全体を`review`として、事故やデータ破損などにつながる条項だけを`direct`または`inherited`で上書きできます。
 
 ## 文脈の再利用と実行コスト
 

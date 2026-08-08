@@ -9,6 +9,12 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Fixed
 
+- Detailed Impact Assessment signals now activate their broad control signal
+  as well. Declaring `external-system-call`, `message-or-event-publish`, or
+  `object-storage-write` can no longer bypass the distributed-effect or
+  persistent-data Evidence path that the equivalent detected repository fact
+  already selected.
+
 - MCP tool Schemas now describe the JSON values they carry instead of emitting
   the boolean Schema `true`. `payload`, `evidence`, `contract`, `decision`,
   `report`, and `next_response` declare `object`, and `expected_digest` declares
@@ -27,6 +33,13 @@ change, is written down in `COMPATIBILITY.md`.
   was recorded as `open` and never issued.
 
 ### Changed
+
+- Contracts may select `direct`, `inherited`, or `review` Evidence with the
+  optional `evidence_mode` field at Contract or clause scope. Direct clauses
+  require a clause-specific Evidence claim, inherited clauses may reuse a
+  reproducible artifact, and review clauses remain available to Challenger
+  work without creating an Evidence requirement. Contracts without the field
+  retain the previous all-direct behavior.
 
 - Accepted Decisions now remain available to later Changes, while proposed,
   rejected, and superseded Decisions remain scoped to their originating Change.

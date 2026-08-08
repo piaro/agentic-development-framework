@@ -1,7 +1,7 @@
 {
   "schema_version": "1",
-  "schema_bundle_version": "3",
-  "schema_bundle_digest": "sha256:0196f53c3c694679e75d3d120fc76e7376ac372224669c5d59de20c40092a8c9",
+  "schema_bundle_version": "4",
+  "schema_bundle_digest": "sha256:500fe6b6b0cadaa3706a515fa3e0d58f3dc047796c92fd7d22dbc4c626cdac81",
   "schema_root": "../../../schemas/v1",
   "cases": [
     {

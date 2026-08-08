@@ -18,13 +18,14 @@
     },
     "summary": {
       "type": "object",
-      "required": ["total", "verified", "stale", "unverified", "failed"],
+      "required": ["total", "verified", "stale", "unverified", "failed", "review"],
       "properties": {
         "total": {"type": "integer", "minimum": 0},
         "verified": {"type": "integer", "minimum": 0},
         "stale": {"type": "integer", "minimum": 0},
         "unverified": {"type": "integer", "minimum": 0},
-        "failed": {"type": "integer", "minimum": 0}
+        "failed": {"type": "integer", "minimum": 0},
+        "review": {"type": "integer", "minimum": 0}
       },
       "additionalProperties": false
     },
@@ -39,6 +40,7 @@
           "text",
           "applies_to",
           "authority_ref",
+          "evidence_mode",
           "status",
           "evidence_refs",
           "verification_result_ids",
@@ -60,8 +62,11 @@
               {"type": "null"}
             ]
           },
+          "evidence_mode": {
+            "enum": ["direct", "inherited", "review"]
+          },
           "status": {
-            "enum": ["verified", "stale", "unverified", "failed"]
+            "enum": ["verified", "stale", "unverified", "failed", "review"]
           },
           "evidence_refs": {
             "type": "array",

@@ -1207,7 +1207,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
     assert!(json_output.stderr.is_empty());
     let catalog: Value = serde_json::from_slice(&json_output.stdout).unwrap();
     validate_catalog_schema(&catalog, "signal-domain-catalog.schema.json");
-    assert_eq!(catalog["catalog_version"], "3");
+    assert_eq!(catalog["catalog_version"], "4");
     assert_eq!(catalog["domains"][0]["id"], "data-persistence");
     assert_eq!(
         catalog["domains"][0]["signals"],
@@ -1262,7 +1262,7 @@ fn signal_domain_catalog_is_versioned_machine_readable_and_deterministic() {
         .unwrap();
     assert_success(&text_output);
     let text = String::from_utf8_lossy(&text_output.stdout);
-    assert!(text.contains("Signal Domain Catalog 3"));
+    assert!(text.contains("Signal Domain Catalog 4"));
     assert!(text.contains("data-persistence: Data persistence"));
     assert!(text.contains("external_call -> distributed-effect, external-system-call"));
     assert!(text.contains("object_write -> object-storage-write, persistent-data-write"));

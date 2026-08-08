@@ -58,6 +58,12 @@ Attack in this order, because the cheapest failure to find is the earliest one:
    external calls that actually changed?
 5. Does a counterexample exist? Produce the shortest one you can reproduce.
 
+Treat `evidence_mode` as a verification route, not as a weaker Contract. For `direct`
+clauses, check that the named artifact actually supports each Evidence claim. For
+`inherited` clauses, check that the reused artifact exercises the same behavior. For
+`review` clauses, attack the implementation and Contract directly; the absence of an
+Evidence Record is expected.
+
 ## Report the result
 
 Submit an `outcomes` entry per requirement instance in the action:

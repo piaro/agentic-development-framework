@@ -1,10 +1,10 @@
 {
-  "catalog_version": "3",
+  "catalog_version": "4",
   "detector": {
     "id": "typed-repository-fact",
     "version": "3"
   },
-  "digest": "sha256:939403ac80fad0beda70ec56cbbd118f3d448c0f3f421b96079f5b8154cb9875",
+  "digest": "sha256:e55bb2e99270d3aa192da8ab7892a348033063252a9f1821a5ff838ed7062319",
   "domains": [
     {
       "description": "Durable writes to application-owned data",
@@ -139,6 +139,9 @@
   "schema_version": "1",
   "signals": [
     {
+      "activates": [
+        "authorization-control-change"
+      ],
       "bindings": [
         "authorization",
         "operation"
@@ -149,6 +152,9 @@
       "id": "authorization-control-change"
     },
     {
+      "activates": [
+        "distributed-effect"
+      ],
       "bindings": [
         "integration",
         "operation"
@@ -159,6 +165,10 @@
       "id": "distributed-effect"
     },
     {
+      "activates": [
+        "distributed-effect",
+        "external-system-call"
+      ],
       "bindings": [
         "integration",
         "operation"
@@ -169,6 +179,10 @@
       "id": "external-system-call"
     },
     {
+      "activates": [
+        "distributed-effect",
+        "message-or-event-publish"
+      ],
       "bindings": [
         "integration",
         "operation"
@@ -179,6 +193,10 @@
       "id": "message-or-event-publish"
     },
     {
+      "activates": [
+        "object-storage-write",
+        "persistent-data-write"
+      ],
       "bindings": [
         "data",
         "operation"
@@ -189,6 +207,9 @@
       "id": "object-storage-write"
     },
     {
+      "activates": [
+        "persistent-data-write"
+      ],
       "bindings": [
         "data",
         "operation"
@@ -199,6 +220,9 @@
       "id": "persistent-data-write"
     },
     {
+      "activates": [
+        "sensitive-data-access"
+      ],
       "bindings": [
         "data",
         "operation"

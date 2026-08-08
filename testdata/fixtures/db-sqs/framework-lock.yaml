@@ -3,7 +3,7 @@ framework_release: adf-dev
 protocols:
   application: "1"
   canonicalization: canonical-json-v1
-  context_compiler: "5"
+  context_compiler: "6"
   data_model: "4"
   explanation: "2"
   kernel: "6"
@@ -12,8 +12,8 @@ protocols:
 detectors:
   typed-repository-fact: "3"
 schema_bundle:
-  version: "3"
-  digest: sha256:0196f53c3c694679e75d3d120fc76e7376ac372224669c5d59de20c40092a8c9
+  version: "4"
+  digest: sha256:500fe6b6b0cadaa3706a515fa3e0d58f3dc047796c92fd7d22dbc4c626cdac81
 rule_set:
   source_digest: sha256:a9dc2e8901db7e4553be042ffce47388f1e8971ebb26feb2ecc377e2396c2f07
   index_digest: sha256:58adc0315e3f1460cb03931e0022a866a94f8718b0a071ca2863f6a0c7bec9c1
