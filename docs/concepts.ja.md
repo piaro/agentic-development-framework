@@ -41,6 +41,8 @@ Contractは変更のたびに増えます。障害から学んだことはテス
 
 コードがないことを、影響がないこととは扱いません。新規プロジェクトでは、最初の変更依頼から実現しようとしている振る舞いを特定し、その変更に必要な最小限のContractを作ってから実装へ進みます。
 
+既存実装の移行では、検証するContract条項を`--verify-clause`で明示できます。指定した条項は未検証でもEvidence登録の対象になり、指定していない未検証条項は変更を止めません。既存の振る舞いを検証対象にするために、今回新たに生じる実装影響として申告する必要はありません。`evidence_mode: review`の条項は人のレビューを求めるため、この方法では選択できません。
+
 ```text
    adf change init
         │
@@ -160,6 +162,15 @@ adf change init change.first-feature \
   --intent "この変更が存在する理由"
 
 adf next change.first-feature
+```
+
+既存実装のEvidenceを登録する場合は、対象条項を指定して変更を作ります。
+
+```sh
+adf change init change.verify-existing-orders \
+  --title "既存の注文処理を検証する" \
+  --intent "既存の振る舞いに再現可能なEvidenceを登録する" \
+  --verify-clause contract.order-lifecycle#orders-source-of-truth
 ```
 
 エージェントには、同じ操作をMCPサーバー経由で使わせます。

@@ -9,7 +9,16 @@
     "title": {"type": "string", "minLength": 1},
     "intent": {"type": "string", "minLength": 1},
     "impact_assessment": {"const": "required"},
-    "base_revision": {"type": "string", "minLength": 1}
+    "base_revision": {"type": "string", "minLength": 1},
+    "verification_scope": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^contract\\.[A-Za-z0-9._-]+#[A-Za-z0-9][A-Za-z0-9._-]*$"
+      },
+      "minItems": 1,
+      "uniqueItems": true
+    }
   },
   "additionalProperties": false
 }

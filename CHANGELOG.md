@@ -64,6 +64,12 @@ change, is written down in `COMPATIBILITY.md`.
 
 ### Added
 
+- `change init --verify-clause <contract#clause>` can select existing Contract
+  clauses for first-time Evidence registration. Selected unverified clauses
+  enter the normal Builder Evidence workflow without declaring the existing
+  behavior as a new implementation impact or blocking on unrelated unverified
+  clauses.
+
 - External runners can append execution start and completion events without
   asking ADF to launch an agent. The events retain failed and interrupted
   attempts, add cache-creation, cached-input, and reasoning-output token counts

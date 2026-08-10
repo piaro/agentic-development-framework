@@ -131,6 +131,8 @@ Contractへ状態を書き戻さず、未検証を合格扱いしません。
 
 Applicationは、現在選択されたRequirementのsubjectと一致する`stale`／`failed`条項だけに、組込みの`contract-clause-revalidated` Requirementを追加します。これは`before-merge`の`evidence-backed`なBuilder作業です。Contextには対象条項とhealth findingを含め、無関係な条項と`unverified`条項はこの経路ではChangeを停止しません。現在入力に対する成功Evidenceを提出すると再検証は解決します。
 
+既存実装を初めて検証する場合は、Changeの`verification_scope`へ`contract.id#clause-id`を列挙します。指定した条項には、状態が`unverified`でも同じ`contract-clause-revalidated` Requirementを追加します。指定していない未検証条項は追加しません。存在しない条項と`evidence_mode: review`の条項は受理しません。この検証対象は変更影響とは別に扱うため、Evidence登録だけを目的とするChangeのImpact Assessmentは、実装への影響がなければ`no-impact`にできます。
+
 ```sh
 adf contract-health --project . --format text
 adf contract-health --project . --format json --require-clean

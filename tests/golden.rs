@@ -19,8 +19,8 @@ fn shared_canonicalization_golden_matches() {
 fn shared_schema_validation_golden_matches() {
     let golden_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/golden/v1");
     let report = verify_schema_suite(golden_root).unwrap();
-    assert_eq!(report.valid_cases, 6);
-    assert_eq!(report.invalid_cases, 6);
+    assert_eq!(report.valid_cases, 7);
+    assert_eq!(report.invalid_cases, 7);
 }
 
 #[test]

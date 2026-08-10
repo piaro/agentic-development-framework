@@ -1,9 +1,40 @@
 {
   "schema_version": "1",
-  "schema_bundle_version": "4",
-  "schema_bundle_digest": "sha256:500fe6b6b0cadaa3706a515fa3e0d58f3dc047796c92fd7d22dbc4c626cdac81",
+  "schema_bundle_version": "5",
+  "schema_bundle_digest": "sha256:4c2428d1abc3aaed2ef4ab13fd2fcfa4e746c5fefac136608b0aab14ebd85f2f",
   "schema_root": "../../../schemas/v1",
   "cases": [
+    {
+      "case_id": "valid-change-with-verification-scope",
+      "record_kind": "change",
+      "record": {
+        "schema_version": "1",
+        "id": "change.verify-existing-orders",
+        "title": "Verify existing order behavior",
+        "intent": "Register reproducible evidence for existing behavior",
+        "impact_assessment": "required",
+        "verification_scope": [
+          "contract.order-lifecycle#orders-source-of-truth"
+        ]
+      },
+      "valid": true
+    },
+    {
+      "case_id": "invalid-change-verification-scope-reference",
+      "record_kind": "change",
+      "record": {
+        "schema_version": "1",
+        "id": "change.verify-existing-orders",
+        "title": "Verify existing order behavior",
+        "intent": "Register reproducible evidence for existing behavior",
+        "impact_assessment": "required",
+        "verification_scope": [
+          "order-lifecycle#orders-source-of-truth"
+        ]
+      },
+      "valid": false,
+      "error_path": "$.verification_scope[0]"
+    },
     {
       "case_id": "valid-contract",
       "record_kind": "contract",

@@ -3,7 +3,7 @@
   "framework_lock_schema_version": "1",
   "schema_root": "../../../schemas/v1",
   "base_case": "application-initial.json",
-  "expected_digest": "sha256:e3354d9da1d28a7d6b8afe05657288330475fd4def7ef9883b39508bcebef6db",
+  "expected_digest": "sha256:147a693a6cd5fdef03c001de5f17ad8376c1f76adfe2ff988d21e20729914108",
   "invalid_cases": [
     {
       "case_id": "detector-version-mismatch",
