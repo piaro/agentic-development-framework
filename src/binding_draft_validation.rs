@@ -332,16 +332,37 @@ fn validate_binding_artifact(
     );
     let observed_symbols = string_set(&inventory["symbols"]);
     let observed_resources = string_set(&inventory["resources"]);
-    let candidates = inventory["framework_candidates"]
+    let mut candidates = inventory["framework_candidates"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(|candidate| {
             candidate["binding_key"]
                 .as_str()
-                .map(|key| (key, candidate))
+                .map(|key| (key.to_owned(), candidate.clone()))
         })
         .collect::<BTreeMap<_, _>>();
+    for observation in inventory["observations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|observation| observation["kind"] == "other_method_call")
+    {
+        let Some(resource) = observation["resource"].as_str() else {
+            continue;
+        };
+        let Some(method) = observation["method"].as_str() else {
+            continue;
+        };
+        candidates
+            .entry(format!("{resource}.{method}"))
+            .or_insert_with(|| {
+                serde_json::json!({
+                    "symbol": observation["symbol"],
+                    "resource": resource,
+                })
+            });
+    }
     let bound_symbols = validate_symbols(
         &bindings["symbols"],
         &observed_symbols,
@@ -506,7 +527,7 @@ fn validate_resources(
 #[allow(clippy::too_many_arguments)]
 fn validate_methods(
     value: &Value,
-    candidates: &BTreeMap<&str, &Value>,
+    candidates: &BTreeMap<String, Value>,
     bound_symbols: &BTreeSet<String>,
     resource_refs: &BTreeMap<String, BTreeSet<String>>,
     accepted: &BTreeSet<&str>,
@@ -524,7 +545,7 @@ fn validate_methods(
         return;
     };
     for (physical, record) in records {
-        let candidate = candidates.get(physical.as_str()).copied();
+        let candidate = candidates.get(physical.as_str());
         if candidate.is_none() {
             issue(
                 issues,
@@ -755,6 +776,28 @@ fn validate_unused_bindings(
             used_symbols.insert(symbol);
         }
         if let Some(resource) = candidate["resource"].as_str() {
+            used_resources.insert(resource);
+        }
+    }
+    for observation in inventory["observations"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|observation| observation["kind"] == "other_method_call")
+        .filter(|observation| {
+            let Some(resource) = observation["resource"].as_str() else {
+                return false;
+            };
+            let Some(method) = observation["method"].as_str() else {
+                return false;
+            };
+            retained_methods.contains(format!("{resource}.{method}").as_str())
+        })
+    {
+        if let Some(symbol) = observation["symbol"].as_str() {
+            used_symbols.insert(symbol);
+        }
+        if let Some(resource) = observation["resource"].as_str() {
             used_resources.insert(resource);
         }
     }

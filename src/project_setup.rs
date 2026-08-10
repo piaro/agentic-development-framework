@@ -561,10 +561,21 @@ fn binding_artifact_template(
             )
         })
         .collect::<BTreeSet<_>>();
+    let bound_resources = observations
+        .iter()
+        .filter(|observation| observation.kind != SourceObservationKind::OtherMethodCall)
+        .map(|observation| observation.resource.as_str())
+        .chain(
+            candidates
+                .iter()
+                .map(|candidate| candidate.resource.as_str()),
+        )
+        .collect::<BTreeSet<_>>();
     let relevant = observations
         .iter()
         .filter(|observation| {
             observation.kind != SourceObservationKind::OtherMethodCall
+                || bound_resources.contains(observation.resource.as_str())
                 || candidate_calls.contains(&(
                     observation.symbol.as_str(),
                     observation.resource.as_str(),
@@ -602,6 +613,12 @@ fn binding_artifact_template(
         .iter()
         .filter(|candidate| candidate.method_binding_required)
         .map(|candidate| candidate.binding_key.clone())
+        .chain(
+            relevant
+                .iter()
+                .filter(|observation| observation.kind == SourceObservationKind::OtherMethodCall)
+                .map(|observation| format!("{}.{}", observation.resource, observation.method)),
+        )
         .collect::<BTreeSet<_>>();
     let methods = method_keys
         .into_iter()
