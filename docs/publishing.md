@@ -41,14 +41,14 @@ step, or from a password manager, avoids that.
 
 | Where | Name | Value |
 |---|---|---|
-| Secret | `ADF_RELEASE_SIGNING_KEY_HEX` | the seed |
-| Variable | `ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX` | the public key |
-| Variable | `ADF_RELEASE_SOURCE_ID` | the name releases are signed as coming from, for example `remote:official` |
-| Variable | `ADF_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.2026-08` |
+| Secret | `AGENTIC_RELEASE_SIGNING_KEY_HEX` | the seed |
+| Variable | `AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX` | the public key |
+| Variable | `AGENTIC_RELEASE_SOURCE_ID` | the name releases are signed as coming from, for example `remote:official` |
+| Variable | `AGENTIC_RELEASE_SIGNER_KEY_ID` | the key's identifier, for example `framework.release.2026-08` |
 
-Both names are recorded in the framework lock and the trust store and compared
-as exact strings, so changing either one later breaks projects that already
-pinned them. Choose them once.
+The source ID and signer key ID are recorded in the framework lock and trust
+store and compared as exact strings. Changing either one later breaks projects
+that already pinned them, so choose them once.
 
 The key identifier should distinguish this key from the next one, because
 rotation means both exist in the trust store at the same time. A date or a

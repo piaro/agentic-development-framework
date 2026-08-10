@@ -26,8 +26,8 @@ jobs:
       contents: read
       id-token: write
     env:
-      ADF_RELEASE_SIGNING_KEY_HEX: ${{ secrets.ADF_RELEASE_SIGNING_KEY_HEX }}
-      ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
+      ADF_RELEASE_SIGNING_KEY_HEX: ${{ secrets.AGENTIC_RELEASE_SIGNING_KEY_HEX }}
+      ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX: ${{ vars.AGENTIC_RELEASE_SIGNING_PUBLIC_KEY_HEX }}
       ADF_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
       ADF_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
       ADF_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/framework
