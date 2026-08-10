@@ -1881,6 +1881,86 @@ fn project_observe_refuses_a_symlinked_draft_output() {
 }
 
 #[test]
+fn project_observe_offers_unclassified_methods_on_a_resource_with_a_builtin_effect() {
+    let project = TestProject::new();
+    fs::write(
+        project.root.join("src/place_order.py"),
+        "def place_order(order):\n    existing = orders.select()\n    orders.insert(order)\n    return existing\n",
+    )
+    .unwrap();
+    let draft_relative = ".adf/repository-observation.draft.yaml";
+    let observed = project.run(&[
+        "project",
+        "observe",
+        "--analysis-root",
+        "src",
+        "--output",
+        draft_relative,
+    ]);
+    assert_success(&observed);
+
+    let draft_path = project.root.join(draft_relative);
+    let mut draft = read_yaml(&draft_path);
+    let binding = draft["binding_artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|artifact| artifact["path"] == "src/place_order.py")
+        .unwrap();
+    assert!(binding["bindings"]["methods"]["orders.select"].is_object());
+    binding["bindings"] = json!({
+        "symbols": {
+            "place_order": {
+                "logical_ref": "operation.place-order",
+                "owner": "team.ordering",
+                "authority_ref": "decision.repository-bindings"
+            }
+        },
+        "resources": {
+            "orders": {
+                "logical_refs": {"data": "data.orders"},
+                "owner": "team.ordering",
+                "authority_ref": "decision.repository-bindings"
+            }
+        },
+        "methods": {
+            "orders.select": {
+                "fact_kinds": ["sensitive_data_access"],
+                "owner": "team.ordering",
+                "authority_ref": "decision.repository-bindings"
+            }
+        }
+    });
+    let publish_binding = draft["binding_artifacts"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|artifact| artifact["path"] == "src/publish_order.py")
+        .unwrap();
+    publish_binding["bindings"] = json!({
+        "symbols": {
+            "publish_order": {
+                "logical_ref": "operation.place-order",
+                "owner": "team.ordering",
+                "authority_ref": "decision.repository-bindings"
+            }
+        },
+        "resources": {
+            "order_events": {
+                "logical_refs": {"integration": "integration.order-events"},
+                "owner": "team.ordering",
+                "authority_ref": "decision.repository-bindings"
+            }
+        },
+        "methods": {}
+    });
+    write_yaml(&draft_path, &draft);
+
+    let validation = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert_success(&validation);
+}
+
+#[test]
 fn project_validates_and_promotes_a_reviewed_draft_safely() {
     let project = TestProject::new();
     fs::write(
