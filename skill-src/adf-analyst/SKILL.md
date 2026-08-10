@@ -38,6 +38,11 @@ Assess what the Change is intended to affect before relying on detected source c
 action receives the Change, compact repository and governance indexes, the built-in Signal
 Catalog, and up to three prior Impact Assessments.
 
+An explicit Contract verification scope selects existing behavior for Evidence work; it
+does not by itself declare a new application impact. Assess the Change intent honestly.
+For an Evidence-only Change, `no-impact` is valid after the same active check required for
+any other Change.
+
 For each intended effect, choose a Signal from `context.payload.signal_catalog` and copy
 its required binding names exactly. Record:
 

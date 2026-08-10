@@ -284,6 +284,7 @@ pub fn initialize_change(
     change_id: &str,
     title: &str,
     intent: &str,
+    verification_scope: &[String],
 ) -> Result<PathBuf, ProjectSetupError> {
     if !safe_prefixed_id(change_id, "change.") {
         return Err(setup_error(
@@ -315,13 +316,16 @@ pub fn initialize_change(
         .join(".adf/changes")
         .join(change_id)
         .join("change.yaml");
-    let value = json!({
+    let mut value = json!({
         "schema_version": "1",
         "id": change_id,
         "title": title,
         "intent": intent,
         "impact_assessment": "required",
     });
+    if !verification_scope.is_empty() {
+        value["verification_scope"] = json!(verification_scope);
+    }
     let yaml = serde_yaml::to_string(&value).map_err(|error| setup_error(error.to_string()))?;
     write_new(&path, yaml.as_bytes())?;
     Ok(path)

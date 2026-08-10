@@ -3841,6 +3841,45 @@ fn source_artifact_without_a_binding_record_blocks_the_project() {
 }
 
 #[test]
+fn change_init_records_explicit_contract_verification_scope() {
+    let project = TestProject::new();
+
+    let output = project.run(&[
+        "change",
+        "init",
+        "change.verify-orders",
+        "--title",
+        "Verify existing order behavior",
+        "--intent",
+        "Register reproducible evidence for existing behavior",
+        "--verify-clause",
+        "contract.order-lifecycle#orders-source-of-truth",
+        "--verify-clause",
+        "contract.order-lifecycle#order-created-once",
+    ]);
+
+    assert_success(&output);
+    let change = read_yaml(
+        &project
+            .root
+            .join(".adf/changes/change.verify-orders/change.yaml"),
+    );
+    assert_eq!(
+        change["verification_scope"],
+        json!([
+            "contract.order-lifecycle#orders-source-of-truth",
+            "contract.order-lifecycle#order-created-once"
+        ])
+    );
+    let schema: Value = serde_json::from_slice(
+        &fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("schemas/v1/change.schema.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    validate_json_document(&change, &schema).unwrap();
+}
+
+#[test]
 fn java_artifact_runs_through_the_real_project_loader() {
     assert_language_artifact_runs_through_real_loader(
         "src/OrderService.java",

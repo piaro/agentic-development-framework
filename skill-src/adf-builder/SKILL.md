@@ -54,6 +54,12 @@ Show that each requirement instance in the action actually holds. For each one, 
 - `summary`: what the evidence shows
 - `basis_refs`: the tests, probes, and artifacts you actually ran or read
 
+A Change may explicitly select existing Contract clauses for verification without
+changing product code. In that case, run or inspect a reproducible check for the exact
+selected clauses and register what it establishes. Do not invent implementation output
+or treat the absence of a code change as Evidence. A generic passing test is insufficient
+unless it exercises the behavior named by the clause.
+
 Evidence is traceable to a contract clause or it is not evidence. A mock does not
 demonstrate that a platform behaves as assumed, and a passing test that never exercised
 the path proves nothing about it. Where you could not establish the requirement, report

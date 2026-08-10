@@ -209,6 +209,22 @@ adf change init change.first-feature \
 adf next change.first-feature
 ```
 
+To verify behavior that already exists, select only the Contract clauses whose
+Evidence you will register:
+
+```sh
+adf change init change.verify-existing-orders \
+  --title "Verify existing order behavior" \
+  --intent "Register reproducible evidence for existing behavior" \
+  --verify-clause contract.order-lifecycle#orders-source-of-truth
+```
+
+The selected clauses enter the normal Evidence workflow even when they have not
+been verified before. Other unverified clauses do not block this Change. Existing
+behavior is not reported as a new implementation impact merely to select it for
+verification. Clauses whose `evidence_mode` is `review` remain human-review work
+and cannot be selected with this option.
+
 From here, `next` says what to do. Agents normally reach it over MCP:
 
 ```sh
@@ -363,7 +379,7 @@ distribution is a later compatibility milestone.
 | `project observe` | list what the detectors can see, for review |
 | `project validate-bindings` | report missing bindings and what cannot be checked |
 | `project promote-bindings` | make a reviewed draft the observation of record |
-| `change init` | start a change |
+| `change init` | start a change, optionally selecting existing Contract clauses to verify |
 | `next` | issue the next action |
 | `explain` | say why the change is where it is |
 | `execution-log` | aggregate Context size and any execution metrics already reported |

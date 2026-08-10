@@ -257,6 +257,30 @@ impl ThinKernel {
         instances.extend(applicability_reviews);
         if let Some(contract_health) = contract_health {
             instances.extend(contract_revalidation_instances(contract_health, &instances));
+            let explicit =
+                match explicit_contract_verification_instances(contract_health, &snapshot.change) {
+                    Ok(instances) => instances,
+                    Err(error) => return decision("invalid", None, instances, vec![error]),
+                };
+            for explicit_instance in explicit {
+                if let Some(existing) = instances
+                    .iter_mut()
+                    .find(|instance| instance.instance_key == explicit_instance.instance_key)
+                {
+                    existing.selected_by.extend(explicit_instance.selected_by);
+                    existing.selected_by.sort();
+                    existing.selected_by.dedup();
+                } else {
+                    instances.push(explicit_instance);
+                }
+            }
+        } else if !nested_array(&snapshot.change, &["verification_scope"]).is_empty() {
+            return decision(
+                "invalid",
+                None,
+                instances,
+                vec!["verification_scope requires Contract health evaluation".to_owned()],
+            );
         }
         instances.sort_by(|left, right| left.instance_key.cmp(&right.instance_key));
 
@@ -727,6 +751,33 @@ fn contract_revalidation_instances(
                 .any(|target| active_subjects.contains(target.as_str()))
         })
         .map(contract_revalidation_instance)
+        .collect()
+}
+
+fn explicit_contract_verification_instances(
+    contract_health: &ContractHealthReport,
+    change: &Value,
+) -> Result<Vec<RequirementInstance>, String> {
+    nested_array(change, &["verification_scope"])
+        .iter()
+        .filter_map(Value::as_str)
+        .map(|clause_ref| {
+            let clause = contract_health
+                .clauses
+                .iter()
+                .find(|clause| clause.clause_ref == clause_ref)
+                .ok_or_else(|| {
+                    format!("verification_scope references unknown Contract clause: {clause_ref}")
+                })?;
+            if clause.evidence_mode == "review" {
+                return Err(format!(
+                    "verification_scope cannot request Evidence for review-only Contract clause: {clause_ref}"
+                ));
+            }
+            let mut instance = contract_revalidation_instance(clause);
+            instance.selected_by = vec!["change.explicit-contract-verification-v1".to_owned()];
+            Ok(instance)
+        })
         .collect()
 }
 
@@ -2297,6 +2348,219 @@ mod tests {
         assert_eq!(instances[0].assurance, Assurance::EvidenceBacked);
         assert_eq!(
             instances[0].subject_refs,
+            ["contract.orders#persistence", "data.orders"]
+        );
+    }
+
+    #[test]
+    fn explicit_verification_selects_only_requested_unverified_clauses() {
+        let clause = |clause_ref: &str, target: &str| ClauseHealth {
+            contract_id: clause_ref.split('#').next().unwrap().to_owned(),
+            clause_id: clause_ref.split('#').nth(1).unwrap().to_owned(),
+            clause_ref: clause_ref.to_owned(),
+            text: "test clause".to_owned(),
+            applies_to: vec![target.to_owned()],
+            authority_ref: None,
+            evidence_mode: "direct".to_owned(),
+            status: "unverified".to_owned(),
+            evidence_refs: Vec::new(),
+            verification_result_ids: Vec::new(),
+            stale_refs: Vec::new(),
+        };
+        let health = ContractHealthReport {
+            schema_version: "1".to_owned(),
+            repository_revision: Some("revision.test".to_owned()),
+            summary: ContractHealthSummary {
+                total: 2,
+                verified: 0,
+                stale: 0,
+                unverified: 2,
+                failed: 0,
+                review: 0,
+            },
+            clauses: vec![
+                clause("contract.orders#persistence", "data.orders"),
+                clause("contract.orders#unrelated", "data.orders"),
+            ],
+        };
+        let change = json!({
+            "id": "change.verify-orders",
+            "verification_scope": ["contract.orders#persistence"]
+        });
+
+        let instances = explicit_contract_verification_instances(&health, &change).unwrap();
+
+        assert_eq!(instances.len(), 1);
+        assert_eq!(
+            instances[0].instance_key,
+            "contract-clause-revalidated|contract.orders#persistence"
+        );
+        assert_eq!(
+            instances[0].selected_by,
+            ["change.explicit-contract-verification-v1"]
+        );
+    }
+
+    #[test]
+    fn explicit_verification_rejects_unknown_clause_refs() {
+        let health = ContractHealthReport {
+            schema_version: "1".to_owned(),
+            repository_revision: Some("revision.test".to_owned()),
+            summary: ContractHealthSummary {
+                total: 0,
+                verified: 0,
+                stale: 0,
+                unverified: 0,
+                failed: 0,
+                review: 0,
+            },
+            clauses: Vec::new(),
+        };
+        let change = json!({
+            "id": "change.verify-orders",
+            "verification_scope": ["contract.orders#missing"]
+        });
+
+        let error = explicit_contract_verification_instances(&health, &change).unwrap_err();
+
+        assert_eq!(
+            error,
+            "verification_scope references unknown Contract clause: contract.orders#missing"
+        );
+    }
+
+    #[test]
+    fn explicit_verification_rejects_review_only_clauses() {
+        let health = ContractHealthReport {
+            schema_version: "1".to_owned(),
+            repository_revision: Some("revision.test".to_owned()),
+            summary: ContractHealthSummary {
+                total: 1,
+                verified: 0,
+                stale: 0,
+                unverified: 0,
+                failed: 0,
+                review: 1,
+            },
+            clauses: vec![ClauseHealth {
+                contract_id: "contract.orders".to_owned(),
+                clause_id: "approval".to_owned(),
+                clause_ref: "contract.orders#approval".to_owned(),
+                text: "orders receive human approval".to_owned(),
+                applies_to: vec!["data.orders".to_owned()],
+                authority_ref: None,
+                evidence_mode: "review".to_owned(),
+                status: "review".to_owned(),
+                evidence_refs: Vec::new(),
+                verification_result_ids: Vec::new(),
+                stale_refs: Vec::new(),
+            }],
+        };
+        let change = json!({
+            "id": "change.verify-orders",
+            "verification_scope": ["contract.orders#approval"]
+        });
+
+        let error = explicit_contract_verification_instances(&health, &change).unwrap_err();
+
+        assert_eq!(
+            error,
+            "verification_scope cannot request Evidence for review-only Contract clause: contract.orders#approval"
+        );
+    }
+
+    #[test]
+    fn explicit_verification_issues_evidence_action_for_post_build_repository() {
+        let change_digest = format!("sha256:{}", "1".repeat(64));
+        let snapshot = ProjectSnapshot {
+            change_id: "change.verify-orders".to_owned(),
+            change: json!({
+                "id": "change.verify-orders",
+                "impact_assessment": "required",
+                "verification_scope": ["contract.orders#persistence"]
+            }),
+            contracts: vec![json!({
+                "id": "contract.orders",
+                "applies_to": ["data.orders"],
+                "clauses": [{
+                    "id": "persistence",
+                    "text": "accepted orders persist"
+                }]
+            })],
+            decisions: Vec::new(),
+            results: vec![json!({
+                "id": "result.no-impact",
+                "result_schema": "result.impact-assessment",
+                "role": "Analyst",
+                "input_refs": {
+                    "change.verify-orders": change_digest
+                },
+                "payload": {
+                    "status": "no-impact",
+                    "impacts": [],
+                    "unknowns": []
+                }
+            })],
+            evidence: Vec::new(),
+            repository: json!({"phase": "post-build"}),
+            artifact_digests: BTreeMap::from([(
+                "change.verify-orders".to_owned(),
+                format!("sha256:{}", "1".repeat(64)),
+            )]),
+            digest: String::new(),
+        };
+        let health = ContractHealthReport {
+            schema_version: "1".to_owned(),
+            repository_revision: Some("revision.test".to_owned()),
+            summary: ContractHealthSummary {
+                total: 1,
+                verified: 0,
+                stale: 0,
+                unverified: 1,
+                failed: 0,
+                review: 0,
+            },
+            clauses: vec![ClauseHealth {
+                contract_id: "contract.orders".to_owned(),
+                clause_id: "persistence".to_owned(),
+                clause_ref: "contract.orders#persistence".to_owned(),
+                text: "accepted orders persist".to_owned(),
+                applies_to: vec!["data.orders".to_owned()],
+                authority_ref: None,
+                evidence_mode: "direct".to_owned(),
+                status: "unverified".to_owned(),
+                evidence_refs: Vec::new(),
+                verification_result_ids: Vec::new(),
+                stale_refs: Vec::new(),
+            }],
+        };
+        let rule_index = RuleIndex {
+            requirements: BTreeMap::new(),
+            rules: Vec::new(),
+            digest: String::new(),
+        };
+        let detection = DetectionReport {
+            change_id: "change.verify-orders".to_owned(),
+            coverage: DetectionCoverage {
+                status: "complete".to_owned(),
+                scope: "declared-artifacts".to_owned(),
+                analyzed_refs: Vec::new(),
+                gaps: Vec::new(),
+            },
+            candidates: Vec::new(),
+            digest: String::new(),
+        };
+
+        let decision =
+            ThinKernel.evaluate_with_health(&snapshot, &rule_index, &detection, Some(&health));
+
+        assert_eq!(decision.state, "needs-evidence");
+        let action = decision.action.unwrap();
+        assert_eq!(action.role, "Builder");
+        assert_eq!(action.action, "record-evidence");
+        assert_eq!(action.requirement_instances.len(), 1);
+        assert_eq!(
+            action.requirement_instances[0].subject_refs,
             ["contract.orders#persistence", "data.orders"]
         );
     }

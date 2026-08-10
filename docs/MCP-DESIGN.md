@@ -349,6 +349,8 @@ InputにはContract Recordと`expected_digest`を必須とし、条項単位で�
 | `implement-change` | Repository file変更。MCP外のworkspace操作 |
 | `record-evidence` | Evidence |
 
+Changeの`verification_scope`に指定した既存Contract条項は、未検証でも`record-evidence`の対象になる。この指定はImpact Assessmentの影響申告には変換しない。MCPは通常どおり`adf_next`でActionを発行し、`adf_add_evidence`と`adf_submit`で結果を受け付けるため、専用の書込みToolは追加しない。
+
 この対応はMCP handlerへ散在させず、Application protocolの固定tableとして一か所に置きます。
 未知Actionは書込みなしとしてfail closedに扱います。
 

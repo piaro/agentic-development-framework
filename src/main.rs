@@ -1353,6 +1353,7 @@ struct ChangeManagementCommand {
     change_id: String,
     title: String,
     intent: String,
+    verification_scope: Vec<String>,
 }
 
 fn parse_project_management_command(
@@ -1680,6 +1681,7 @@ fn parse_change_management_command(
     let mut project_root = PathBuf::from(".");
     let mut title = None;
     let mut intent = None;
+    let mut verification_scope = Vec::new();
     let mut index = 2;
     while index < arguments.len() {
         match arguments[index].as_str() {
@@ -1692,6 +1694,10 @@ fn parse_change_management_command(
             "--intent" => {
                 intent = Some(flag_value(arguments, &mut index, "--intent")?.to_owned());
             }
+            "--verify-clause" => {
+                verification_scope
+                    .push(flag_value(arguments, &mut index, "--verify-clause")?.to_owned());
+            }
             other => return Err(format!("unknown change init argument: {other}")),
         }
         index += 1;
@@ -1701,6 +1707,7 @@ fn parse_change_management_command(
         change_id,
         title: title.ok_or_else(|| "change init requires --title <title>".to_owned())?,
         intent: intent.ok_or_else(|| "change init requires --intent <intent>".to_owned())?,
+        verification_scope,
     })
 }
 
@@ -1710,6 +1717,7 @@ fn run_change_management_command(options: &ChangeManagementCommand) -> Result<St
         &options.change_id,
         &options.title,
         &options.intent,
+        &options.verification_scope,
     )
     .map_err(|error| error.to_string())?;
     Ok(format!(
@@ -2381,7 +2389,7 @@ usage:\n\
   adf project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
   adf project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\
   adf project promote-bindings --draft <path> [--project <root>]\n\
-  adf change init <change-id> --title <title> --intent <intent> [--project <root>]\n\
+  adf change init <change-id> --title <title> --intent <intent> [--verify-clause <contract#clause>]... [--project <root>]\n\
   adf <next|explain|execution-log> <change-id> [--project <root>] [--release <root>] [--format <text|json>] [--require-clean]\n\
   adf execution <begin|complete> <id> [options]\n\
   adf contract-health [--project <root>] [--release <root>] [--policy <path>] [--format <text|json>] [--require-clean]\n\
