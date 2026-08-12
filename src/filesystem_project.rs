@@ -316,6 +316,28 @@ impl<'a> FileProjectStore<'a> {
         self.write_new(&path, result, FileFormat::Json)
     }
 
+    pub fn replace_result(
+        &mut self,
+        result: &Value,
+        expected_result_id: &str,
+    ) -> Result<(), FileProjectError> {
+        self.schema_registry
+            .validate("result", result)
+            .map_err(|error| file_error(error.to_string()))?;
+        let change_id = safe_id(required_string(result, "change_id", "Result")?)?;
+        self.change_path(change_id)?;
+        let path = self
+            .change_root
+            .join(change_id)
+            .join("results")
+            .join(result_filename(result)?);
+        let existing = read_json(&path)?;
+        if existing["id"].as_str() != Some(expected_result_id) {
+            return Err(file_error("Result changed before correction"));
+        }
+        self.write_atomic(&path, result, FileFormat::Json)
+    }
+
     pub fn upsert_contract(
         &mut self,
         contract: &Value,
@@ -1044,6 +1066,15 @@ impl ProjectStore for FileProjectStore<'_> {
 
     fn append_result(&mut self, result: &Value) -> Result<(), ProjectStoreError> {
         FileProjectStore::append_result(self, result)
+            .map_err(|error| ProjectStoreError::new(error.to_string()))
+    }
+
+    fn replace_result(
+        &mut self,
+        result: &Value,
+        expected_result_id: &str,
+    ) -> Result<(), ProjectStoreError> {
+        FileProjectStore::replace_result(self, result, expected_result_id)
             .map_err(|error| ProjectStoreError::new(error.to_string()))
     }
 
