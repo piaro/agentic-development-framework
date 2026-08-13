@@ -30,8 +30,8 @@ test("renders the ADF landing page", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>Agentic Development Framework/);
-  assert.match(html, /AI agents should implement decisions/);
-  assert.match(html, /One change\. Three accountable roles\./);
+  assert.match(html, /Agents write code\./);
+  assert.match(html, /One change moves through three minds\./);
   assert.match(html, /Nothing existing is overwritten\./);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
@@ -44,12 +44,11 @@ test("includes accessible navigation and responsive safeguards", async () => {
   ]);
 
   assert.match(page, /aria-label="Main navigation"/);
-  assert.match(page, /id="problem"/);
-  assert.match(page, /id="workflow"/);
-  assert.match(page, /id="guarantees"/);
+  assert.match(page, /id="idea"/);
+  assert.match(page, /id="process"/);
   assert.match(page, /id="start"/);
   assert.match(css, /@media \(max-width: 700px\)/);
   assert.match(css, /overflow-wrap: anywhere/);
   assert.match(css, /prefers-reduced-motion: reduce/);
-  assert.match(layout, /themeColor: "#0d1516"/);
+  assert.match(layout, /themeColor: "#f4f2ec"/);
 });
