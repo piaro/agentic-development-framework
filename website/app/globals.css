@@ -14,7 +14,7 @@
 
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; scroll-padding-top: 80px; }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-sans); font-kerning: normal; font-optical-sizing: auto; text-rendering: optimizeLegibility; -webkit-font-smoothing: antialiased; }
 a { color: inherit; text-decoration: none; }
 a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .page-width { width: min(1180px, calc(100% - 48px)); margin-inline: auto; }
@@ -24,7 +24,7 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
   align-items: center; min-height: 64px; padding: 0 max(24px, calc((100vw - 1180px) / 2));
   border-bottom: 1px solid rgba(17,17,15,.15); background: rgba(244,242,236,.93); backdrop-filter: blur(14px);
 }
-.wordmark { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: -.04em; }
+.wordmark { font-family: var(--font-mono); font-size: 13px; font-weight: 700; letter-spacing: 0; }
 .masthead nav { display: flex; gap: 30px; color: var(--muted); font-size: 12px; }
 .masthead nav a:hover, .github-link:hover { color: var(--red); }
 .github-link { justify-self: end; font-size: 12px; font-weight: 600; }
@@ -34,7 +34,7 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
   font-family: var(--font-mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
 }
 .kicker { margin: 0 0 34px; color: var(--red); }
-.hero h1 { max-width: 1050px; margin: 0; font-size: clamp(60px, 9vw, 130px); font-weight: 520; line-height: .91; letter-spacing: -.075em; }
+.hero h1 { max-width: 1120px; margin: 0; font-size: clamp(56px, 8.3vw, 118px); font-weight: 520; line-height: .98; letter-spacing: -.025em; }
 .hero h1 span { color: var(--muted); }
 .hero-bottom { display: grid; grid-template-columns: minmax(0, 520px) auto; gap: 60px; align-items: end; justify-content: space-between; margin-top: 58px; padding-top: 22px; border-top: 1px solid var(--line); }
 .hero-bottom p { margin: 0; color: var(--muted); font-size: 17px; line-height: 1.7; }
@@ -44,7 +44,7 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .decision-scene { padding-block: 130px 150px; border-top: 1px solid var(--ink); }
 .scene-question { max-width: 850px; }
 .scene-label { margin: 0 0 20px; color: var(--muted); }
-blockquote { margin: 0; font-size: clamp(38px, 5.5vw, 70px); font-weight: 500; line-height: 1.05; letter-spacing: -.055em; }
+blockquote { margin: 0; font-size: clamp(38px, 5.2vw, 66px); font-weight: 500; line-height: 1.1; letter-spacing: -.018em; }
 .fork { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; margin-top: 90px; }
 .fork-line { position: absolute; top: 17px; right: 11%; left: 11%; height: 1px; background: var(--line); }
 .fork-node { position: relative; padding-top: 58px; }
@@ -60,14 +60,14 @@ blockquote { margin: 0; font-size: clamp(38px, 5.5vw, 70px); font-weight: 500; l
 
 .manifesto, .process-intro { display: grid; grid-template-columns: 100px 1fr; gap: 35px; padding-top: 130px; border-top: 1px solid var(--ink); }
 .section-number { margin: 6px 0 0; color: var(--red); }
-h2 { margin: 0; font-size: clamp(43px, 6vw, 76px); font-weight: 530; line-height: 1; letter-spacing: -.06em; }
-.large-copy { max-width: 860px; margin: 35px 0 0; color: var(--muted); font-size: clamp(22px, 3vw, 35px); line-height: 1.35; letter-spacing: -.035em; }
+h2 { margin: 0; font-size: clamp(43px, 5.7vw, 72px); font-weight: 530; line-height: 1.06; letter-spacing: -.022em; }
+.large-copy { max-width: 860px; margin: 35px 0 0; color: var(--muted); font-size: clamp(22px, 3vw, 35px); line-height: 1.42; letter-spacing: -.012em; }
 
 .contract-example { margin-top: 100px; margin-bottom: 150px; border: 1px solid var(--ink); background: var(--white); }
 .contract-header { display: flex; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--line); color: var(--muted); }
 .accepted { color: var(--green); }
 .accepted::before { content: "● "; }
-.clause { max-width: 850px; margin: 0; padding: clamp(45px, 8vw, 100px) clamp(24px, 7vw, 80px); font-size: clamp(34px, 5vw, 64px); font-weight: 500; line-height: 1.08; letter-spacing: -.055em; }
+.clause { max-width: 900px; margin: 0; padding: clamp(45px, 8vw, 100px) clamp(24px, 7vw, 80px); font-size: clamp(34px, 4.8vw, 60px); font-weight: 500; line-height: 1.14; letter-spacing: -.018em; }
 .contract-example dl { display: grid; grid-template-columns: repeat(3, 1fr); margin: 0; border-top: 1px solid var(--line); }
 .contract-example dl div { min-width: 0; padding: 18px 20px; border-right: 1px solid var(--line); }
 .contract-example dl div:last-child { border: 0; }
@@ -80,7 +80,7 @@ dd { overflow-wrap: anywhere; margin: 8px 0 0; font-family: var(--font-mono); fo
 .process-line::before { position: absolute; top: 24px; right: 16%; left: 16%; height: 1px; background: var(--line); content: ""; }
 .process-line li { position: relative; text-align: center; }
 .process-index { position: relative; z-index: 1; display: grid; width: 48px; height: 48px; margin: 0 auto 32px; place-items: center; border: 1px solid var(--ink); border-radius: 50%; background: var(--paper); font-family: var(--font-mono); font-size: 9px; }
-.process-line h3 { margin: 0; font-size: 24px; font-weight: 560; letter-spacing: -.035em; }
+.process-line h3 { margin: 0; font-size: 24px; font-weight: 560; letter-spacing: -.01em; }
 .process-line p { max-width: 270px; margin: 12px auto 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
 
 .principles { padding-block: 150px; background: var(--ink); color: var(--paper); }
@@ -90,7 +90,7 @@ dd { overflow-wrap: anywhere; margin: 8px 0 0; font-family: var(--font-mono); fo
 .principle-list { border-top: 1px solid #56564f; }
 .principle-list article { padding: 24px 0 30px; border-bottom: 1px solid #56564f; }
 .principle-list span { color: #ff725e; }
-.principle-list h3 { margin: 16px 0 8px; font-size: 20px; font-weight: 520; letter-spacing: -.025em; }
+.principle-list h3 { margin: 16px 0 8px; font-size: 20px; font-weight: 520; letter-spacing: -.008em; }
 .principle-list p { margin: 0; color: #a8a69e; font-size: 13px; line-height: 1.65; }
 
 .start { display: grid; grid-template-columns: .9fr 1.1fr; gap: 100px; padding-block: 150px; }
@@ -122,7 +122,7 @@ dd { overflow-wrap: anywhere; margin: 8px 0 0; font-family: var(--font-mono); fo
   .masthead { grid-template-columns: 1fr auto; min-height: 60px; padding-inline: 15px; }
   .masthead nav { display: none; }
   .hero { padding-block: 80px 75px; }
-  .hero h1 { font-size: clamp(53px, 16vw, 75px); }
+  .hero h1 { font-size: clamp(50px, 15vw, 70px); line-height: 1.01; letter-spacing: -.02em; }
   .hero-bottom { grid-template-columns: 1fr; gap: 24px; margin-top: 42px; }
   .decision-scene { padding-block: 85px 100px; }
   .fork { grid-template-columns: 1fr; gap: 32px; margin-top: 65px; }
