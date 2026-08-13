@@ -45,15 +45,25 @@ a:focus-visible { outline: 2px solid var(--red); outline-offset: 4px; }
 .scene-question { max-width: 850px; }
 .scene-label { margin: 0 0 20px; color: var(--muted); }
 blockquote { margin: 0; font-size: clamp(38px, 5.2vw, 66px); font-weight: 500; line-height: 1.1; letter-spacing: -.018em; }
-.fork { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 40px; margin-top: 90px; }
-.fork-line { position: absolute; top: 17px; right: 11%; left: 11%; height: 1px; background: var(--line); }
-.fork-node { position: relative; padding-top: 58px; }
-.fork-node::before { position: absolute; z-index: 1; top: 7px; left: 0; width: 21px; height: 21px; border: 1px solid var(--ink); border-radius: 50%; background: var(--paper); content: ""; }
-.gap-node::before { top: 0; width: 35px; height: 35px; border-color: var(--red); background: var(--red); }
-.answer-node::before { background: var(--ink); }
-.fork-node small { display: block; margin-bottom: 9px; color: var(--muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; text-transform: uppercase; }
-.fork-node strong { display: block; max-width: 210px; font-size: 15px; font-weight: 560; line-height: 1.35; }
-.gap-node strong { color: var(--red); }
+.flow-comparison { margin-top: 90px; border-top: 1px solid var(--ink); }
+.flow-row { display: grid; grid-template-columns: 180px minmax(0, 1fr); gap: 42px; padding-block: 38px; border-bottom: 1px solid var(--line); }
+.flow-name span { display: block; margin-bottom: 10px; font-family: var(--font-mono); font-size: 15px; font-weight: 650; text-transform: uppercase; }
+.flow-name p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.without-flow .flow-name span { color: var(--muted); }
+.with-flow .flow-name span { color: var(--red); }
+.flow-track { display: flex; align-items: flex-start; min-width: 0; }
+.flow-step { flex: 1 1 0; min-width: 0; }
+.flow-step i { display: grid; width: 28px; height: 28px; margin-bottom: 18px; place-items: center; border: 1px solid var(--ink); border-radius: 50%; background: var(--paper); font-family: var(--font-mono); font-size: 13px; font-style: normal; font-weight: 700; }
+.flow-step small { display: block; margin-bottom: 8px; color: var(--muted); font-family: var(--font-mono); font-size: 12px; letter-spacing: .03em; line-height: 1.3; text-transform: uppercase; }
+.flow-step strong { display: block; max-width: 180px; font-size: 15px; font-weight: 560; line-height: 1.4; }
+.flow-arrow { flex: 0 0 28px; margin: 5px 12px 0; color: var(--line); font-size: 18px; text-align: center; }
+.assumption-step i { border-style: dashed; color: var(--muted); }
+.assumption-step small, .assumption-step strong { color: var(--muted); }
+.stop-step i { border-color: var(--red); background: var(--red); color: var(--paper); }
+.stop-step small, .stop-step strong { color: var(--red); }
+.decision-step i { background: var(--ink); }
+.contract-step i { border-color: var(--green); background: var(--green); }
+.with-flow .flow-arrow { color: var(--red); }
 .scene-conclusion { display: grid; grid-template-columns: 1fr 1fr; gap: 80px; margin-top: 80px; padding-top: 25px; border-top: 1px solid var(--line); }
 .scene-conclusion p { margin: 0; color: var(--muted); font-size: 16px; line-height: 1.7; }
 .scene-conclusion p:last-child { color: var(--ink); }
@@ -121,8 +131,9 @@ dd { overflow-wrap: anywhere; margin: 8px 0 0; font-family: var(--font-mono); fo
 .footer a:hover { color: var(--red); }
 
 @media (max-width: 900px) {
-  .fork { grid-template-columns: 1fr 1fr; gap: 55px; }
-  .fork-line { display: none; }
+  .flow-row { grid-template-columns: 1fr; gap: 28px; }
+  .flow-track { overflow-x: auto; padding-bottom: 12px; }
+  .flow-step { flex-basis: 150px; min-width: 150px; }
   .principles-inner { grid-template-columns: 70px 1fr; }
   .principle-list { grid-column: 2; margin-top: 30px; }
   .start { grid-template-columns: 1fr; gap: 70px; }
@@ -136,9 +147,14 @@ dd { overflow-wrap: anywhere; margin: 8px 0 0; font-family: var(--font-mono); fo
   .hero h1 { font-size: clamp(50px, 15vw, 70px); line-height: 1.01; letter-spacing: -.02em; }
   .hero-bottom { grid-template-columns: 1fr; gap: 24px; margin-top: 42px; }
   .decision-scene { padding-block: 85px 100px; }
-  .fork { grid-template-columns: 1fr; gap: 32px; margin-top: 65px; }
-  .fork-node { padding: 0 0 0 50px; }
-  .fork-node::before, .gap-node::before { top: 0; left: 0; }
+  .flow-comparison { margin-top: 65px; }
+  .flow-row { padding-block: 30px; }
+  .flow-track { display: grid; grid-template-columns: 34px 1fr; gap: 0 16px; overflow: visible; padding-bottom: 0; }
+  .flow-step { display: grid; grid-column: 1 / -1; grid-template-columns: 34px 1fr; column-gap: 16px; min-width: 0; padding-bottom: 4px; }
+  .flow-step i { grid-row: 1 / 3; width: 28px; height: 28px; margin: 0; }
+  .flow-step small { margin: 0 0 6px; }
+  .flow-step strong { max-width: none; padding-bottom: 20px; }
+  .flow-arrow { grid-column: 1; height: 24px; margin: 0; transform: rotate(90deg); text-align: center; }
   .scene-conclusion { grid-template-columns: 1fr; gap: 24px; margin-top: 55px; }
   .manifesto, .process-intro { grid-template-columns: 1fr; gap: 24px; padding-top: 90px; }
   .contract-examples { margin-top: 65px; margin-bottom: 100px; }

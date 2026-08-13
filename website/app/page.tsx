@@ -50,34 +50,80 @@ export default function Home() {
           <blockquote>“Delete the task and its attachments.”</blockquote>
         </div>
 
-        <div className="fork" role="img" aria-label="A request reaches a missing product decision, which must be answered by a person before implementation continues">
-          <div className="fork-line" aria-hidden="true" />
-          <div className="fork-node request-node">
-            <small>Request</small>
-            <strong>Delete task</strong>
+        <div className="flow-comparison" aria-label="How the same request proceeds without and with ADF">
+          <div className="flow-row without-flow">
+            <div className="flow-name">
+              <span>Without ADF</span>
+              <p>The agent silently fills the gap.</p>
+            </div>
+            <div className="flow-track" role="img" aria-label="Without ADF: request, hidden assumption, implementation">
+              <div className="flow-step request-step">
+                <i aria-hidden="true" />
+                <small>Request</small>
+                <strong>Delete task</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step assumption-step">
+                <i aria-hidden="true">?</i>
+                <small>Hidden assumption</small>
+                <strong>Attachments should be deleted</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step implementation-step">
+                <i aria-hidden="true" />
+                <small>Implementation</small>
+                <strong>Code ships with no recorded decision</strong>
+              </div>
+            </div>
           </div>
-          <div className="fork-node gap-node">
-            <small>Missing rule</small>
-            <strong>What happens to attachments?</strong>
-          </div>
-          <div className="fork-node answer-node">
-            <small>Human decision</small>
-            <strong>Delete them with the task</strong>
-          </div>
-          <div className="fork-node code-node">
-            <small>Implementation</small>
-            <strong>Now the agent can build</strong>
+
+          <div className="flow-row with-flow">
+            <div className="flow-name">
+              <span>With ADF</span>
+              <p>The missing rule becomes visible.</p>
+            </div>
+            <div className="flow-track" role="img" aria-label="With ADF: request, stop at missing rule, human decision, contract, implementation">
+              <div className="flow-step request-step">
+                <i aria-hidden="true" />
+                <small>Request</small>
+                <strong>Delete task</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step stop-step">
+                <i aria-hidden="true">!</i>
+                <small>Stop</small>
+                <strong>What happens to attachments?</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step decision-step">
+                <i aria-hidden="true" />
+                <small>Human decision</small>
+                <strong>Delete them with the task</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step contract-step">
+                <i aria-hidden="true" />
+                <small>Contract</small>
+                <strong>Rule and evidence are recorded</strong>
+              </div>
+              <span className="flow-arrow" aria-hidden="true">→</span>
+              <div className="flow-step implementation-step">
+                <i aria-hidden="true" />
+                <small>Implementation</small>
+                <strong>The agent builds against the rule</strong>
+              </div>
+            </div>
           </div>
         </div>
 
         <div className="scene-conclusion">
           <p>
-            Without ADF, the middle step disappears. The agent makes a plausible
-            choice, and a product decision hides inside the diff.
+            Without ADF, the assumption looks like implementation detail. No one
+            reviews it as a product decision, and the next agent may decide differently.
           </p>
           <p>
-            With ADF, the gap stops the work. A person decides. The answer becomes
-            a durable contract with evidence behind it.
+            With ADF, the same gap becomes explicit work. A person decides once;
+            the Contract governs every change that follows.
           </p>
         </div>
       </section>

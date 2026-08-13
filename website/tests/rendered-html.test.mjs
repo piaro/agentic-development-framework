@@ -31,6 +31,10 @@ test("renders the ADF landing page", async () => {
   const html = await response.text();
   assert.match(html, /<title>Agentic Development Framework/);
   assert.match(html, /Agents write code\./);
+  assert.match(html, /Without ADF/);
+  assert.match(html, /With ADF/);
+  assert.match(html, /Hidden assumption/);
+  assert.match(html, /Rule and evidence are recorded/);
   assert.match(html, /One change moves through three minds\./);
   assert.match(html, /Production customer data never leaves approved systems\./);
   assert.match(html, /Retrying a payment capture never charges the customer twice\./);
