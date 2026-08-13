@@ -94,26 +94,95 @@ export default function Home() {
         </div>
       </section>
 
-      <section className="contract-example page-width" aria-label="Example ADF contract">
-        <div className="contract-header">
-          <span>contract.task-lifecycle</span>
-          <span className="accepted">accepted</span>
+      <section className="contract-examples page-width" aria-labelledby="contract-examples-title">
+        <div className="examples-intro">
+          <p id="contract-examples-title">Contracts at different scopes</p>
+          <p>
+            A contract is not limited to one feature. The same shape can hold a
+            system-wide boundary, a data invariant, or the exact behavior of one
+            operation.
+          </p>
         </div>
-        <p className="clause">No attachment outlives its parent task.</p>
-        <dl>
-          <div>
-            <dt>Authority</dt>
-            <dd>decision.task-deletion</dd>
+
+        <article className="contract-example featured-contract">
+          <div className="contract-header">
+            <span>Data · contract.task-lifecycle</span>
+            <span className="accepted">accepted</span>
           </div>
-          <div>
-            <dt>Evidence</dt>
-            <dd>test_delete_cascades</dd>
-          </div>
-          <div>
-            <dt>Applies to</dt>
-            <dd>Every future change</dd>
-          </div>
-        </dl>
+          <p className="clause">No attachment outlives its parent task.</p>
+          <dl>
+            <div>
+              <dt>Authority</dt>
+              <dd>decision.task-deletion</dd>
+            </div>
+            <div>
+              <dt>Evidence</dt>
+              <dd>test_delete_cascades</dd>
+            </div>
+            <div>
+              <dt>Governs</dt>
+              <dd>Every task deletion</dd>
+            </div>
+          </dl>
+        </article>
+
+        <div className="contract-list">
+          <article className="compact-contract">
+            <div className="contract-kind">
+              <span>Project</span>
+              <span>01</span>
+            </div>
+            <div className="compact-content">
+              <h3>Production customer data never leaves approved systems.</h3>
+              <dl>
+                <div><dt>Authority</dt><dd>policy.data-handling</dd></div>
+                <div><dt>Evidence</dt><dd>audit_external_boundaries</dd></div>
+              </dl>
+            </div>
+          </article>
+
+          <article className="compact-contract">
+            <div className="contract-kind">
+              <span>Data</span>
+              <span>02</span>
+            </div>
+            <div className="compact-content">
+              <h3>An order total always equals its line items after discounts.</h3>
+              <dl>
+                <div><dt>Authority</dt><dd>decision.order-total</dd></div>
+                <div><dt>Evidence</dt><dd>property_order_total</dd></div>
+              </dl>
+            </div>
+          </article>
+
+          <article className="compact-contract">
+            <div className="contract-kind">
+              <span>Operation</span>
+              <span>03</span>
+            </div>
+            <div className="compact-content">
+              <h3>Retrying a payment capture never charges the customer twice.</h3>
+              <dl>
+                <div><dt>Authority</dt><dd>decision.payment-retry</dd></div>
+                <div><dt>Evidence</dt><dd>test_capture_idempotent</dd></div>
+              </dl>
+            </div>
+          </article>
+
+          <article className="compact-contract">
+            <div className="contract-kind">
+              <span>Feature</span>
+              <span>04</span>
+            </div>
+            <div className="compact-content">
+              <h3>Every completed export records who exported what and when.</h3>
+              <dl>
+                <div><dt>Authority</dt><dd>request.audited-exports</dd></div>
+                <div><dt>Evidence</dt><dd>test_export_audit_event</dd></div>
+              </dl>
+            </div>
+          </article>
+        </div>
       </section>
 
       <section className="process page-width" id="process">

@@ -32,6 +32,9 @@ test("renders the ADF landing page", async () => {
   assert.match(html, /<title>Agentic Development Framework/);
   assert.match(html, /Agents write code\./);
   assert.match(html, /One change moves through three minds\./);
+  assert.match(html, /Production customer data never leaves approved systems\./);
+  assert.match(html, /Retrying a payment capture never charges the customer twice\./);
+  assert.match(html, /Every completed export records who exported what and when\./);
   assert.match(html, /Nothing existing is overwritten\./);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/);
 });
