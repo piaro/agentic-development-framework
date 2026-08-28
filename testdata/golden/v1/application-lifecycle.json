@@ -45,7 +45,7 @@
       },
       "expected": {
         "state": "needs-analysis",
-        "snapshot_digest": "sha256:66774998bdeae6452e45bdf849a2fbc4af118343b7bf006c441447685b9c7127",
+        "snapshot_digest": "sha256:1e28e7b4cddd6ed627a5d1d46c07ace87973f029c1cfd4bc4bfe415927d6dadd",
         "decision_digest": "sha256:2814ecde0e19b165a898fbb193405ba702ceb802b01a66609f616e26e174598a",
         "context_digest": "sha256:75e91d7eb73e0f8691f3913d8360c9c93b6097e1e30bc54d4b89d5792f4292d9",
         "action": {
@@ -82,7 +82,7 @@
       },
       "expected": {
         "state": "needs-analysis",
-        "snapshot_digest": "sha256:625bc8f0e802f7818b658f8b9500cb0b9627d52b4991fbfc35cb4c93e2d1c07d",
+        "snapshot_digest": "sha256:2c7d9d84beb9a17b30e23560de829035653f4663dea3dee681b8b8bb1aa67e10",
         "decision_digest": "sha256:c636e6c901e7d03d4ecfc15466b20d42915c94ed6a25bcff51397c951ddabdef",
         "context_digest": "sha256:70098bacdfff3dedc08b45ee047a45dae7a4408492109b4f565e463384af5760",
         "action": {
@@ -130,9 +130,9 @@
       },
       "expected": {
         "state": "needs-human-decision",
-        "snapshot_digest": "sha256:e1268b670bb4d8635b605f502560f773e4eb67acd2d23ed5a2e7228ac2731acf",
+        "snapshot_digest": "sha256:16ebb64f6dcd54e7d009aa75af9cd8d0646e89ebfa4f177ab3313de04b5cf6b3",
         "decision_digest": "sha256:24e7524bd51513fbf2fb7847872bebfdc53644f09cf3eed08cfc493b33357c17",
-        "context_digest": "sha256:476bbbb14788c348877a6ddb1d2c29b4bde24bbbd8f8c45ada4825ba8335023c",
+        "context_digest": "sha256:8387eddb8793766b3ffd55250c736f8b3f8bafc52265ce987bf6a83b6001009b",
         "action": {
           "id": "action.a5ce67b153296089",
           "role": "Human",
@@ -158,7 +158,7 @@
       },
       "expected": {
         "state": "needs-decision-recording",
-        "snapshot_digest": "sha256:07c92cba81d720a1d1d6ff92a1433ef6ef5f64193544510e955b75c187c440b3",
+        "snapshot_digest": "sha256:54699b9dced62afc8fc4bb29ce17b80d538fb2e05aa7cc7bb0c2e022d8b4aab2",
         "decision_digest": "sha256:02e2b277ab04a943475bf08deb7c0b315b18031f0031b3b6a00fa97193170a56",
         "context_digest": "sha256:d05a49c64e7aa6a3abd48f9a6bf0a06944486baf47b792a969b2f520b5a81156",
         "action": {
@@ -232,7 +232,7 @@
       },
       "expected": {
         "state": "needs-analysis",
-        "snapshot_digest": "sha256:bd46cb99f41db5a5b38e173e3efec3900854b60396d4c93156994ea75e411fef",
+        "snapshot_digest": "sha256:342856dd9ba81d252c47431f9d6fb18250c64813062606e1094c295272888052",
         "decision_digest": "sha256:364a72f2e5dbb25d916363e634c17b93f9c9492db631cb8909779f8d3b767ec6",
         "context_digest": "sha256:3a208e7520fef34f088147d6102dae626d59061d2317d4a46c0828533dea3e90",
         "action": {
@@ -270,9 +270,9 @@
       },
       "expected": {
         "state": "needs-pre-build-challenge",
-        "snapshot_digest": "sha256:78a06f3334587a3e3b6709bb51824641ef9621455a44fb3f4be6f6076def9443",
+        "snapshot_digest": "sha256:76a53476329876594ac1e57bdf3fa269d02cb4745ab34c38efc646da47a881f4",
         "decision_digest": "sha256:9bc33fdf3e13253e90b76b088d90f0a29b410f0c22087f40fc460ae099c1478b",
-        "context_digest": "sha256:ec4789c7172c705e022e2f0d56edc180efb12ffa92876ae8cb18eb2231a7f026",
+        "context_digest": "sha256:23939b1d9e1d4873f462bb4a56e46a15d600cd34c8929aa62277cb56aa93b2ce",
         "action": {
           "id": "action.921c56f3ffbf5770",
           "role": "Challenger",
@@ -300,7 +300,7 @@
                 "contract.order-lifecycle",
                 "decision.order-model",
                 "decision.submission-result",
-                "result.3cfe35a1e43a1d7a775a"
+                "result.e3e118c2ab0b5cd05f2c"
               ]
             }
           ]
@@ -309,9 +309,9 @@
       },
       "expected": {
         "state": "ready-to-build",
-        "snapshot_digest": "sha256:6d5f2aacf1cf6c90ab445ffc437cac8cbc9fbe7b1a7e45f716991574ee607d69",
+        "snapshot_digest": "sha256:befdc5803c17aef78a59959d3a4be8fc5916f39e25f42166a0f7b1772d52635d",
         "decision_digest": "sha256:3862850773dbcd7802438b962d6de98fb5a5d22b8f711910a016508e4b887b37",
-        "context_digest": "sha256:7a641c88833beb3d489a04aeaf31ef7e1af9a69a53ef80e961b57fd432be8d3f",
+        "context_digest": "sha256:9a4472a4f0ba86548d370da57a454b21bebab5213b685811ec6e17ff89338cc2",
         "action": {
           "id": "action.7298bff69acdb1bb",
           "role": "Builder",
@@ -378,7 +378,7 @@
       },
       "expected": {
         "state": "needs-evidence",
-        "snapshot_digest": "sha256:d146847cb379da47d246667dbece3ab2a6fa047dadc3cce9cc3639364f3897c9",
+        "snapshot_digest": "sha256:80159d0b5747a3f9cbf97060151a204a1c024ceb3766d9d94c5147295ab0a28d",
         "decision_digest": "sha256:ef016dcf47bdeaf98f359cc2710a53029d61afef4b82d094db8d3a4de6fb0c9c",
         "context_digest": "sha256:fc3e1266bab751b975ffc8a94f16d420e4a908e758179aef536b5eba446e6a23",
         "action": {
@@ -414,9 +414,9 @@
       },
       "expected": {
         "state": "needs-post-build-challenge",
-        "snapshot_digest": "sha256:7c9c246cb3522b80068f52e21d022ced1676820138d7b92338da5dad02657102",
+        "snapshot_digest": "sha256:fba65f54886a31c85b97b1cd66a797d5ae927a5604745f576fe13459444eaa80",
         "decision_digest": "sha256:fbfcbb20f73c0a40e2bfe55b47d206f65080782498f00b6d72f4fe3324488158",
-        "context_digest": "sha256:5fea6c0ac61f8422506f2c111c618580ee1f7dd7e97ca45b5d8c37fff839ecba",
+        "context_digest": "sha256:1aaae51fbc10eb65f658c5acc29135c1e5902402d47bc3f098645dd1efc4dce2",
         "action": {
           "id": "action.d6bb346ee05b334a",
           "role": "Challenger",
@@ -450,7 +450,7 @@
       },
       "expected": {
         "state": "ready-to-merge",
-        "snapshot_digest": "sha256:c56600597231c8df333e9ce95c948ec832707bfb0873613f730cb3d32ce92bff",
+        "snapshot_digest": "sha256:c93bf566a3b4ed0b4a06b9a515dd943e501393fae7ec04278b505ea0e57cdd0c",
         "decision_digest": "sha256:54fb70bae7c14cdabf787da5f34f7083a9d323c76ac735cd2294e1eaa03e0864",
         "context_digest": null,
         "action": null

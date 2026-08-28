@@ -22,8 +22,8 @@
       "candidate_count": 3,
       "requirement_count": 4,
       "authority_statuses": [],
-      "report_digest": "sha256:ab476b3471f5bcf2f58fd5d4977f88c02330dd8ac8620dea9195402c91193095",
-      "text_digest": "sha256:fed2ba599a3a0620da9b0170040cb01d8b4f6440ab8f6c8022c834826800b616"
+      "report_digest": "sha256:2c8d010c5cfaf874e1c7cf4e42fe521aa032ff61b3d1f0dbc926d20877162364",
+      "text_digest": "sha256:a79cf9e52491d4980ad715abd795b930528dd81c9499d5f71c59b85fd095c397"
     },
     {
       "label": "after-step-1",
@@ -32,8 +32,8 @@
       "candidate_count": 3,
       "requirement_count": 4,
       "authority_statuses": [],
-      "report_digest": "sha256:104aca64be8ec3f8471ad1c6a7b844b696e3a15ebf889e28370b6ae918110298",
-      "text_digest": "sha256:dcb1c08593867074e5ad0bbe0b6d98ce239968de2aaac64c2d50e63fe5327763"
+      "report_digest": "sha256:56cb320ae89f8af637c0e39ab07333a4dbdc3df72723a09e3a22974f9a9e5df0",
+      "text_digest": "sha256:c642612a61b686b61d14f7ab5f56ddcdaced7ccfb17cf306e9a371f3b5ad284f"
     },
     {
       "label": "after-step-2",
@@ -44,8 +44,8 @@
       "authority_statuses": [
         "open"
       ],
-      "report_digest": "sha256:ed5b2ed299c1747aaea8e891fc25f7c0bacc300ea14d41ff5e2c639e05b1b9a3",
-      "text_digest": "sha256:acd286f676a8a1f839f207ddb3c9d27f86bdf26aa73a0dbdd76423974a6055e9"
+      "report_digest": "sha256:300e02c486ad79dc7690e5b9486c3d34bf8f7573528410acfdb29c809c7d3e2a",
+      "text_digest": "sha256:28064a6af6cb8fb6db698e3baeac0c55f3dc62cff31d3e8b0b7d3c2181641134"
     },
     {
       "label": "after-step-3",
@@ -56,8 +56,8 @@
       "authority_statuses": [
         "answered-not-recorded"
       ],
-      "report_digest": "sha256:e6ad89ae87eb5beb9e5eee3a2cbe80486ac41e9619a03e89252a7086fed19502",
-      "text_digest": "sha256:022377e2392eefe1698b130804dd92aa2d11e0dc94a1561325aec24586b49c94"
+      "report_digest": "sha256:baff42c6316f921807fe2cfcf7cd06c920d88aa0ce158f73b0571657ae41c4bf",
+      "text_digest": "sha256:a879637efa53d1e80134929138b1d3823592c0e4e3079fcdba79ee874dc18f79"
     },
     {
       "label": "after-step-4",
@@ -68,8 +68,8 @@
       "authority_statuses": [
         "answered-not-recorded"
       ],
-      "report_digest": "sha256:3e39f4b0c8938fff8ca916349968c1b95fd22631dbfd11c8f2885fed68abd53f",
-      "text_digest": "sha256:5a425163f8f529c6f4ef537349acf8ed4dd443cbd8eb3eba8fff87be3f677067"
+      "report_digest": "sha256:ff6f67a91cb488aefd92cedc45d55dc00f48b71523b015ca20ca00ad25e92031",
+      "text_digest": "sha256:86105acc27cd0f034a5dc88384d2dfe28eee2a6cc667e4a5aca9d425d7ee8642"
     },
     {
       "label": "after-step-5",
@@ -80,8 +80,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:0470d3b4964b693339e05be63cd0f62f6e7bafa34e3037b01aa6771118baf841",
-      "text_digest": "sha256:7cd6bd40e18bfb9b2ceedfe52030397eba5c125119f022fc6a05eab7981df0b2"
+      "report_digest": "sha256:6b418308be8a602299c9990c4d68ddb38c449c431a6abdb983b89b385686782b",
+      "text_digest": "sha256:608602b95e8af467890ba45d3c7a004bef77139345b183f5d5c77a015b69f7be"
     },
     {
       "label": "after-step-6",
@@ -92,8 +92,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:a9bf4b3169d47939808fafe06ec35959ecd445b60724c0077742dd62bff35b81",
-      "text_digest": "sha256:429f01038d336b41594d5936844dfa95859b4b405a147e796831d5e6cd5f0e05"
+      "report_digest": "sha256:936a2027b1f3bc11d86ffdb6094b9d675dcd929889f91ff7bc6e08670daee967",
+      "text_digest": "sha256:b6e71d1c865d815e0a3f0d9e308ff73fd58a7bbfb9c38add072ea02a10b241c6"
     },
     {
       "label": "after-step-7",
@@ -104,8 +104,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:32f1212115d4ced0777302d6ef8f28073359489bbb9b539a41f27ae2de73ac12",
-      "text_digest": "sha256:7dba2f45ef1704d8cf8541b6b2ad135ceceb8a7c0a2e67e53f6f23895ee28258"
+      "report_digest": "sha256:7be3d5822e9d5c552d4fc22100234dd6fb94c1c6cf1569b00ad88e6421c910ec",
+      "text_digest": "sha256:22379dcbe60bf24c363cc81865ae62126f7d1b020c7f04ec063cf2bcb640e7af"
     },
     {
       "label": "after-step-8",
@@ -116,8 +116,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:917fe62532a71c7b53917270841ebd3ab922fb19fe53ec3162392f9ff45efbf8",
-      "text_digest": "sha256:464da44f7ebff994dce403b562d80f506602242bdf00f3e2d9b969ace301fd84"
+      "report_digest": "sha256:63056c38690b901b1f4e27ae53a2838617556516ac9d6f8b8656e90e50e4552c",
+      "text_digest": "sha256:e2e23e59e842e81c23f4139587203077d09229fdbc0203a902c4ff677af08112"
     },
     {
       "label": "after-step-9",
@@ -128,8 +128,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:8b48fb6678fe8bbfc1007de74c1d8114c3ad6be5052aa5f075eacc67e4874e39",
-      "text_digest": "sha256:3248a6ea7adbdb57d85243d67f7f704c2d5bea09d8bbbf544bd3c626633565bd"
+      "report_digest": "sha256:55c5e3524c808b42e0e8e5ce51a796c357c1fef2e31ce74c64a4b538de0b1390",
+      "text_digest": "sha256:2bbd34247988864dbeccbf477c413403373c7c0357b7f46ffe4f56fbcaceb8eb"
     },
     {
       "label": "after-step-10",
@@ -140,8 +140,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:7d363be7f6a5e6afc4bc7476146c005b18ec6e002900501422ab0bae701fb9e5",
-      "text_digest": "sha256:4d99802c8594bdb6caea3dc8c26ba68f756c4615f29c5d240ac3f53fbbde4cb0"
+      "report_digest": "sha256:bb58d7e117e1bea6f93cfd350ae880c09c4d19ac8f22bb543c729474268762eb",
+      "text_digest": "sha256:c27ef9676a0c64d1514aa187662a11db3d2ced5e6d491d8b28151b83b6131f92"
     },
     {
       "label": "after-step-11",
@@ -152,8 +152,8 @@
       "authority_statuses": [
         "recorded"
       ],
-      "report_digest": "sha256:3d448b40db66dfcb3bb2110b0fe72cccc694a514c9c3ff97d4d1d4478c03ad33",
-      "text_digest": "sha256:ff79bbfb55c49390daf64f57b45c553abbf53dfb8f2f5622098f2134891eb884"
+      "report_digest": "sha256:80a72960095078fcd76629ab7833c9deaab85b057cdd26aa0b942f9c8d93a922",
+      "text_digest": "sha256:4bccde6c8dbe8fbbaacd046fd906e54ed800e102a6c7accdf976dad62f489af0"
     }
   ]
 }

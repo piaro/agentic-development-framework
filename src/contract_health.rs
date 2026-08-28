@@ -88,29 +88,18 @@ pub fn build_contract_health_report(
     let project = project
         .as_object()
         .ok_or_else(|| health_error("project must be an object"))?;
-    for (collection, kind) in [
-        ("changes", "change"),
-        ("contracts", "contract"),
-        ("decisions", "decision"),
-        ("results", "result"),
-        ("evidence", "evidence"),
-    ] {
+    for collection in ["changes", "contracts", "decisions", "results", "evidence"] {
         let records = record_array(project.get(collection), collection)?;
         validate_unique_ids(records, collection)?;
-        for record in records {
-            schema_registry
-                .validate(kind, record)
-                .map_err(|error| health_error(format!("invalid {kind} record: {error}")))?;
-        }
     }
 
-    let current_digests = current_artifact_digests(project)?;
     let results = record_array(project.get("results"), "results")?;
     let evidence = record_array(project.get("evidence"), "evidence")?;
-    let evidence_by_id = evidence
-        .iter()
-        .filter_map(|record| record["id"].as_str().map(|id| (id.to_owned(), record)))
-        .collect::<BTreeMap<_, _>>();
+    let verification_outcomes_by_evidence = verification_outcomes_by_evidence(results);
+    let required_current_refs = verification_freshness_refs(results);
+    validate_health_records(project, schema_registry, &required_current_refs)?;
+    let current_digests = current_artifact_digests(project, &required_current_refs)?;
+    let evidence_by_clause = evidence_by_clause(evidence);
 
     let mut clauses = Vec::new();
     let mut seen_clause_refs = BTreeSet::new();
@@ -137,8 +126,11 @@ pub fn build_contract_health_report(
                 clause,
                 &clause_applies_to,
                 evidence_mode,
-                results,
-                &evidence_by_id,
+                evidence_by_clause
+                    .get(clause_ref.as_str())
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]),
+                &verification_outcomes_by_evidence,
                 &current_digests,
             ));
         }
@@ -164,6 +156,117 @@ pub fn build_contract_health_report(
     })
 }
 
+fn validate_health_records(
+    project: &serde_json::Map<String, Value>,
+    schema_registry: &SchemaRegistry,
+    required_refs: &BTreeSet<&str>,
+) -> Result<(), ContractHealthError> {
+    for (collection, kind) in [
+        ("changes", "change"),
+        ("contracts", "contract"),
+        ("decisions", "decision"),
+        ("results", "result"),
+        ("evidence", "evidence"),
+    ] {
+        for record in record_array(project.get(collection), collection)? {
+            let record_id = required_string(record, "id", kind)?;
+            let required_for_health = matches!(collection, "contracts" | "evidence")
+                || required_refs.contains(record_id)
+                || (collection == "results"
+                    && record["result_schema"].as_str() == Some("result.evidence")
+                    && record["role"].as_str() == Some("Builder"));
+            if required_for_health {
+                schema_registry
+                    .validate(kind, record)
+                    .map_err(|error| health_error(format!("invalid {kind} record: {error}")))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+struct VerificationOutcome<'a> {
+    result: &'a Value,
+    outcome: &'a Value,
+}
+
+fn evidence_by_clause(evidence: &[Value]) -> BTreeMap<&str, Vec<(&str, &Value)>> {
+    let mut by_clause = BTreeMap::new();
+    for record in evidence {
+        let Some(evidence_id) = record["id"].as_str() else {
+            continue;
+        };
+        for clause_ref in record["contract_clause_refs"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            by_clause
+                .entry(clause_ref)
+                .or_insert_with(Vec::new)
+                .push((evidence_id, record));
+        }
+    }
+    by_clause
+}
+
+fn verification_outcomes_by_evidence(
+    results: &[Value],
+) -> BTreeMap<&str, Vec<VerificationOutcome<'_>>> {
+    let mut by_evidence = BTreeMap::new();
+    for result in results.iter().filter(|result| {
+        result["result_schema"].as_str() == Some("result.evidence")
+            && result["role"].as_str() == Some("Builder")
+    }) {
+        for outcome in result["payload"]["outcomes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            for evidence_ref in outcome["basis_refs"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                by_evidence
+                    .entry(evidence_ref)
+                    .or_insert_with(Vec::new)
+                    .push(VerificationOutcome { result, outcome });
+            }
+        }
+    }
+    by_evidence
+}
+
+fn verification_freshness_refs(results: &[Value]) -> BTreeSet<&str> {
+    let mut references = BTreeSet::new();
+    for result in results.iter().filter(|result| {
+        result["result_schema"].as_str() == Some("result.evidence")
+            && result["role"].as_str() == Some("Builder")
+    }) {
+        for outcome in result["payload"]["outcomes"]
+            .as_array()
+            .into_iter()
+            .flatten()
+        {
+            let manifest = outcome
+                .get("freshness_refs")
+                .or_else(|| result.get("freshness_refs"))
+                .or_else(|| result.get("input_refs"));
+            references.extend(
+                manifest
+                    .and_then(Value::as_object)
+                    .into_iter()
+                    .flat_map(|manifest| manifest.keys().map(String::as_str)),
+            );
+        }
+    }
+    references
+}
+
 #[allow(clippy::too_many_arguments)]
 fn clause_health(
     contract_id: &str,
@@ -172,8 +275,8 @@ fn clause_health(
     clause: &Value,
     applies_to: &[String],
     evidence_mode: ClauseEvidenceMode,
-    results: &[Value],
-    evidence_by_id: &BTreeMap<String, &Value>,
+    evidence_for_clause: &[(&str, &Value)],
+    verification_outcomes_by_evidence: &BTreeMap<&str, Vec<VerificationOutcome<'_>>>,
     current_digests: &BTreeMap<String, String>,
 ) -> ClauseHealth {
     let mut evidence_refs = BTreeSet::new();
@@ -183,47 +286,42 @@ fn clause_health(
     let mut current_failure = false;
     let mut historical_verification = false;
 
-    for (evidence_id, evidence) in evidence_by_id {
+    for (evidence_id, evidence) in evidence_for_clause {
         if !evidence_covers_clause(evidence, clause_ref, evidence_mode) {
             continue;
         }
-        evidence_refs.insert(evidence_id.clone());
-        for result in results.iter().filter(|result| {
-            result["result_schema"].as_str() == Some("result.evidence")
-                && result["role"].as_str() == Some("Builder")
-                && result["change_id"] == evidence["change_id"]
-        }) {
-            for outcome in result["payload"]["outcomes"]
-                .as_array()
-                .map(Vec::as_slice)
-                .unwrap_or(&[])
-                .iter()
-                .filter(|outcome| string_array(&outcome["basis_refs"]).contains(evidence_id))
-            {
-                let Some(result_id) = result["id"].as_str() else {
-                    continue;
-                };
-                verification_result_ids.insert(result_id.to_owned());
-                let mismatches = stale_refs_for_outcome(
-                    outcome,
-                    result,
-                    current_digests,
-                    &[contract_id, evidence_id],
-                );
-                if mismatches.is_empty() {
-                    match (evidence["outcome"].as_str(), outcome["status"].as_str()) {
-                        (Some("passed"), Some("satisfied"))
-                            if evidence_verifies_outcome(evidence, outcome) =>
-                        {
-                            current_success = true;
-                        }
-                        (Some("failed" | "inconclusive"), _) => current_failure = true,
-                        _ => {}
+        evidence_refs.insert((*evidence_id).to_owned());
+        for verification in verification_outcomes_by_evidence
+            .get(evidence_id)
+            .into_iter()
+            .flatten()
+            .filter(|verification| verification.result["change_id"] == evidence["change_id"])
+        {
+            let result = verification.result;
+            let outcome = verification.outcome;
+            let Some(result_id) = result["id"].as_str() else {
+                continue;
+            };
+            verification_result_ids.insert(result_id.to_owned());
+            let mismatches = stale_refs_for_outcome(
+                outcome,
+                result,
+                current_digests,
+                &[contract_id, evidence_id],
+            );
+            if mismatches.is_empty() {
+                match (evidence["outcome"].as_str(), outcome["status"].as_str()) {
+                    (Some("passed"), Some("satisfied"))
+                        if evidence_verifies_outcome(evidence, outcome) =>
+                    {
+                        current_success = true;
                     }
-                } else {
-                    historical_verification = true;
-                    stale_refs.extend(mismatches);
+                    (Some("failed" | "inconclusive"), _) => current_failure = true,
+                    _ => {}
                 }
+            } else {
+                historical_verification = true;
+                stale_refs.extend(mismatches);
             }
         }
     }
@@ -310,12 +408,15 @@ fn is_sha256_digest(value: &str) -> bool {
 
 fn current_artifact_digests(
     project: &serde_json::Map<String, Value>,
+    required_refs: &BTreeSet<&str>,
 ) -> Result<BTreeMap<String, String>, ContractHealthError> {
     let mut digests = BTreeMap::new();
     for collection in ["changes", "contracts", "decisions", "results", "evidence"] {
         for record in record_array(project.get(collection), collection)? {
             let id = required_string(record, "id", "Project record")?;
-            digests.insert(id.to_owned(), digest_value(record)?);
+            if required_refs.contains(id) {
+                digests.insert(id.to_owned(), digest_value(record)?);
+            }
             if collection == "contracts" {
                 for clause in record["clauses"]
                     .as_array()
@@ -323,7 +424,10 @@ fn current_artifact_digests(
                     .unwrap_or(&[])
                 {
                     let clause_id = required_string(clause, "id", "Contract clause")?;
-                    digests.insert(format!("{id}#{clause_id}"), digest_value(clause)?);
+                    let clause_ref = format!("{id}#{clause_id}");
+                    if required_refs.contains(clause_ref.as_str()) {
+                        digests.insert(clause_ref, digest_value(clause)?);
+                    }
                 }
             }
         }
@@ -335,6 +439,9 @@ fn current_artifact_digests(
         .unwrap_or(&[])
     {
         let reference = required_string(artifact, "ref", "Repository artifact")?;
+        if !required_refs.contains(reference) {
+            continue;
+        }
         let digest = artifact["digest"]
             .as_str()
             .filter(|value| !value.is_empty())
@@ -712,5 +819,44 @@ mod tests {
             report.clauses[0].verification_result_ids,
             ["result.retry", "result.test"]
         );
+    }
+
+    #[test]
+    fn current_digests_skip_records_unrelated_to_contract_verification() {
+        let project = json!({
+            "changes": [],
+            "contracts": [],
+            "decisions": [],
+            "results": [{"id": "result.unrelated", "unsupported": 1.5}],
+            "evidence": [],
+            "repository": {"artifacts": []}
+        });
+        let project = project.as_object().unwrap();
+
+        assert!(current_artifact_digests(project, &BTreeSet::new()).is_ok());
+        let required = BTreeSet::from(["result.unrelated"]);
+        assert!(current_artifact_digests(project, &required).is_err());
+    }
+
+    #[test]
+    fn report_validates_only_records_that_can_affect_contract_health() {
+        let project = json!({
+            "changes": [],
+            "contracts": [],
+            "decisions": [],
+            "results": [{
+                "id": "result.unrelated",
+                "result_schema": "result.challenge"
+            }],
+            "evidence": [],
+            "repository": {"artifacts": []}
+        });
+        let report = build_contract_health_report(&project, &registry()).unwrap();
+        assert_eq!(report.summary.total, 0);
+
+        let mut relevant = project;
+        relevant["results"][0]["result_schema"] = json!("result.evidence");
+        relevant["results"][0]["role"] = json!("Builder");
+        assert!(build_contract_health_report(&relevant, &registry()).is_err());
     }
 }

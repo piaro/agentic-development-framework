@@ -122,6 +122,10 @@ Explainでは、確認前を`applicability-pending`、支持された後を`not-
 
 `contract-health`は、全ChangeのResult・Evidenceと現在のRepository観測から、Contract条項ごとの実装準拠状態を再生成します。
 
+計算時には、条項ごとのEvidenceと、Evidenceを参照する検証Resultを一度索引化します。Schema検証と現在値のハッシュ計算は、Contract Healthへ影響するContract、Evidence、検証Result、参照先だけに限定します。Result全件を条項ごとに走査せず、無関係なResultの内容全体も検証しません。ただし、Filesystem StoreはすべてのResultファイルを列挙してJSONとして読み込むため、壊れたJSONは引き続きエラーになります。
+
+Result提出時は、判定結果の`input_refs`と`freshness_refs`がResult全体の値と同じなら省略します。判定結果だけが追加または異なる参照を持つ場合は、その値を判定結果へ保存します。Kernelは判定結果に値がなければResult全体の値を使うため、既存形式と軽量形式を同じ意味で扱えます。Schema上で両項目はもともと省略可能なので、Schema versionは変更しません。既存Resultを変換するとResult IDと、それを参照する後続Resultの鮮度が変わるため、自動移行は行いません。
+
 - `verified`: 成功Evidenceを参照するBuilder outcomeの入力digestがすべて現在値と一致する
 - `stale`: 検証履歴はあるが、Contract・コード・設定・Evidence等の入力が変わった、または失われた
 - `unverified`: 検証履歴がない

@@ -936,7 +936,7 @@ fn is_satisfied(instance: &RequirementInstance, snapshot: &ProjectSnapshot) -> b
                     && match instance.assurance {
                         Assurance::Attestation => true,
                         Assurance::EvidenceBacked => {
-                            outcome_has_current_evidence(instance, outcome, snapshot)
+                            outcome_has_current_evidence(instance, result, outcome, snapshot)
                         }
                     }
             })
@@ -945,6 +945,7 @@ fn is_satisfied(instance: &RequirementInstance, snapshot: &ProjectSnapshot) -> b
 
 pub(crate) fn outcome_has_current_evidence(
     instance: &RequirementInstance,
+    result: &Value,
     outcome: &Value,
     snapshot: &ProjectSnapshot,
 ) -> bool {
@@ -960,7 +961,15 @@ pub(crate) fn outcome_has_current_evidence(
         };
         if !basis_refs.contains(evidence_id)
             || string_field(evidence, "change_id") != Some(snapshot.change_id.as_str())
-            || !evidence_matches_inputs(evidence, &string_map(outcome.get("input_refs")), snapshot)
+            || !evidence_matches_inputs(
+                evidence,
+                &string_map(
+                    outcome
+                        .get("input_refs")
+                        .or_else(|| result.get("input_refs")),
+                ),
+                snapshot,
+            )
             || string_field(evidence, "outcome") != Some("passed")
             || !array_contains(
                 &evidence["requirement_instances"],
