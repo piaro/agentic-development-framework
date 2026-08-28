@@ -10,7 +10,7 @@ use crate::contract_health::{ContractHealthReport, build_contract_health_report}
 use crate::detection::detect_typed_facts_with_registry;
 use crate::explain::{ExplainReport, ExplanationBuilder};
 use crate::framework_lock::{FrameworkLock, validate_framework_lock};
-use crate::kernel::{KernelDecision, ProjectSnapshot, ThinKernel};
+use crate::kernel::{KernelDecision, ProjectSnapshot, ThinKernel, impact_assessment_pending};
 use crate::project::build_project_snapshot;
 use crate::rules::{RuleIndex, compile_rule_index_with_registry};
 use crate::schema::SchemaRegistry;
@@ -133,21 +133,26 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
-        let contract_health = self
-            .store
-            .contract_health()
-            .map_err(|error| application_error(error.to_string()))?;
+        let contract_health = if impact_assessment_pending(&snapshot) {
+            None
+        } else {
+            Some(
+                self.store
+                    .contract_health()
+                    .map_err(|error| application_error(error.to_string()))?,
+            )
+        };
         let decision = ThinKernel.evaluate_with_health(
             &snapshot,
             &self.rule_index,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         let context = ContextCompiler.compile_with_health(
             &decision,
             &snapshot,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         if let Some(context) = &context {
             self.issued.insert(
@@ -258,15 +263,20 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
-        let contract_health = self
-            .store
-            .contract_health()
-            .map_err(|error| application_error(error.to_string()))?;
+        let contract_health = if impact_assessment_pending(&snapshot) {
+            None
+        } else {
+            Some(
+                self.store
+                    .contract_health()
+                    .map_err(|error| application_error(error.to_string()))?,
+            )
+        };
         let decision = ThinKernel.evaluate_with_health(
             &snapshot,
             &self.rule_index,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         Ok(ExplanationBuilder.build(&snapshot, &self.rule_index, &detection, &decision))
     }

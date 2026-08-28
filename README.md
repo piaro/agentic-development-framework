@@ -279,6 +279,10 @@ assessment is accepted, implementation receives that Result, matching
 governance, and matching artifacts. This makes the assessment a reusable input
 instead of asking later actions to rediscover the same scope.
 
+While impact assessment is still pending, `next` and `explain` select that
+action before deriving repository-wide Contract health. Unrelated Result and
+Evidence history is not loaded for this first step.
+
 Each action also carries advisory execution guidance. Impact assessment
 normally recommends an economy model, while challenge recommends a
 high-accuracy model. The listed escalation conditions tell an orchestrator when

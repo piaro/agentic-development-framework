@@ -3111,6 +3111,45 @@ fn project_next_explain_and_contract_health_share_the_real_project_loader() {
 }
 
 #[test]
+fn pending_impact_assessment_does_not_load_repository_wide_contract_health() {
+    let project = TestProject::new();
+    let pending_change_root = project
+        .root
+        .join(".adf/changes/change.pending-impact-assessment");
+    fs::create_dir_all(&pending_change_root).unwrap();
+    write_yaml(
+        &pending_change_root.join("change.yaml"),
+        &json!({
+            "schema_version": "1",
+            "id": "change.pending-impact-assessment",
+            "title": "Assess the pending change",
+            "intent": "Confirm the next action without reading unrelated history",
+            "impact_assessment": "required"
+        }),
+    );
+
+    // This unrelated malformed Result would fail repository-wide Contract
+    // health loading. The pending Change does not need that report to select
+    // impact assessment as its first action.
+    let unrelated_results = project.root.join(".adf/changes/change.place-order/results");
+    fs::create_dir_all(&unrelated_results).unwrap();
+    fs::write(unrelated_results.join("malformed.json"), "{").unwrap();
+
+    for command in ["next", "explain"] {
+        let output = project.run(&[
+            command,
+            "change.pending-impact-assessment",
+            "--format",
+            "json",
+        ]);
+        assert_success(&output);
+        let response: Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(response["state"], "needs-impact-assessment");
+        assert_eq!(response["next_action"]["action"], "assess-change-impact");
+    }
+}
+
+#[test]
 fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
     let project = TestProject::new();
     let policy_path = project.root.join(".adf/contract-health-policy.yaml");
