@@ -8,8 +8,8 @@
   "decision_step": 4,
   "contract_step": 5,
   "expected_initial_snapshot_digest": "sha256:3ae18b6dc5493c557b0737acc55d0cddb85e2f45d098ef053a68a85f445d3360",
-  "expected_result_snapshot_digest": "sha256:66774998bdeae6452e45bdf849a2fbc4af118343b7bf006c441447685b9c7127",
-  "expected_updated_snapshot_digest": "sha256:5f4f1c91730b17591b7215e2faf1083b9a3e15da676c050187c590f07b15fb35",
+  "expected_result_snapshot_digest": "sha256:1e28e7b4cddd6ed627a5d1d46c07ace87973f029c1cfd4bc4bfe415927d6dadd",
+  "expected_updated_snapshot_digest": "sha256:b95e4ba416267389fe5251005c177f2c277d8637b0f592d2dcd630a23bcaf477",
   "markdown_prose": "## Operational rationale\n\nThe orders table remains authoritative while event delivery is retried.",
   "shared_contract_concurrency": {
     "initial": {

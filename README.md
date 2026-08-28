@@ -283,6 +283,15 @@ While impact assessment is still pending, `next` and `explain` select that
 action before deriving repository-wide Contract health. Unrelated Result and
 Evidence history is not loaded for this first step.
 
+When Contract health is required, ADF indexes Evidence and verification Results
+once, then validates and hashes only records that can affect a Contract clause.
+It does not repeatedly scan every Result for every clause.
+
+New Results store shared input and freshness references once at the Result
+level. An outcome carries its own references only when they differ from those
+shared values. Existing Results remain readable and are not rewritten, so their
+identities and downstream freshness checks remain stable.
+
 Each action also carries advisory execution guidance. Impact assessment
 normally recommends an economy model, while challenge recommends a
 high-accuracy model. The listed escalation conditions tell an orchestrator when

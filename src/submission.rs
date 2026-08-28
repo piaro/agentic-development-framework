@@ -124,7 +124,14 @@ pub fn prepare_result(
     if submission.result_schema == "result.risk-signal-review" {
         validate_candidate_reviews(context, &payload)?;
     }
-    enrich_outcomes(context, current, &mut payload, &submission.output_refs)?;
+    enrich_outcomes(
+        context,
+        current,
+        &mut payload,
+        &submission.output_refs,
+        &input_refs,
+        &freshness_refs,
+    )?;
 
     let mut output_refs = submission.output_refs.clone();
     output_refs.sort();
@@ -387,6 +394,8 @@ fn enrich_outcomes(
     current: &ProjectSnapshot,
     payload: &mut Value,
     output_refs: &[String],
+    result_inputs: &BTreeMap<String, String>,
+    result_freshness: &BTreeMap<String, String>,
 ) -> Result<(), ResultSubmissionError> {
     let requirements = array_field(&context.payload, "requirement_instances");
     let selectors = requirements
@@ -467,11 +476,17 @@ fn enrich_outcomes(
         let object = outcome
             .as_object_mut()
             .expect("Result payload Schema guarantees an outcome object");
-        object.insert("input_refs".to_owned(), string_map_value(instance_inputs));
-        object.insert(
-            "freshness_refs".to_owned(),
-            string_map_value(&instance_freshness),
-        );
+        object.remove("input_refs");
+        object.remove("freshness_refs");
+        if instance_inputs != result_inputs {
+            object.insert("input_refs".to_owned(), string_map_value(instance_inputs));
+        }
+        if instance_freshness != *result_freshness {
+            object.insert(
+                "freshness_refs".to_owned(),
+                string_map_value(&instance_freshness),
+            );
+        }
     }
     Ok(())
 }
@@ -723,9 +738,135 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            result["payload"]["outcomes"][0]["freshness_refs"]["evidence.test"],
+            result["freshness_refs"]["evidence.test"],
             format!("sha256:{}", "b".repeat(64))
         );
+        assert!(result["payload"]["outcomes"][0].get("input_refs").is_none());
+        assert!(
+            result["payload"]["outcomes"][0]
+                .get("freshness_refs")
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn outcome_keeps_refs_when_the_result_manifest_is_broader() {
+        let mut context = context();
+        let unrelated_digest = format!("sha256:{}", "f".repeat(64));
+        context
+            .source_digests
+            .insert("code.unrelated".to_owned(), unrelated_digest.clone());
+        let mut snapshot = snapshot();
+        snapshot
+            .artifact_digests
+            .insert("code.unrelated".to_owned(), unrelated_digest);
+
+        let result = prepare_result(
+            &context,
+            &snapshot,
+            &submission(json!(["evidence.test"]), vec!["evidence.test".to_owned()]),
+            &registry(),
+        )
+        .unwrap();
+
+        let outcome = &result["payload"]["outcomes"][0];
+        assert!(outcome["input_refs"].get("change.test").is_some());
+        assert!(outcome["input_refs"].get("code.unrelated").is_none());
+        assert!(outcome["freshness_refs"].get("evidence.test").is_some());
+        assert!(outcome["freshness_refs"].get("code.unrelated").is_none());
+    }
+
+    #[test]
+    fn shared_outcome_refs_are_stored_once_per_result() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let shared_refs = (0..512)
+            .map(|index| (format!("code.file-{index}"), digest.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let requirements = (0..70)
+            .map(|index| {
+                json!({
+                    "instance_key": format!("requirement-{index}|operation.test"),
+                    "subject_refs": ["operation.test"],
+                    "context_selectors": [],
+                    "assurance": "attestation"
+                })
+            })
+            .collect::<Vec<_>>();
+        let instance_source_digests = (0..70)
+            .map(|index| {
+                (
+                    format!("requirement-{index}|operation.test"),
+                    shared_refs.clone(),
+                )
+            })
+            .collect();
+        let context = GeneratedContext {
+            action_id: "action.compact".to_owned(),
+            role: "Analyst".to_owned(),
+            source_refs: shared_refs.keys().cloned().collect(),
+            source_digests: shared_refs.clone(),
+            instance_source_digests,
+            contract_clause_projection_version: "1".to_owned(),
+            contract_clauses: Vec::new(),
+            contract_clauses_digest: canonical_digest(&json!([])).unwrap(),
+            payload: json!({
+                "action": {"expected_result_schema": "result.analysis"},
+                "requirement_instances": requirements,
+                "signal_candidates": []
+            }),
+            digest: format!("sha256:{}", "c".repeat(64)),
+        };
+        let snapshot = ProjectSnapshot {
+            change_id: "change.test".to_owned(),
+            change: json!({}),
+            contracts: Vec::new(),
+            decisions: Vec::new(),
+            results: Vec::new(),
+            evidence: Vec::new(),
+            repository: json!({"revision": "revision-1"}),
+            artifact_digests: shared_refs.clone(),
+            digest: String::new(),
+        };
+        let outcomes = (0..70)
+            .map(|index| {
+                json!({
+                    "instance_key": format!("requirement-{index}|operation.test"),
+                    "definition_digest": format!("sha256:{}", "e".repeat(64)),
+                    "status": "satisfied",
+                    "summary": "Reviewed the requirement.",
+                    "basis_refs": ["code.file-0"]
+                })
+            })
+            .collect::<Vec<_>>();
+        let submission = ResultSubmission {
+            change_id: "change.test".to_owned(),
+            action_id: "action.compact".to_owned(),
+            context_digest: context.digest.clone(),
+            role: "Analyst".to_owned(),
+            result_schema: "result.analysis".to_owned(),
+            payload: json!({"outcomes": outcomes}),
+            output_refs: Vec::new(),
+            execution: None,
+        };
+
+        let result = prepare_result(&context, &snapshot, &submission, &registry()).unwrap();
+        assert!(
+            result["payload"]["outcomes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|outcome| outcome.get("input_refs").is_none()
+                    && outcome.get("freshness_refs").is_none())
+        );
+
+        let compact_bytes = serde_json::to_vec(&result).unwrap().len();
+        let mut expanded = result.clone();
+        for outcome in expanded["payload"]["outcomes"].as_array_mut().unwrap() {
+            outcome["input_refs"] = string_map_value(&shared_refs);
+            outcome["freshness_refs"] = string_map_value(&shared_refs);
+        }
+        let expanded_bytes = serde_json::to_vec(&expanded).unwrap().len();
+        assert!(compact_bytes * 20 < expanded_bytes);
     }
 
     #[test]

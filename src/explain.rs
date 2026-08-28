@@ -384,7 +384,7 @@ fn requirement_trace(
                 && role_matches
                 && stale_refs.is_empty()
                 && (instance.assurance == Assurance::Attestation
-                    || outcome_has_current_evidence(instance, outcome, snapshot));
+                    || outcome_has_current_evidence(instance, result, outcome, snapshot));
             result_checks.push(ResultCheck {
                 result_id: string_field(result, "id").unwrap_or("").to_owned(),
                 outcome_status,

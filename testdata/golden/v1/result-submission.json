@@ -6,7 +6,7 @@
   "scenario_case": "application-lifecycle.json",
   "step_index": 0,
   "expected": {
-    "id": "result.a9264e02b9de0b0dba0f",
+    "id": "result.32804d7e11b978973228",
     "schema_version": "1",
     "change_id": "change.place-order",
     "action_id": "action.76c79e6f916c6355",
@@ -64,17 +64,7 @@
             "change.place-order",
             "code.order-events-publisher",
             "code.place-order-handler"
-          ],
-          "input_refs": {
-            "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
-            "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-            "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-          },
-          "freshness_refs": {
-            "change.place-order": "sha256:c4bb2ccce8564e5ad8db5678d2a7a80d7898a6399ac81591284836b8c1bb42a6",
-            "code.order-events-publisher": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
-            "code.place-order-handler": "sha256:1111111111111111111111111111111111111111111111111111111111111111"
-          }
+          ]
         }
       ]
     }
