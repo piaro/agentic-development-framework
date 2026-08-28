@@ -266,6 +266,20 @@ impl ProjectApplicationService {
         let snapshot = application
             .snapshot(&key.change_id)
             .map_err(application_error)?;
+        let existing_result = snapshot
+            .results
+            .iter()
+            .find(|result| result_for_action(result, key));
+        if let Some(result) = existing_result
+            && submitted_payload_matches(&result["payload"], &payload)
+            && result["output_refs"] == json!(output_refs)
+        {
+            let result_id = required_record_id(result, "Result")?.to_owned();
+            let response = application
+                .next(&key.change_id)
+                .map_err(application_error)?;
+            return Ok(self.completed_response(key, result_id, response, &application));
+        }
         validate_output_refs(&entry, &output_refs, &snapshot)?;
         assert_framework_identity(&entry, &application)?;
         let role = required_context_string(&entry.context, &["action", "role"])?;
@@ -281,9 +295,21 @@ impl ProjectApplicationService {
             output_refs,
             execution,
         };
-        let ApplicationSubmission { result, response } = application
-            .submit_issued_with_snapshot(&entry.context, &submission, &snapshot)
-            .map_err(application_error)?;
+        let ApplicationSubmission { result, response } = if let Some(existing) = existing_result {
+            let expected_result_id = required_record_id(existing, "Result")?;
+            application
+                .correct_issued_with_snapshot(
+                    &entry.context,
+                    &submission,
+                    &snapshot,
+                    expected_result_id,
+                )
+                .map_err(application_error)?
+        } else {
+            application
+                .submit_issued_with_snapshot(&entry.context, &submission, &snapshot)
+                .map_err(application_error)?
+        };
         let rule_index_digest = application.rule_index_digest().to_owned();
         let framework_lock_digest = application.framework_lock_digest().to_owned();
         let result_id = result["id"]
@@ -312,6 +338,37 @@ impl ProjectApplicationService {
             next_response,
             issued_action,
         })
+    }
+
+    fn completed_response(
+        &mut self,
+        key: &IssuedActionKey,
+        result_id: String,
+        response: crate::application::ApplicationResponse,
+        application: &crate::application::Application<
+            '_,
+            crate::filesystem_project::FileProjectStore<'_>,
+        >,
+    ) -> SubmitServiceResponse {
+        let next_response = next_response_value(&key.change_id, &response);
+        let next_issued = issued_entry(
+            &key.change_id,
+            &response,
+            application.rule_index_digest(),
+            application.framework_lock_digest(),
+        );
+        self.issued.remove(key);
+        let issued_action = next_issued.map(|(next_key, next_entry)| {
+            self.issued.insert(next_key.clone(), next_entry);
+            next_key
+        });
+        SubmitServiceResponse {
+            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
+            result_id,
+            already_completed: true,
+            next_response,
+            issued_action,
+        }
     }
 
     /// Replays a submission whose Result is already stored, or `None` when this
@@ -686,6 +743,11 @@ fn submitted_payload_matches(stored: &Value, submitted: &Value) -> bool {
     }
 }
 
+fn result_for_action(result: &Value, key: &IssuedActionKey) -> bool {
+    result["action_id"].as_str() == Some(key.action_id.as_str())
+        && result["context_digest"].as_str() == Some(key.context_digest.as_str())
+}
+
 fn issued_entry(
     change_id: &str,
     response: &ApplicationResponse,
@@ -1031,6 +1093,32 @@ mod tests {
         };
 
         validate_output_refs(&entry, &["evidence.persisted".to_owned()], &snapshot).unwrap();
+    }
+
+    #[test]
+    fn different_submission_is_correctable_only_while_the_same_action_is_current() {
+        let key = IssuedActionKey {
+            change_id: "change.place-order".to_owned(),
+            action_id: "action.record-evidence".to_owned(),
+            context_digest: format!("sha256:{}", "1".repeat(64)),
+        };
+        let existing = json!({
+            "action_id": key.action_id,
+            "context_digest": key.context_digest,
+            "payload": {"outcomes": [{"status": "inconclusive"}]},
+            "output_refs": ["evidence.old"]
+        });
+        assert!(result_for_action(&existing, &key));
+        assert!(!submitted_payload_matches(
+            &existing["payload"],
+            &json!({"outcomes": [{"status": "satisfied"}]})
+        ));
+
+        let superseded = IssuedActionKey {
+            action_id: "action.challenge".to_owned(),
+            ..key.clone()
+        };
+        assert!(!result_for_action(&existing, &superseded));
     }
 
     #[test]

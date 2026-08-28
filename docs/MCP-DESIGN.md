@@ -166,7 +166,8 @@ Action IDはAction本体のdigest、Context digestはその生成元入力のdig
 
 - 再評価が同じActionを返すなら、そのActionは今も現在のものなので受理する。再起動前に行った作業はやり直さない。
 - 再評価が別のActionを返すなら、`ACTION_NOT_CURRENT`で拒否し、現在のAction IDとContext digestを示す。Agentは`adf_next`から現在のActionに対してやり直す。
-- 同じActionとContextに対するResultが既にあるなら、二重提出として冪等に再生し、Resultを二重に書かない。内容が違えば`WRITE_CONFLICT`にする。
+- 同じActionとContextに対する同じResultが既にあるなら、二重提出として冪等に再生し、Resultを二重に書かない。
+- 既存Resultを評価した後も同じActionとContextが現在の作業として再発行される場合に限り、異なるResultを訂正版として受理する。保存時に既存Result IDを照合し、並行変更があれば`WRITE_CONFLICT`にする。完了または別Actionへ遷移したResultは訂正できない。
 - 既に書いたContract、Decision、Evidence、コードは削除やrollbackをせず、現在入力として再評価する。
 
 Generated Contextを正本化しない方針は変えません。受理の根拠はmemoryではなく、正本を再評価した結果との一致です。derived cacheのreadをAction認証へ流用してはいけません。

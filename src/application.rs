@@ -10,7 +10,7 @@ use crate::contract_health::{ContractHealthReport, build_contract_health_report}
 use crate::detection::detect_typed_facts_with_registry;
 use crate::explain::{ExplainReport, ExplanationBuilder};
 use crate::framework_lock::{FrameworkLock, validate_framework_lock};
-use crate::kernel::{KernelDecision, ProjectSnapshot, ThinKernel};
+use crate::kernel::{KernelDecision, ProjectSnapshot, ThinKernel, impact_assessment_pending};
 use crate::project::build_project_snapshot;
 use crate::rules::{RuleIndex, compile_rule_index_with_registry};
 use crate::schema::SchemaRegistry;
@@ -40,6 +40,11 @@ pub trait ProjectStore {
     fn snapshot(&self, change_id: &str) -> Result<ProjectSnapshot, ProjectStoreError>;
     fn contract_health(&self) -> Result<ContractHealthReport, ProjectStoreError>;
     fn append_result(&mut self, result: &Value) -> Result<(), ProjectStoreError>;
+    fn replace_result(
+        &mut self,
+        result: &Value,
+        expected_result_id: &str,
+    ) -> Result<(), ProjectStoreError>;
     fn add_evidence(&mut self, evidence: &Value) -> Result<(), ProjectStoreError>;
     fn upsert_decision(
         &mut self,
@@ -128,21 +133,26 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
-        let contract_health = self
-            .store
-            .contract_health()
-            .map_err(|error| application_error(error.to_string()))?;
+        let contract_health = if impact_assessment_pending(&snapshot) {
+            None
+        } else {
+            Some(
+                self.store
+                    .contract_health()
+                    .map_err(|error| application_error(error.to_string()))?,
+            )
+        };
         let decision = ThinKernel.evaluate_with_health(
             &snapshot,
             &self.rule_index,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         let context = ContextCompiler.compile_with_health(
             &decision,
             &snapshot,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         if let Some(context) = &context {
             self.issued.insert(
@@ -213,6 +223,32 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
         Ok(ApplicationSubmission { result, response })
     }
 
+    /// Replace the Result for an Action that the current Project still issues.
+    ///
+    /// This is deliberately separate from ordinary submission: callers must
+    /// prove that the existing Result did not complete or supersede the Action,
+    /// and the Store compares its ID again when writing so concurrent changes
+    /// cannot be lost.
+    pub(crate) fn correct_issued_with_snapshot(
+        &mut self,
+        context: &GeneratedContext,
+        submission: &ResultSubmission,
+        snapshot: &ProjectSnapshot,
+        expected_result_id: &str,
+    ) -> Result<ApplicationSubmission, ApplicationError> {
+        let result = prepare_result(context, snapshot, submission, self.schema_registry)
+            .map_err(|error| application_error(error.to_string()))?;
+        self.store
+            .replace_result(&result, expected_result_id)
+            .map_err(|error| application_error(error.to_string()))?;
+        self.issued.remove(&(
+            submission.action_id.clone(),
+            submission.context_digest.clone(),
+        ));
+        let response = self.next(&submission.change_id)?;
+        Ok(ApplicationSubmission { result, response })
+    }
+
     /// Recompute the current decision and its trace without issuing an Action.
     pub fn explain(&self, change_id: &str) -> Result<ExplainReport, ApplicationError> {
         let snapshot = self.snapshot(change_id)?;
@@ -227,15 +263,20 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             &self.signal_registry,
         )
         .map_err(|error| application_error(error.to_string()))?;
-        let contract_health = self
-            .store
-            .contract_health()
-            .map_err(|error| application_error(error.to_string()))?;
+        let contract_health = if impact_assessment_pending(&snapshot) {
+            None
+        } else {
+            Some(
+                self.store
+                    .contract_health()
+                    .map_err(|error| application_error(error.to_string()))?,
+            )
+        };
         let decision = ThinKernel.evaluate_with_health(
             &snapshot,
             &self.rule_index,
             &detection,
-            Some(&contract_health),
+            contract_health.as_ref(),
         );
         Ok(ExplanationBuilder.build(&snapshot, &self.rule_index, &detection, &decision))
     }
@@ -390,6 +431,35 @@ impl ProjectStore for InMemoryProjectStore<'_> {
             )));
         }
         results.push(result.clone());
+        Ok(())
+    }
+
+    fn replace_result(
+        &mut self,
+        result: &Value,
+        expected_result_id: &str,
+    ) -> Result<(), ProjectStoreError> {
+        self.schema_registry
+            .validate("result", result)
+            .map_err(|error| project_store_error(error.to_string()))?;
+        let action_id = result["action_id"]
+            .as_str()
+            .ok_or_else(|| project_store_error("Result action_id must be a string"))?;
+        let context_digest = result["context_digest"]
+            .as_str()
+            .ok_or_else(|| project_store_error("Result context_digest must be a string"))?;
+        let results = self.record_collection_mut("results")?;
+        let existing = results
+            .iter_mut()
+            .find(|candidate| {
+                candidate["action_id"].as_str() == Some(action_id)
+                    && candidate["context_digest"].as_str() == Some(context_digest)
+            })
+            .ok_or_else(|| project_store_error("Result to replace does not exist"))?;
+        if existing["id"].as_str() != Some(expected_result_id) {
+            return Err(project_store_error("Result changed before correction"));
+        }
+        *existing = result.clone();
         Ok(())
     }
 

@@ -141,8 +141,7 @@ impl ThinKernel {
         contract_health: Option<&ContractHealthReport>,
     ) -> KernelDecision {
         let assessment = fresh_impact_assessment(snapshot);
-        let assessment_required = snapshot.change["impact_assessment"].as_str() == Some("required");
-        if assessment_required && assessment.is_none() {
+        if impact_assessment_pending(snapshot) {
             let previous = current_impact_assessments(snapshot);
             let action = make_action(
                 snapshot,
@@ -500,6 +499,11 @@ impl ThinKernel {
         }
         decision("ready-to-merge", None, instances, Vec::new())
     }
+}
+
+pub(crate) fn impact_assessment_pending(snapshot: &ProjectSnapshot) -> bool {
+    snapshot.change["impact_assessment"].as_str() == Some("required")
+        && fresh_impact_assessment(snapshot).is_none()
 }
 
 fn current_impact_assessments(snapshot: &ProjectSnapshot) -> Vec<String> {
