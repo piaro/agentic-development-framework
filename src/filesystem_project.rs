@@ -7,17 +7,21 @@ use crate::application::{
     ProjectStore, ProjectStoreError, merge_contract_clause_update, validate_contract_update,
     validate_decision_update,
 };
-use crate::contract_health::{ContractHealthReport, build_contract_health_report};
+use crate::canonical_digest;
+use crate::contract_health::{ContractHealthReport, build_contract_health_report_with_digests};
 use crate::kernel::ProjectSnapshot;
 use crate::project::build_project_snapshot;
 use crate::schema::SchemaRegistry;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+use std::process::{Command, Stdio};
 
 pub const DEFAULT_CONTRACT_ROOT: &str = "contracts";
 pub const DEFAULT_DECISION_ROOT: &str = "decisions";
@@ -32,6 +36,23 @@ const DISALLOWED_SOURCE_ROOTS: [&str; 5] = [
 ];
 pub const FILESYSTEM_PROJECT_PROTOCOL_VERSION: &str = "3";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+const HEALTH_INDEX_SCHEMA_VERSION: &str = "1";
+const RESULT_INDEX_PATH: &str = ".adf/cache/runtime/contract-health-results-v1.json";
+const EVIDENCE_INDEX_PATH: &str = ".adf/cache/runtime/contract-health-evidence-v1.json";
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct HealthIndexEntry {
+    source_identity: String,
+    record_digest: String,
+    projection_digest: String,
+    record: Value,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+struct HealthIndex {
+    schema_version: String,
+    entries: BTreeMap<String, HealthIndexEntry>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocumentFormat {
@@ -259,8 +280,8 @@ impl<'a> FileProjectStore<'a> {
     }
 
     pub fn contract_health(&self) -> Result<ContractHealthReport, FileProjectError> {
-        let project = self.repository_project()?;
-        build_contract_health_report(&project, self.schema_registry)
+        let (project, result_digests) = self.repository_project_for_health()?;
+        build_contract_health_report_with_digests(&project, self.schema_registry, &result_digests)
             .map_err(|error| file_error(error.to_string()))
     }
 
@@ -556,31 +577,120 @@ impl<'a> FileProjectStore<'a> {
         }
     }
 
-    fn repository_project(&self) -> Result<Value, FileProjectError> {
+    fn repository_project_for_health(
+        &self,
+    ) -> Result<(Value, BTreeMap<String, String>), FileProjectError> {
         let changes = document_paths(&self.change_root)?
             .into_iter()
             .filter(|path| is_change_document(path))
             .map(|path| self.load_document(&path, "change"))
             .collect::<Result<Vec<_>, _>>()?;
         let record_paths = recursive_json_paths(&self.change_root)?;
-        let results = record_paths
+        let result_paths = record_paths
             .iter()
             .filter(|path| parent_name(path) == Some("results"))
-            .map(|path| read_json(path))
-            .collect::<Result<Vec<_>, _>>()?;
-        let evidence = record_paths
+            .cloned()
+            .collect::<Vec<_>>();
+        let (results, mut record_digests) =
+            self.load_indexed_health_records(&result_paths, RESULT_INDEX_PATH, true)?;
+        let evidence_paths = record_paths
             .iter()
             .filter(|path| parent_name(path) == Some("evidence"))
-            .map(|path| read_json(path))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(json!({
-            "changes": changes,
-            "contracts": self.load_document_records(&self.contract_root, "contract")?,
-            "decisions": self.load_document_records(&self.decision_root, "decision")?,
-            "results": results,
-            "evidence": evidence,
-            "repository": self.repository,
-        }))
+            .cloned()
+            .collect::<Vec<_>>();
+        let (evidence, evidence_digests) =
+            self.load_indexed_health_records(&evidence_paths, EVIDENCE_INDEX_PATH, false)?;
+        for (record_id, digest) in evidence_digests {
+            if record_digests.insert(record_id.clone(), digest).is_some() {
+                return Err(file_error(format!("duplicate record id: {record_id}")));
+            }
+        }
+        Ok((
+            json!({
+                "changes": changes,
+                "contracts": self.load_document_records(&self.contract_root, "contract")?,
+                "decisions": self.load_document_records(&self.decision_root, "decision")?,
+                "results": results,
+                "evidence": evidence,
+                "repository": self.repository,
+            }),
+            record_digests,
+        ))
+    }
+
+    fn load_indexed_health_records(
+        &self,
+        paths: &[PathBuf],
+        cache_relative_path: &str,
+        compact_results: bool,
+    ) -> Result<(Vec<Value>, BTreeMap<String, String>), FileProjectError> {
+        let cache_path = self.project_root.join(cache_relative_path);
+        let cache_enabled = path_is_ignored(&self.project_root, cache_relative_path);
+        let previous = if cache_enabled {
+            read_health_index(&cache_path).unwrap_or_default()
+        } else {
+            HealthIndex::default()
+        };
+        let identities = health_record_source_identities(&self.project_root, paths)?;
+        let mut entries = BTreeMap::new();
+        let mut results = Vec::with_capacity(paths.len());
+        let mut digests = BTreeMap::new();
+        for path in paths {
+            let relative = relative_path_string(&self.project_root, path)?;
+            let source = identities.get(&relative).ok_or_else(|| {
+                file_error(format!("Result source identity is missing: {relative}"))
+            })?;
+            let entry = match previous.entries.get(&relative) {
+                Some(entry)
+                    if entry.source_identity == source.identity
+                        && canonical_digest(&entry.record).ok().as_deref()
+                            == Some(entry.projection_digest.as_str()) =>
+                {
+                    entry.clone()
+                }
+                _ => {
+                    let bytes = source
+                        .bytes
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| fs::read(path))
+                        .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
+                    let original: Value = serde_json::from_slice(&bytes)
+                        .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
+                    let record_digest = canonical_digest(&original)
+                        .map_err(|error| file_error(error.to_string()))?;
+                    let record = if compact_results {
+                        compact_indexed_result(original)
+                    } else {
+                        original
+                    };
+                    HealthIndexEntry {
+                        source_identity: source.identity.clone(),
+                        record_digest,
+                        projection_digest: canonical_digest(&record)
+                            .map_err(|error| file_error(error.to_string()))?,
+                        record,
+                    }
+                }
+            };
+            let record_id = required_string(&entry.record, "id", "Record")?.to_owned();
+            if digests
+                .insert(record_id.clone(), entry.record_digest.clone())
+                .is_some()
+            {
+                return Err(file_error(format!("duplicate record id: {record_id}")));
+            }
+            results.push(entry.record.clone());
+            entries.insert(relative, entry);
+        }
+        let current = HealthIndex {
+            schema_version: HEALTH_INDEX_SCHEMA_VERSION.to_owned(),
+            entries,
+        };
+        if cache_enabled {
+            let _ = write_health_index(&cache_path, &current);
+        }
+        Ok((results, digests))
     }
 
     fn change_path(&self, change_id: &str) -> Result<PathBuf, FileProjectError> {
@@ -694,6 +804,207 @@ impl<'a> FileProjectStore<'a> {
         }
         write_result
     }
+}
+
+#[derive(Debug)]
+struct HealthRecordSourceIdentity {
+    identity: String,
+    bytes: Option<Vec<u8>>,
+}
+
+fn health_record_source_identities(
+    root: &Path,
+    paths: &[PathBuf],
+) -> Result<BTreeMap<String, HealthRecordSourceIdentity>, FileProjectError> {
+    let tracked = tracked_health_record_blobs(root).unwrap_or_default();
+    let dirty = dirty_health_record_paths(root).unwrap_or_else(|_| {
+        paths
+            .iter()
+            .filter_map(|path| relative_path_string(root, path).ok())
+            .collect()
+    });
+    let mut identities = BTreeMap::new();
+    for path in paths {
+        let relative = relative_path_string(root, path)?;
+        let (identity, bytes) = if !dirty.contains(&relative) {
+            match tracked.get(&relative) {
+                Some(blob) => (format!("git:{blob}"), None),
+                None => hashed_health_record_identity(path)?,
+            }
+        } else {
+            hashed_health_record_identity(path)?
+        };
+        identities.insert(relative, HealthRecordSourceIdentity { identity, bytes });
+    }
+    Ok(identities)
+}
+
+fn tracked_health_record_blobs(root: &Path) -> Result<BTreeMap<String, String>, FileProjectError> {
+    let output = git_output(root, &["ls-files", "--stage", "-z", "--", ".adf/changes"])?;
+    let mut tracked = BTreeMap::new();
+    for entry in output
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        let Some(tab) = entry.iter().position(|byte| *byte == b'\t') else {
+            continue;
+        };
+        let metadata = String::from_utf8_lossy(&entry[..tab]);
+        let mut fields = metadata.split_whitespace();
+        let _mode = fields.next();
+        let Some(blob) = fields.next() else {
+            continue;
+        };
+        if fields.next() != Some("0") {
+            continue;
+        }
+        let path = String::from_utf8_lossy(&entry[tab + 1..]).into_owned();
+        tracked.insert(path, blob.to_owned());
+    }
+    Ok(tracked)
+}
+
+fn dirty_health_record_paths(root: &Path) -> Result<BTreeSet<String>, FileProjectError> {
+    let output = git_output(
+        root,
+        &[
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+            ".adf/changes",
+        ],
+    )?;
+    let mut dirty = BTreeSet::new();
+    for entry in output
+        .split(|byte| *byte == 0)
+        .filter(|entry| !entry.is_empty())
+    {
+        if entry.len() > 3 && entry[2] == b' ' {
+            dirty.insert(String::from_utf8_lossy(&entry[3..]).into_owned());
+        }
+    }
+    Ok(dirty)
+}
+
+fn git_output(root: &Path, arguments: &[&str]) -> Result<Vec<u8>, FileProjectError> {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(arguments)
+        .output()
+        .map_err(|error| file_error(format!("cannot execute Git: {error}")))?;
+    if !output.status.success() {
+        return Err(file_error(format!(
+            "Git command failed ({}): {}",
+            arguments.join(" "),
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+    Ok(output.stdout)
+}
+
+fn path_is_ignored(root: &Path, relative: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["check-ignore", "--quiet", "--no-index", "--", relative])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
+fn hashed_health_record_identity(
+    path: &Path,
+) -> Result<(String, Option<Vec<u8>>), FileProjectError> {
+    let bytes =
+        fs::read(path).map_err(|error| file_error(format!("{}: {error}", path.display())))?;
+    let identity = format!("sha256:{:x}", Sha256::digest(&bytes));
+    Ok((identity, Some(bytes)))
+}
+
+fn compact_indexed_result(mut result: Value) -> Value {
+    let result_inputs = result.get("input_refs").cloned();
+    let result_freshness = result.get("freshness_refs").cloned();
+    for outcome in result["payload"]["outcomes"]
+        .as_array_mut()
+        .into_iter()
+        .flatten()
+    {
+        let Some(object) = outcome.as_object_mut() else {
+            continue;
+        };
+        if object.get("input_refs") == result_inputs.as_ref() {
+            object.remove("input_refs");
+        }
+        if object.get("freshness_refs") == result_freshness.as_ref() {
+            object.remove("freshness_refs");
+        }
+    }
+    result
+}
+
+fn read_health_index(path: &Path) -> Option<HealthIndex> {
+    if path.symlink_metadata().ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let index: HealthIndex = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    (index.schema_version == HEALTH_INDEX_SCHEMA_VERSION).then_some(index)
+}
+
+fn write_health_index(path: &Path, index: &HealthIndex) -> Result<(), FileProjectError> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| file_error("Result index has no parent directory"))?;
+    fs::create_dir_all(parent)
+        .map_err(|error| file_error(format!("{}: {error}", parent.display())))?;
+    if path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err(file_error("Result index is a symlink"));
+    }
+    let bytes = serde_json::to_vec(index).map_err(|error| file_error(error.to_string()))?;
+    let temporary = parent.join(format!(
+        ".contract-health-results-v1.tmp-{}-{}",
+        std::process::id(),
+        TEMPORARY_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let write_result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| file_error(format!("{}: {error}", temporary.display())))?;
+        file.write_all(&bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(|error| file_error(format!("{}: {error}", temporary.display())))?;
+        fs::rename(&temporary, path).map_err(|error| {
+            file_error(format!(
+                "cannot replace {} with {}: {error}",
+                path.display(),
+                temporary.display()
+            ))
+        })
+    })();
+    if temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    write_result
+}
+
+fn relative_path_string(root: &Path, path: &Path) -> Result<String, FileProjectError> {
+    path.strip_prefix(root)
+        .map(|relative| {
+            relative
+                .components()
+                .map(|component| component.as_os_str().to_string_lossy())
+                .collect::<Vec<_>>()
+                .join("/")
+        })
+        .map_err(|error| file_error(error.to_string()))
 }
 
 fn source_root(root: &Path, relative: &str) -> Result<PathBuf, FileProjectError> {

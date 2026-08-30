@@ -19,7 +19,9 @@ outside ADF.
 adf next <change-id>
 ```
 
-Agents normally use MCP. Start `adf mcp`, then use `adf_next` and `adf_submit`.
+Agents normally use MCP. Start `adf mcp`, call `adf_next`, complete the issued
+action, and call `adf_submit`. A successful submission stores the Result; call
+`adf_next` separately to continue.
 
 Use the Skill for the role in the issued action.
 

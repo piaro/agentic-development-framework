@@ -122,7 +122,9 @@ Explainでは、確認前を`applicability-pending`、支持された後を`not-
 
 `contract-health`は、全ChangeのResult・Evidenceと現在のRepository観測から、Contract条項ごとの実装準拠状態を再生成します。
 
-計算時には、条項ごとのEvidenceと、Evidenceを参照する検証Resultを一度索引化します。Schema検証と現在値のハッシュ計算は、Contract Healthへ影響するContract、Evidence、検証Result、参照先だけに限定します。Result全件を条項ごとに走査せず、無関係なResultの内容全体も検証しません。ただし、Filesystem StoreはすべてのResultファイルを列挙してJSONとして読み込むため、壊れたJSONは引き続きエラーになります。
+計算時には、条項ごとのEvidenceと、Evidenceを参照する検証Resultを索引化します。索引は`.adf/cache/runtime/`へ保存し、追跡済みRecordはGitのBlob ID、変更中または未追跡のRecordは内容ハッシュで更新を判定します。変更のないResultとEvidenceはJSONの読込み、Schema検証、ハッシュ計算を再実行しません。Result全件を条項ごとに走査せず、壊れた索引は正本から作り直します。Gitが保存先を無視すると確認できない場合は、索引をメモリ内だけで使います。
+
+Repository観測も永続キャッシュを使います。現在のrevision、解析設定、Signal Catalog、解析対象の識別子がすべて一致する場合だけ再利用します。キャッシュは派生データであり、Actionの認証やRecordの正本には使いません。
 
 Result提出時は、判定結果の`input_refs`と`freshness_refs`がResult全体の値と同じなら省略します。判定結果だけが追加または異なる参照を持つ場合は、その値を判定結果へ保存します。Kernelは判定結果に値がなければResult全体の値を使うため、既存形式と軽量形式を同じ意味で扱えます。Schema上で両項目はもともと省略可能なので、Schema versionは変更しません。既存Resultを変換するとResult IDと、それを参照する後続Resultの鮮度が変わるため、自動移行は行いません。
 
@@ -513,13 +515,15 @@ bindings:
       authority_ref: decision.repository-bindings
 ```
 
-Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナリを`mcp` subcommandで起動すると、`next`、`submit`、`explain`、`contract-health`と、発行Actionに限定されたEvidence、Decision、Contract書込みToolを利用できます。Tool契約と信頼境界は[`MCP-DESIGN.md`](MCP-DESIGN.md)、固定I/O Schemaは`schemas/mcp/v1/`にあります。既存CLIは人向け診断、CI、Release・binary管理の補助経路として残します。
+Agentの通常利用経路はlocal stdio MCP serverです。同じRustバイナリを`mcp` subcommandで起動すると、`next`、`submit`、`explain`、`contract-health`と、発行Actionに限定されたEvidence、Decision、Contract書込みToolを利用できます。Tool契約と信頼境界は[`MCP-DESIGN.md`](MCP-DESIGN.md)、固定I/O Schemaは`schemas/mcp/`にあります。既存CLIは人向け診断、CI、Release・binary管理の補助経路として残します。
 
 ```sh
 adf mcp --project .
 ```
 
 MCP serverは一つのProject rootへ固定され、stdoutをJSON-RPC専用にします。Action Resultは、`adf_next`が発行した`change_id`、Action ID、Context digestの完全一致でのみ受理します。再接続後は`adf_next`を再実行します。正本を再評価して同じActionが返る場合は、接続断前に保存したEvidence、Decision、Contractを提出時の出力として参照できます。
+
+`adf_submit`はResultを永続化した時点で応答し、次Actionは計算しません。応答の`next_required`が`true`なら、呼出し側が`adf_next`を別に実行します。`adf_submit`と`adf_next`は処理段階ごとの`timings_ms`を返します。
 
 ```sh
 sh scripts/tests/test-rust.sh
@@ -764,7 +768,7 @@ sources:
 | `src/project_runtime.rs` | 実Projectのconfig、Release、Git観測、Storeを接続 |
 | `src/migration.rs` | 現行CLI Projectを診断し、Migration Draftのレビュー検証、隔離候補の生成・整合性検証・明示適用を行う |
 | `schemas/v1/` | 保存Recordの言語非依存Schema |
-| `schemas/mcp/v1/` | Agent用MCP Toolの固定I/O Schema |
+| `schemas/mcp/v1/`、`schemas/mcp/v2/` | Agent用MCP Toolの固定I/O Schema。`adf_submit`出力はv2 |
 | `schemas/ci/v1/` | project所有のCI policy形式。Contract Healthの停止対象を明示する |
 | `schemas/benchmarks/v1/` | Detector benchmark corpusとreview済み正解・閾値の固定形式 |
 | `schemas/catalog/v1/` | 標準Signal Domain CatalogとFramework Detection Catalogの機械可読な固定形式 |

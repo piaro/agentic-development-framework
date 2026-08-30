@@ -82,8 +82,9 @@ Every residual risk needs someone who accepts it and a date by which it is revis
 ## Submit and continue
 
 Call `adf_submit` with the action id, the context digest from the action, and the
-payload. The control plane validates it and returns the next action - usually a
-challenge run from a context independent of yours.
+payload. The control plane validates and stores it. After submission succeeds, call
+`adf_next` separately to receive the next action - usually a challenge run from a
+context independent of yours.
 
 If the orchestrator already knows execution time, model, token counts, tool calls, or
 retries, it may include them in the optional `execution` object. Do not add work solely to

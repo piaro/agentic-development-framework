@@ -1865,7 +1865,7 @@ fn verify_unclaimed_candidate_files(
     for file in files {
         if is_reserved_candidate_artifact(&file)
             || file.starts_with("migration-completions/")
-            || file.starts_with(".adf/cache/releases/")
+            || file.starts_with(".adf/cache/")
         {
             continue;
         }

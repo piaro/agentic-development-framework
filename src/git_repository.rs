@@ -15,12 +15,17 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub const OBSERVATION_SCHEMA_VERSION: &str = "5";
 const LEGACY_OBSERVATION_SCHEMA_VERSION: &str = "4";
+const OBSERVATION_CACHE_SCHEMA_VERSION: &str = "1";
+const OBSERVATION_CACHE_PATH: &str = ".adf/cache/runtime/repository-observation-v1.json";
+static CACHE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub struct GitRepositoryAdapter {
     root: PathBuf,
@@ -295,6 +300,25 @@ impl GitRepositoryAdapter {
         }))
     }
 
+    /// Reuse a repository observation only when every relevant input has the
+    /// same content identity. Clean tracked files use their Git blob IDs;
+    /// modified and untracked files are hashed directly.
+    pub fn observe_cached(&self) -> Result<Value, GitRepositoryError> {
+        self.assert_repository_state()?;
+        let manifest = self.read_manifest()?;
+        if !path_is_ignored(&self.root, OBSERVATION_CACHE_PATH) {
+            return self.observe();
+        }
+        let signature = self.observation_cache_signature(&manifest)?;
+        let cache_path = self.root.join(OBSERVATION_CACHE_PATH);
+        if let Some(repository) = read_observation_cache(&cache_path, &signature) {
+            return Ok(repository);
+        }
+        let repository = self.observe()?;
+        let _ = write_observation_cache(&cache_path, &signature, &repository);
+        Ok(repository)
+    }
+
     pub fn binding_authority_refs(&self) -> Result<Vec<String>, GitRepositoryError> {
         let manifest = self.read_manifest()?;
         let mut authority_refs = BTreeSet::new();
@@ -406,6 +430,113 @@ impl GitRepositoryAdapter {
         Ok(targets)
     }
 
+    fn observation_cache_signature(
+        &self,
+        manifest: &Map<String, Value>,
+    ) -> Result<String, GitRepositoryError> {
+        let roots = analysis_roots(
+            manifest
+                .get("analysis")
+                .ok_or_else(|| git_error("repository analysis is missing"))?,
+        )?;
+        let mut targets = self
+            .analysis_targets(&roots)?
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        for declaration in required_array(manifest, "artifacts", "repository observation")? {
+            let declaration = declaration
+                .as_object()
+                .ok_or_else(|| git_error("artifact declaration must be a mapping"))?;
+            targets.insert(
+                required_nonempty_string(declaration, "path", "artifact declaration")?.to_owned(),
+            );
+        }
+        let targets = targets.into_iter().collect::<Vec<_>>();
+        let tracked = self.tracked_blob_ids(&targets)?;
+        let dirty = self.dirty_source_paths(&targets)?;
+        let mut inputs = Vec::with_capacity(targets.len());
+        for path in targets {
+            let source_path =
+                repository_path(&self.root, &path).map_err(|error| git_error(error.to_string()))?;
+            let identity = if !dirty.contains(path.as_str()) {
+                tracked.get(path.as_str()).cloned()
+            } else {
+                None
+            }
+            .map(|blob| format!("git:{blob}"))
+            .map(Ok)
+            .unwrap_or_else(|| file_sha256(&source_path))?;
+            inputs.push(json!({"path": path, "identity": identity}));
+        }
+        canonical_digest(&json!({
+            "schema_version": OBSERVATION_CACHE_SCHEMA_VERSION,
+            "revision": self.git(&["rev-parse", "HEAD"] )?,
+            "manifest": manifest,
+            "signal_catalog_digest": self.signal_registry.digest(),
+            "require_clean": self.require_clean,
+            "inputs": inputs,
+        }))
+        .map_err(|error| git_error(error.to_string()))
+    }
+
+    fn tracked_blob_ids(
+        &self,
+        paths: &[String],
+    ) -> Result<BTreeMap<String, String>, GitRepositoryError> {
+        if paths.is_empty() {
+            return Ok(BTreeMap::new());
+        }
+        let mut arguments = vec!["ls-files", "--stage", "-z", "--"];
+        arguments.extend(paths.iter().map(String::as_str));
+        let output = self.git_raw(&arguments)?;
+        let mut tracked = BTreeMap::new();
+        for entry in output
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+        {
+            let Some(tab) = entry.iter().position(|byte| *byte == b'\t') else {
+                continue;
+            };
+            let metadata = String::from_utf8_lossy(&entry[..tab]);
+            let mut fields = metadata.split_whitespace();
+            let _mode = fields.next();
+            let Some(blob) = fields.next() else {
+                continue;
+            };
+            if fields.next() != Some("0") {
+                continue;
+            }
+            let path = String::from_utf8_lossy(&entry[tab + 1..]).into_owned();
+            tracked.insert(path, blob.to_owned());
+        }
+        Ok(tracked)
+    }
+
+    fn dirty_source_paths(&self, paths: &[String]) -> Result<BTreeSet<String>, GitRepositoryError> {
+        if paths.is_empty() {
+            return Ok(BTreeSet::new());
+        }
+        let mut arguments = vec![
+            "status",
+            "--porcelain=v1",
+            "-z",
+            "--untracked-files=all",
+            "--",
+        ];
+        arguments.extend(paths.iter().map(String::as_str));
+        let output = self.git_raw(&arguments)?;
+        let mut dirty = BTreeSet::new();
+        for entry in output
+            .split(|byte| *byte == 0)
+            .filter(|entry| !entry.is_empty())
+        {
+            if entry.len() > 3 && entry[2] == b' ' {
+                dirty.insert(String::from_utf8_lossy(&entry[3..]).into_owned());
+            }
+        }
+        Ok(dirty)
+    }
+
     fn assert_tracked(&self, relative: &str) -> Result<(), GitRepositoryError> {
         self.git(&["ls-files", "--error-unmatch", "--", relative])
             .map(|_| ())
@@ -429,6 +560,11 @@ impl GitRepositoryAdapter {
     }
 
     fn git(&self, arguments: &[&str]) -> Result<String, GitRepositoryError> {
+        let output = self.git_raw(arguments)?;
+        Ok(String::from_utf8_lossy(&output).trim().to_owned())
+    }
+
+    fn git_raw(&self, arguments: &[&str]) -> Result<Vec<u8>, GitRepositoryError> {
         let output = Command::new("git")
             .arg("-C")
             .arg(&self.root)
@@ -444,8 +580,79 @@ impl GitRepositoryAdapter {
                 arguments.join(" ")
             )));
         }
-        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        Ok(output.stdout)
     }
+}
+
+fn read_observation_cache(path: &Path, signature: &str) -> Option<Value> {
+    if path.symlink_metadata().ok()?.file_type().is_symlink() {
+        return None;
+    }
+    let cache: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    if cache["schema_version"].as_str() != Some(OBSERVATION_CACHE_SCHEMA_VERSION)
+        || cache["input_signature"].as_str() != Some(signature)
+    {
+        return None;
+    }
+    let repository = cache.get("repository")?.clone();
+    let expected = cache["repository_digest"].as_str()?;
+    (canonical_digest(&repository).ok()?.as_str() == expected).then_some(repository)
+}
+
+fn write_observation_cache(path: &Path, signature: &str, repository: &Value) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| "repository observation cache has no parent".to_owned())?;
+    fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    if path
+        .symlink_metadata()
+        .is_ok_and(|metadata| metadata.file_type().is_symlink())
+    {
+        return Err("repository observation cache is a symlink".to_owned());
+    }
+    let value = json!({
+        "schema_version": OBSERVATION_CACHE_SCHEMA_VERSION,
+        "input_signature": signature,
+        "repository_digest": canonical_digest(repository).map_err(|error| error.to_string())?,
+        "repository": repository,
+    });
+    let bytes = serde_json::to_vec(&value).map_err(|error| error.to_string())?;
+    let temporary = parent.join(format!(
+        ".repository-observation-v1.tmp-{}-{}",
+        std::process::id(),
+        CACHE_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|error| error.to_string())?;
+        file.write_all(&bytes).map_err(|error| error.to_string())?;
+        file.sync_all().map_err(|error| error.to_string())?;
+        fs::rename(&temporary, path).map_err(|error| error.to_string())
+    })();
+    if temporary.exists() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn file_sha256(path: &Path) -> Result<String, GitRepositoryError> {
+    let bytes =
+        fs::read(path).map_err(|error| git_error(format!("{}: {error}", path.display())))?;
+    Ok(format!("sha256:{:x}", Sha256::digest(bytes)))
+}
+
+fn path_is_ignored(root: &Path, relative: &str) -> bool {
+    Command::new("git")
+        .arg("-C")
+        .arg(root)
+        .args(["check-ignore", "--quiet", "--no-index", "--", relative])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success())
 }
 
 fn analysis_roots(value: &Value) -> Result<Vec<String>, GitRepositoryError> {

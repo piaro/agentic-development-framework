@@ -245,7 +245,7 @@ adf mcp --project /path/to/project
     │           ├─ Builder    implement, then record required clause evidence
     │           └─ Challenger try to falsify it, before and after the build
     │           │
-    └───────────┴─ adf_submit ──── validated, stored, reevaluated
+    └───────────┴─ adf_submit ──── validated and stored
                 │
                 ▼
           ready to merge
@@ -283,14 +283,27 @@ While impact assessment is still pending, `next` and `explain` select that
 action before deriving repository-wide Contract health. Unrelated Result and
 Evidence history is not loaded for this first step.
 
-When Contract health is required, ADF indexes Evidence and verification Results
-once, then validates and hashes only records that can affect a Contract clause.
-It does not repeatedly scan every Result for every clause.
+When Contract health is required, ADF maintains persistent Evidence and Result
+indexes under `.adf/cache/runtime/`. Unchanged tracked records are identified by
+their Git blob IDs; changed and untracked records use content hashes. ADF parses
+only records whose source identity changed, and it does not scan every Result
+again for each Contract clause. Corrupt cache entries are rebuilt from source.
+ADF writes runtime caches only when Git confirms that the cache path is ignored.
+
+Repository observation uses a separate cache tied to the current revision,
+analysis configuration, signal catalog, and source identities. Source changes
+invalidate the observation without making cache files authoritative.
 
 New Results store shared input and freshness references once at the Result
 level. An outcome carries its own references only when they differ from those
 shared values. Existing Results remain readable and are not rewritten, so their
 identities and downstream freshness checks remain stable.
+
+`adf_submit` returns after the Result is stored. Its response includes
+`result_id`, `already_completed`, `next_required`, and per-stage `timings_ms`.
+Call `adf_next` separately when `next_required` is true. This keeps a slow next
+evaluation from obscuring whether submission itself succeeded. `adf_next` also
+reports per-stage timings.
 
 Each action also carries advisory execution guidance. Impact assessment
 normally recommends an economy model, while challenge recommends a

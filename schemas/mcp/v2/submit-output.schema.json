@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/mcp/v2/submit-output",
+  "title": "adf_submit output v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "result_id",
+    "already_completed",
+    "next_required",
+    "timings_ms"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "2"
+    },
+    "result_id": {
+      "type": "string",
+      "pattern": "^result\\.[A-Za-z0-9._-]+$"
+    },
+    "already_completed": {
+      "type": "boolean"
+    },
+    "next_required": {
+      "const": true
+    },
+    "timings_ms": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  }
+}

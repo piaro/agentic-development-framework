@@ -85,6 +85,14 @@ pub fn build_contract_health_report(
     project: &Value,
     schema_registry: &SchemaRegistry,
 ) -> Result<ContractHealthReport, ContractHealthError> {
+    build_contract_health_report_with_digests(project, schema_registry, &BTreeMap::new())
+}
+
+pub(crate) fn build_contract_health_report_with_digests(
+    project: &Value,
+    schema_registry: &SchemaRegistry,
+    record_digests: &BTreeMap<String, String>,
+) -> Result<ContractHealthReport, ContractHealthError> {
     let project = project
         .as_object()
         .ok_or_else(|| health_error("project must be an object"))?;
@@ -98,7 +106,8 @@ pub fn build_contract_health_report(
     let verification_outcomes_by_evidence = verification_outcomes_by_evidence(results);
     let required_current_refs = verification_freshness_refs(results);
     validate_health_records(project, schema_registry, &required_current_refs)?;
-    let current_digests = current_artifact_digests(project, &required_current_refs)?;
+    let current_digests =
+        current_artifact_digests(project, &required_current_refs, record_digests)?;
     let evidence_by_clause = evidence_by_clause(evidence);
 
     let mut clauses = Vec::new();
@@ -409,13 +418,19 @@ fn is_sha256_digest(value: &str) -> bool {
 fn current_artifact_digests(
     project: &serde_json::Map<String, Value>,
     required_refs: &BTreeSet<&str>,
+    record_digests: &BTreeMap<String, String>,
 ) -> Result<BTreeMap<String, String>, ContractHealthError> {
     let mut digests = BTreeMap::new();
     for collection in ["changes", "contracts", "decisions", "results", "evidence"] {
         for record in record_array(project.get(collection), collection)? {
             let id = required_string(record, "id", "Project record")?;
             if required_refs.contains(id) {
-                digests.insert(id.to_owned(), digest_value(record)?);
+                let digest = record_digests
+                    .get(id)
+                    .cloned()
+                    .map(Ok)
+                    .unwrap_or_else(|| digest_value(record))?;
+                digests.insert(id.to_owned(), digest);
             }
             if collection == "contracts" {
                 for clause in record["clauses"]
@@ -833,9 +848,9 @@ mod tests {
         });
         let project = project.as_object().unwrap();
 
-        assert!(current_artifact_digests(project, &BTreeSet::new()).is_ok());
+        assert!(current_artifact_digests(project, &BTreeSet::new(), &BTreeMap::new()).is_ok());
         let required = BTreeSet::from(["result.unrelated"]);
-        assert!(current_artifact_digests(project, &required).is_err());
+        assert!(current_artifact_digests(project, &required, &BTreeMap::new()).is_err());
     }
 
     #[test]

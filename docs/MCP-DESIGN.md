@@ -154,7 +154,7 @@ registered_output_refs: []
 - RegistryはMCP sessionのmemoryにだけ保持する。memoryにないActionは、正本の再評価と一致するときに再構成する。再構成後に`adf_next`を呼んだ場合も、同じChangeの正本に保存済みのEvidence、Decision、Contractは提出時の出力として参照できる。
 - Generated ContextをGit、Result、derived cacheへ保存しない。
 - Evidence、Decision、Contractの専用Toolが保存したrefだけを`registered_output_refs`へ追加する。Evidenceには、発行済みRequirementが参照した入力digestを`input_refs`として付与する。
-- 正常な`submit`後にexact keyを消費し、再評価で返した次Actionを新しいentryとして登録する。
+- 正常な`submit`後にexact keyを消費する。次Actionは後続の`adf_next`で発行し、新しいentryとして登録する。
 - submit失敗時は、修正して再試行できるようentryを残す。
 - 同じkeyへ複数提出が競合した場合、Filesystem Storeのexclusive createを最終防衛線とする。
 
@@ -186,7 +186,7 @@ Tool名は広いMCP client互換性を優先し、ASCII英数字とunderscoreだ
 | `adf_execution_log` | read | 保存済みResultと実行RecordからContextサイズと計測値を集計する |
 | `adf_begin_execution` | write | 現在のActionに対する外部実行の開始を追記する。Agentは起動しない |
 | `adf_complete_execution` | write | 外部実行の成否と確定済みの利用量を追記する |
-| `adf_submit` | write | 発行済みActionのResultを検証・保存し、再評価する |
+| `adf_submit` | write | 発行済みActionのResultを検証・保存する |
 | `adf_add_evidence` | write | 発行済みEvidence ActionへEvidenceを追記する |
 | `adf_apply_decision` | write | Human回答を解決するDecisionを保存する |
 | `adf_apply_contract` | write | Decisionを反映したContractを楽観的lock付きで更新する |
@@ -204,7 +204,7 @@ MCP Tool annotationはHost向けhintとして設定しますが、認可には�
 ## 10. Tool契約
 
 全Toolは`inputSchema`と`outputSchema`を公開し、成功時は`structuredContent`を返します。
-保存Record Schemaとは別に、MCP I/O Schemaを`schemas/mcp/v1/`へ置きます。
+保存Record Schemaとは別に、MCP I/O Schemaを`schemas/mcp/`へ置きます。`adf_next`はv1、保存完了だけを返す`adf_submit`出力はv2です。
 
 ### 10.1 `adf_next`
 
@@ -227,6 +227,11 @@ Output:
     "change_id": "change.example",
     "action_id": "action.example",
     "context_digest": "sha256:..."
+  },
+  "timings_ms": {
+    "repository_load": 12,
+    "evaluation": 34,
+    "total": 46
   }
 }
 ```
@@ -261,13 +266,22 @@ Output:
 
 ```json
 {
-  "schema_version": "1",
+  "schema_version": "2",
   "result_id": "result.example",
   "already_completed": false,
-  "next_response": {}
+  "next_required": true,
+  "timings_ms": {
+    "repository_load": 12,
+    "change_snapshot": 3,
+    "validation_and_persist": 8,
+    "total": 23
+  }
 }
 ```
 
+- `adf_submit`はResultを永続化した時点で応答し、次Actionを計算しない。
+- `next_required`が`true`なら、呼出し側は`adf_next`を別に実行する。
+- `timings_ms`は処理段階ごとの実測時間をミリ秒で返す。
 - exact action keyがRegistryにない提出は、正本を再評価して同じActionが現在のものであるときだけ受理する。
 - 成功したResult追記後だけActionを消費する。
 - Contract、Decision、Evidenceの`output_refs`は、同じentryの`registered_output_refs`に存在しなければ拒否する。再起動を跨いだActionでは、そのRecordがChangeの正本に存在することで代える。
@@ -482,8 +496,11 @@ schemas/mcp/v1/
 ├── next-input.schema.json
 ├── next-output.schema.json
 ├── submit-input.schema.json
-├── submit-output.schema.json
+├── submit-output.schema.json  # 旧出力契約
 └── tool-error.schema.json
+
+schemas/mcp/v2/
+└── submit-output.schema.json
 ```
 
 RMCP、Tokio、schema生成用crateを追加する場合も、公開Schemaの正本はRepository上のJSON
@@ -507,7 +524,7 @@ Schemaとし、生成差分をtestで検査します。
 - 専用Toolを経由していないContract、Decision、Evidenceの`output_refs`を拒否
 - Decision、Contract、EvidenceのAction binding
 - submit失敗時にIssued Actionを消費しない
-- 成功時にexact Actionだけを消費し、返した次Actionを登録する
+- 成功時にexact Actionだけを消費し、次の`adf_next`で新しいActionを登録する
 
 ### 18.3 MCP protocol integration
 
@@ -517,7 +534,7 @@ Schemaとし、生成差分をtestで検査します。
 2. tools/list
 3. `adf_next`
 4. `adf_submit`
-5. 再評価後の次Action
+5. `adf_next`で次Actionを取得
 6. lifecycle全体を`ready-to-merge`まで実行
 7. stdoutへJSON-RPC以外を出さない
 8. server停止時に未提出Actionを失効

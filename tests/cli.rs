@@ -890,7 +890,8 @@ fn migration_candidate_requires_a_signed_release_and_schema_valid_records() {
             .as_array()
             .unwrap()
             .iter()
-            .any(|issue| issue["category"] == "invalid-candidate-records")
+            .any(|issue| issue["category"] == "invalid-candidate-records"),
+        "unexpected validation report: {report}"
     );
 
     fs::write(&contract_path, valid_contract).unwrap();
@@ -3201,6 +3202,32 @@ fn contract_health_policy_turns_the_report_into_an_explicit_ci_gate() {
 }
 
 #[test]
+fn derived_runtime_indexes_are_rebuilt_when_cache_files_are_corrupt() {
+    let project = TestProject::new();
+    let first = project.run(&["contract-health", "--format", "json"]);
+    assert_success(&first);
+
+    let cache_paths = [
+        ".adf/cache/runtime/repository-observation-v1.json",
+        ".adf/cache/runtime/contract-health-results-v1.json",
+        ".adf/cache/runtime/contract-health-evidence-v1.json",
+    ];
+    for relative in cache_paths {
+        let path = project.root.join(relative);
+        assert!(path.is_file(), "expected runtime cache: {relative}");
+        fs::write(path, b"not json").unwrap();
+    }
+
+    let rebuilt = project.run(&["contract-health", "--format", "json"]);
+    assert_success(&rebuilt);
+    for relative in cache_paths {
+        let value: Value =
+            serde_json::from_slice(&fs::read(project.root.join(relative)).unwrap()).unwrap();
+        assert_eq!(value["schema_version"], "1");
+    }
+}
+
+#[test]
 fn contract_health_gate_rejects_invalid_or_untracked_policy() {
     let project = TestProject::new();
     let policy_path = project.root.join(".adf/contract-health-policy.yaml");
@@ -3387,6 +3414,7 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     assert_eq!(next["result"]["isError"], false);
     let next = &next["result"]["structuredContent"];
     validate_mcp_schema(next, "next-output.schema.json");
+    assert!(next["timings_ms"]["total"].is_number());
     assert_eq!(next["next_response"]["state"], "needs-analysis");
     assert_eq!(
         next["next_response"]["next_action"]["action"],
@@ -3504,8 +3532,12 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
     let submitted = mcp_receive(&mut output);
     assert_eq!(submitted["result"]["isError"], false);
     let submitted = &submitted["result"]["structuredContent"];
-    validate_mcp_schema(submitted, "submit-output.schema.json");
+    validate_mcp_schema_version(submitted, "v2", "submit-output.schema.json");
     assert_eq!(submitted["already_completed"], false);
+    assert_eq!(submitted["next_required"], true);
+    assert!(submitted["timings_ms"]["total"].is_number());
+    assert!(submitted.get("next_response").is_none());
+    assert!(submitted.get("issued_action").is_none());
     assert!(
         submitted["result_id"]
             .as_str()
@@ -3518,6 +3550,16 @@ fn stdio_mcp_lists_typed_tools_and_persists_an_issued_result() {
             .count(),
         1
     );
+
+    let continued = mcp_call(
+        &mut input,
+        &mut output,
+        32,
+        "adf_next",
+        json!({"change_id": "change.place-order"}),
+    );
+    assert_eq!(continued["isError"], false);
+    validate_mcp_schema(&continued["structuredContent"], "next-output.schema.json");
 
     let completed = mcp_call(
         &mut input,
@@ -5962,8 +6004,13 @@ fn validate_delivery_schema(value: &Value, filename: &str) {
 }
 
 fn validate_mcp_schema(value: &Value, filename: &str) {
+    validate_mcp_schema_version(value, "v1", filename);
+}
+
+fn validate_mcp_schema_version(value: &Value, version: &str, filename: &str) {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("schemas/mcp/v1")
+        .join("schemas/mcp")
+        .join(version)
         .join(filename);
     let schema: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
     validate_json_document(value, &schema).unwrap();

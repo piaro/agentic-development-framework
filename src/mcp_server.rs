@@ -321,7 +321,7 @@ impl AgenticMcpServer {
     /// Validate and persist the Result for an Action issued in this MCP session.
     #[tool(
         name = "adf_submit",
-        description = "Validate and persist an issued Action Result, then return the reevaluated next Action.",
+        description = "Validate and persist an issued Action Result. Call adf_next separately after persistence succeeds.",
         annotations(
             title = "Agentic Submit",
             read_only_hint = false,
