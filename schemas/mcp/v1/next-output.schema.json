@@ -25,6 +25,13 @@
           "type": "null"
         }
       ]
+    },
+    "timings_ms": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
     }
   },
   "$defs": {

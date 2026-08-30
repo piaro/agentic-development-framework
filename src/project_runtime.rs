@@ -49,7 +49,7 @@ impl LoadedProject {
             require_clean,
             signal_registry.clone(),
         )
-        .and_then(|adapter| adapter.observe())
+        .and_then(|adapter| adapter.observe_cached())
         .map_err(|error| runtime_error(error.to_string()))?;
         Ok(Self {
             root,

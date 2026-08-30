@@ -189,8 +189,8 @@ The gap is the finding.
 ## Submit and continue
 
 Call `adf_submit` with the action id, the context digest from the action, and the
-payload. The control plane validates it, stores it, and returns the next action. Repeat
-until it hands the work to another role.
+payload. The control plane validates and stores it. After submission succeeds, call
+`adf_next` separately. Repeat until it hands the work to another role.
 
 If the orchestrator already exposes execution measurements, include them in the optional
 `execution` object: `duration_ms`, `model`, `input_tokens`, `output_tokens`, `tool_calls`,

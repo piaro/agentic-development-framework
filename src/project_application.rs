@@ -4,7 +4,7 @@
 //! Record. Git, Records, and the verified Framework Release are re-read before
 //! every evaluation or write.
 
-use crate::application::{ApplicationResponse, ApplicationSubmission};
+use crate::application::ApplicationResponse;
 use crate::cli_output::next_response_value;
 use crate::context::GeneratedContext;
 use crate::execution_log::ExecutionLog;
@@ -20,8 +20,10 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub const MCP_APPLICATION_PROTOCOL_VERSION: &str = "1";
+pub const MCP_SUBMIT_PROTOCOL_VERSION: &str = "2";
 
 /// Describe a Record-shaped JSON value as a Schema object rather than the
 /// boolean Schema `true` that `serde_json::Value` produces on its own.
@@ -65,6 +67,7 @@ pub struct NextServiceResponse {
     #[schemars(schema_with = "json_object_schema")]
     pub next_response: Value,
     pub issued_action: Option<IssuedActionKey>,
+    pub timings_ms: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -72,9 +75,8 @@ pub struct SubmitServiceResponse {
     pub schema_version: String,
     pub result_id: String,
     pub already_completed: bool,
-    #[schemars(schema_with = "json_object_schema")]
-    pub next_response: Value,
-    pub issued_action: Option<IssuedActionKey>,
+    pub next_required: bool,
+    pub timings_ms: BTreeMap<String, u64>,
 }
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]
@@ -133,14 +135,19 @@ impl ProjectApplicationService {
         change_id: &str,
         require_clean: bool,
     ) -> Result<NextServiceResponse, ServiceError> {
+        let total_started = Instant::now();
+        let load_started = Instant::now();
         let project = self.load(require_clean)?;
+        let repository_load_ms = elapsed_ms(load_started);
         if require_clean {
             project
                 .assert_tracked_inputs(change_id)
                 .map_err(project_error)?;
         }
+        let evaluation_started = Instant::now();
         let mut application = project.application().map_err(application_error)?;
         let response = application.next(change_id).map_err(application_error)?;
+        let evaluation_ms = elapsed_ms(evaluation_started);
         let rule_index_digest = application.rule_index_digest().to_owned();
         let framework_lock_digest = application.framework_lock_digest().to_owned();
         let next_response = next_response_value(change_id, &response);
@@ -154,6 +161,11 @@ impl ProjectApplicationService {
             schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
             next_response,
             issued_action,
+            timings_ms: BTreeMap::from([
+                ("repository_load".to_owned(), repository_load_ms),
+                ("evaluation".to_owned(), evaluation_ms),
+                ("total".to_owned(), elapsed_ms(total_started)),
+            ]),
         })
     }
 
@@ -249,23 +261,36 @@ impl ProjectApplicationService {
         output_refs: Vec<String>,
         execution: Option<Value>,
     ) -> Result<SubmitServiceResponse, ServiceError> {
+        let total_started = Instant::now();
+        let mut timings_ms = BTreeMap::new();
         let entry = match self.issued.get(key).cloned() {
             Some(entry) => entry,
             None => {
                 // A Result already stored for this Action and Context means the
                 // submission arrived twice; replay it rather than writing again.
-                if let Some(response) = self.replay_submission(key, &payload, &output_refs)? {
-                    return Ok(response);
+                let replay_started = Instant::now();
+                if let Some(result_id) = self.replay_submission(key, &payload, &output_refs)? {
+                    timings_ms.insert("replay_check".to_owned(), elapsed_ms(replay_started));
+                    timings_ms.insert("total".to_owned(), elapsed_ms(total_started));
+                    return Ok(submit_response(result_id, true, timings_ms));
                 }
-                self.resume(key)?
+                timings_ms.insert("replay_check".to_owned(), elapsed_ms(replay_started));
+                let resume_started = Instant::now();
+                let entry = self.resume(key)?;
+                timings_ms.insert("action_resume".to_owned(), elapsed_ms(resume_started));
+                entry
             }
         };
 
+        let load_started = Instant::now();
         let project = self.load(false)?;
+        timings_ms.insert("repository_load".to_owned(), elapsed_ms(load_started));
         let mut application = project.application().map_err(application_error)?;
+        let snapshot_started = Instant::now();
         let snapshot = application
             .snapshot(&key.change_id)
             .map_err(application_error)?;
+        timings_ms.insert("change_snapshot".to_owned(), elapsed_ms(snapshot_started));
         let existing_result = snapshot
             .results
             .iter()
@@ -275,10 +300,9 @@ impl ProjectApplicationService {
             && result["output_refs"] == json!(output_refs)
         {
             let result_id = required_record_id(result, "Result")?.to_owned();
-            let response = application
-                .next(&key.change_id)
-                .map_err(application_error)?;
-            return Ok(self.completed_response(key, result_id, response, &application));
+            self.issued.remove(key);
+            timings_ms.insert("total".to_owned(), elapsed_ms(total_started));
+            return Ok(submit_response(result_id, true, timings_ms));
         }
         validate_output_refs(&entry, &output_refs, &snapshot)?;
         assert_framework_identity(&entry, &application)?;
@@ -295,10 +319,11 @@ impl ProjectApplicationService {
             output_refs,
             execution,
         };
-        let ApplicationSubmission { result, response } = if let Some(existing) = existing_result {
+        let persist_started = Instant::now();
+        let result = if let Some(existing) = existing_result {
             let expected_result_id = required_record_id(existing, "Result")?;
             application
-                .correct_issued_with_snapshot(
+                .replace_issued_with_snapshot(
                     &entry.context,
                     &submission,
                     &snapshot,
@@ -307,68 +332,23 @@ impl ProjectApplicationService {
                 .map_err(application_error)?
         } else {
             application
-                .submit_issued_with_snapshot(&entry.context, &submission, &snapshot)
+                .persist_issued_with_snapshot(&entry.context, &submission, &snapshot)
                 .map_err(application_error)?
         };
-        let rule_index_digest = application.rule_index_digest().to_owned();
-        let framework_lock_digest = application.framework_lock_digest().to_owned();
+        timings_ms.insert(
+            "validation_and_persist".to_owned(),
+            elapsed_ms(persist_started),
+        );
         let result_id = result["id"]
             .as_str()
             .expect("validated Result has an ID")
             .to_owned();
-        let next_response = next_response_value(&key.change_id, &response);
-        let next_issued = issued_entry(
-            &key.change_id,
-            &response,
-            &rule_index_digest,
-            &framework_lock_digest,
-        );
         drop(application);
         drop(project);
 
         self.issued.remove(key);
-        let issued_action = next_issued.map(|(next_key, next_entry)| {
-            self.issued.insert(next_key.clone(), next_entry);
-            next_key
-        });
-        Ok(SubmitServiceResponse {
-            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
-            result_id,
-            already_completed: false,
-            next_response,
-            issued_action,
-        })
-    }
-
-    fn completed_response(
-        &mut self,
-        key: &IssuedActionKey,
-        result_id: String,
-        response: crate::application::ApplicationResponse,
-        application: &crate::application::Application<
-            '_,
-            crate::filesystem_project::FileProjectStore<'_>,
-        >,
-    ) -> SubmitServiceResponse {
-        let next_response = next_response_value(&key.change_id, &response);
-        let next_issued = issued_entry(
-            &key.change_id,
-            &response,
-            application.rule_index_digest(),
-            application.framework_lock_digest(),
-        );
-        self.issued.remove(key);
-        let issued_action = next_issued.map(|(next_key, next_entry)| {
-            self.issued.insert(next_key.clone(), next_entry);
-            next_key
-        });
-        SubmitServiceResponse {
-            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
-            result_id,
-            already_completed: true,
-            next_response,
-            issued_action,
-        }
+        timings_ms.insert("total".to_owned(), elapsed_ms(total_started));
+        Ok(submit_response(result_id, false, timings_ms))
     }
 
     /// Replays a submission whose Result is already stored, or `None` when this
@@ -378,9 +358,9 @@ impl ProjectApplicationService {
         key: &IssuedActionKey,
         payload: &Value,
         output_refs: &[String],
-    ) -> Result<Option<SubmitServiceResponse>, ServiceError> {
+    ) -> Result<Option<String>, ServiceError> {
         let project = self.load(false)?;
-        let mut application = project.application().map_err(application_error)?;
+        let application = project.application().map_err(application_error)?;
         let snapshot = application
             .snapshot(&key.change_id)
             .map_err(application_error)?;
@@ -399,32 +379,7 @@ impl ProjectApplicationService {
                 false,
             ));
         }
-        let result_id = required_record_id(result, "Result")?.to_owned();
-        let response = application
-            .next(&key.change_id)
-            .map_err(application_error)?;
-        let rule_index_digest = application.rule_index_digest().to_owned();
-        let framework_lock_digest = application.framework_lock_digest().to_owned();
-        let next_response = next_response_value(&key.change_id, &response);
-        let next_issued = issued_entry(
-            &key.change_id,
-            &response,
-            &rule_index_digest,
-            &framework_lock_digest,
-        );
-        drop(application);
-        drop(project);
-        let issued_action = next_issued.map(|(next_key, next_entry)| {
-            self.issued.insert(next_key.clone(), next_entry);
-            next_key
-        });
-        Ok(Some(SubmitServiceResponse {
-            schema_version: MCP_APPLICATION_PROTOCOL_VERSION.to_owned(),
-            result_id,
-            already_completed: true,
-            next_response,
-            issued_action,
-        }))
+        Ok(Some(required_record_id(result, "Result")?.to_owned()))
     }
 
     pub fn add_evidence(
@@ -673,6 +628,24 @@ impl ProjectApplicationService {
             key
         })
     }
+}
+
+fn submit_response(
+    result_id: String,
+    already_completed: bool,
+    timings_ms: BTreeMap<String, u64>,
+) -> SubmitServiceResponse {
+    SubmitServiceResponse {
+        schema_version: MCP_SUBMIT_PROTOCOL_VERSION.to_owned(),
+        result_id,
+        already_completed,
+        next_required: true,
+        timings_ms,
+    }
+}
+
+fn elapsed_ms(started: Instant) -> u64 {
+    u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
 
 fn validate_evidence_claims(evidence: &Value) -> Result<(), ServiceError> {

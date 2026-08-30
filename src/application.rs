@@ -208,6 +208,21 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
         submission: &ResultSubmission,
         snapshot: &ProjectSnapshot,
     ) -> Result<ApplicationSubmission, ApplicationError> {
+        let result = self.persist_issued_with_snapshot(context, submission, snapshot)?;
+        let response = self.next(&submission.change_id)?;
+        Ok(ApplicationSubmission { result, response })
+    }
+
+    /// Validate and persist a Result without deriving the next Action.
+    ///
+    /// Long-running adapters use this as the acknowledgement boundary so a
+    /// successful write is not hidden behind repository-wide reevaluation.
+    pub(crate) fn persist_issued_with_snapshot(
+        &mut self,
+        context: &GeneratedContext,
+        submission: &ResultSubmission,
+        snapshot: &ProjectSnapshot,
+    ) -> Result<Value, ApplicationError> {
         let result = prepare_result(context, snapshot, submission, self.schema_registry)
             .map_err(|error| application_error(error.to_string()))?;
         // The append completes before consuming the issued Context. A failed
@@ -219,8 +234,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             submission.action_id.clone(),
             submission.context_digest.clone(),
         ));
-        let response = self.next(&submission.change_id)?;
-        Ok(ApplicationSubmission { result, response })
+        Ok(result)
     }
 
     /// Replace the Result for an Action that the current Project still issues.
@@ -229,13 +243,13 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
     /// prove that the existing Result did not complete or supersede the Action,
     /// and the Store compares its ID again when writing so concurrent changes
     /// cannot be lost.
-    pub(crate) fn correct_issued_with_snapshot(
+    pub(crate) fn replace_issued_with_snapshot(
         &mut self,
         context: &GeneratedContext,
         submission: &ResultSubmission,
         snapshot: &ProjectSnapshot,
         expected_result_id: &str,
-    ) -> Result<ApplicationSubmission, ApplicationError> {
+    ) -> Result<Value, ApplicationError> {
         let result = prepare_result(context, snapshot, submission, self.schema_registry)
             .map_err(|error| application_error(error.to_string()))?;
         self.store
@@ -245,8 +259,7 @@ impl<'a, Store: ProjectStore> Application<'a, Store> {
             submission.action_id.clone(),
             submission.context_digest.clone(),
         ));
-        let response = self.next(&submission.change_id)?;
-        Ok(ApplicationSubmission { result, response })
+        Ok(result)
     }
 
     /// Recompute the current decision and its trace without issuing an Action.
