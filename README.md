@@ -115,7 +115,13 @@ only the Contracts needed to govern them before implementation starts.
 it was based on, so changing a contract, the code, or the authority behind it
 marks the work that depended on it stale and asks for it again. A contract that
 drifted from the code does not silently keep passing. Committing only ADF Result
-or Evidence Records does not invalidate the product inputs those records verify.
+or Evidence Records does not invalidate the product inputs those records verify. After
+`adf_add_evidence`, a refreshed `adf_next` Context may include that Evidence and
+other Evidence for the same Requirement. They are not retroactive prerequisites
+of the verification record. Evidence dependencies captured when the record was
+created still have to match. Submit truthful `unsatisfied` or `inconclusive`
+outcomes with the corresponding Evidence in `basis_refs` and `output_refs`;
+no commit or manual rewriting of Evidence is needed.
 
 **Nothing reviews its own work.** Implementation and challenge are separate
 roles, and a post-build challenge runs in a context that did not build the

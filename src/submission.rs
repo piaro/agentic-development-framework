@@ -713,6 +713,81 @@ mod tests {
     }
 
     #[test]
+    fn refreshed_evidence_inputs_preserve_content_and_recorded_dependencies() {
+        let mut snapshot = snapshot();
+        for reference in ["code.test", "contract.test", "decision.test"] {
+            snapshot
+                .artifact_digests
+                .insert(reference.to_owned(), format!("sha256:{}", "a".repeat(64)));
+        }
+        let inputs = snapshot
+            .artifact_digests
+            .iter()
+            .filter(|(reference, _)| reference.as_str() != "evidence.test")
+            .map(|(reference, digest)| (reference.clone(), digest.clone()))
+            .collect::<BTreeMap<_, _>>();
+        snapshot.evidence[0]["input_refs"] = string_map_value(&inputs);
+        let evidence = snapshot.evidence[0].clone();
+        assert!(evidence_matches_inputs(
+            &evidence,
+            &snapshot.artifact_digests,
+            &snapshot
+        ));
+
+        let mut sibling = evidence.clone();
+        sibling["id"] = json!("evidence.sibling");
+        snapshot.evidence.push(sibling);
+        snapshot.artifact_digests.insert(
+            "evidence.sibling".to_owned(),
+            format!("sha256:{}", "c".repeat(64)),
+        );
+        assert!(evidence_matches_inputs(
+            &evidence,
+            &snapshot.artifact_digests,
+            &snapshot
+        ));
+        for reference in ["code.test", "contract.test", "decision.test", "change.test"] {
+            let mut changed = snapshot.clone();
+            changed
+                .artifact_digests
+                .insert(reference.to_owned(), format!("sha256:{}", "f".repeat(64)));
+            assert!(
+                !evidence_matches_inputs(&evidence, &changed.artifact_digests, &changed),
+                "changed {reference}"
+            );
+            // Even the original Context must not admit changed content.
+            assert!(!evidence_matches_inputs(
+                &evidence,
+                &snapshot.artifact_digests,
+                &changed
+            ));
+        }
+        let mut dependent = evidence.clone();
+        dependent["input_refs"]["evidence.sibling"] =
+            json!(snapshot.artifact_digests["evidence.sibling"]);
+        assert!(evidence_matches_inputs(
+            &dependent,
+            &snapshot.artifact_digests,
+            &snapshot
+        ));
+        snapshot.artifact_digests.insert(
+            "evidence.sibling".to_owned(),
+            format!("sha256:{}", "d".repeat(64)),
+        );
+        assert!(!evidence_matches_inputs(
+            &dependent,
+            &snapshot.artifact_digests,
+            &snapshot
+        ));
+        snapshot.evidence[1]["requirement_instances"] = json!(["other|operation.test"]);
+        assert!(!evidence_matches_inputs(
+            &evidence,
+            &snapshot.artifact_digests,
+            &snapshot
+        ));
+    }
+
+    #[test]
     fn evidence_backed_submission_rejects_a_shallow_attestation() {
         let error = prepare_result(
             &context(),

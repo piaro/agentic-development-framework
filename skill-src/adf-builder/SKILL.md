@@ -76,6 +76,12 @@ an Evidence Record and should not cause extra work.
 binding keeps the Evidence current when only ADF Result or Evidence Records are committed,
 while a change to the code, Contract, Decision, or Change it verified makes it stale. Keep
 `git_revision` as execution provenance; do not rewrite it to the later Record-only commit.
+After adding Evidence, you may refresh with `adf_next` and submit with the refreshed
+Context and the Evidence IDs in `basis_refs` and `output_refs`, without a commit.
+Evidence does not need to capture its own digest or later Evidence for the same
+Requirement. Dependencies captured at creation, including other Evidence, still
+must match. Report failed or inconclusive verification as `unsatisfied` or
+`inconclusive`, backed by its verification record.
 
 Every residual risk needs someone who accepts it and a date by which it is revisited.
 

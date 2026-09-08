@@ -5617,6 +5617,126 @@ fn validate_migration_candidate_cli(root: &Path, candidate: &str) -> Output {
         .unwrap()
 }
 
+#[test]
+fn evidence_submission_after_refresh_without_commit() {
+    use adf::project_application::ProjectApplicationService;
+    for (status, verification) in [("unsatisfied", "failed"), ("inconclusive", "inconclusive")] {
+        for (evidence_ids, refresh_between) in [
+            (vec!["evidence.first"], false),
+            (vec!["evidence.first", "evidence.second"], false),
+            (vec!["evidence.first", "evidence.second"], true),
+        ] {
+            let project = TestProject::with_evidence_rule(true);
+            let revision = git_output(&project.root, &["rev-parse", "HEAD"]);
+            let mut service =
+                ProjectApplicationService::new(&project.root, Some(project.release_root.clone()))
+                    .unwrap();
+            let first = service.next("change.place-order", false).unwrap();
+            let context = &first.next_response["context"]["payload"];
+            let outcomes = context["requirement_instances"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|instance| {
+                    json!({
+                        "instance_key": instance["instance_key"],
+                        "definition_digest": instance["definition_digest"],
+                        "status": "satisfied",
+                        "summary": "Reviewed fixture signals",
+                        "basis_refs": ["change.place-order"]
+                    })
+                })
+                .collect::<Vec<_>>();
+            let candidates = context["signal_candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|candidate| {
+                    json!({
+                        "fingerprint": candidate["fingerprint"],
+                        "status": "confirmed",
+                        "reason": "Fixture operation writes data",
+                        "basis_refs": candidate["evidence_refs"]
+                    })
+                })
+                .collect::<Vec<_>>();
+            service
+                .submit(
+                    first.issued_action.as_ref().unwrap(),
+                    json!({"outcomes": outcomes, "reviewed_candidates": candidates}),
+                    vec![],
+                    None,
+                )
+                .unwrap();
+            let next = service.next("change.place-order", false).unwrap();
+            assert_eq!(
+                next.next_response["next_action"]["action"],
+                "record-evidence"
+            );
+            let mut key = next.issued_action.unwrap();
+            let instances = next.next_response["context"]["payload"]["requirement_instances"]
+                .as_array()
+                .unwrap();
+            let instance_keys = instances
+                .iter()
+                .map(|i| i["instance_key"].clone())
+                .collect::<Vec<_>>();
+            for id in &evidence_ids {
+                service
+                    .add_evidence(
+                        &key,
+                        json!({
+                            "schema_version": "1",
+                            "id": id,
+                            "change_id": "change.place-order",
+                            "requirement_instances": instance_keys,
+                            "method": "Fixture verification",
+                            "outcome": verification,
+                            "summary": "Recorded actual verification result"
+                        }),
+                    )
+                    .unwrap();
+                if refresh_between {
+                    key = service
+                        .next("change.place-order", false)
+                        .unwrap()
+                        .issued_action
+                        .unwrap();
+                }
+            }
+            let refreshed = service.next("change.place-order", false).unwrap();
+            let refreshed_instances =
+                &refreshed.next_response["context"]["payload"]["requirement_instances"];
+            let outcomes = refreshed_instances
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|instance| {
+                    for id in &evidence_ids {
+                        assert!(instance["sources"].get(*id).is_some());
+                    }
+                    json!({
+                        "instance_key": instance["instance_key"],
+                        "definition_digest": instance["definition_digest"],
+                        "status": status,
+                        "summary": "Report actual verification result",
+                        "basis_refs": [evidence_ids.last().unwrap()]
+                    })
+                })
+                .collect::<Vec<_>>();
+            service
+                .submit(
+                    refreshed.issued_action.as_ref().unwrap(),
+                    json!({"outcomes": outcomes}),
+                    evidence_ids.iter().map(|id| (*id).to_owned()).collect(),
+                    None,
+                )
+                .unwrap();
+            assert_eq!(git_output(&project.root, &["rev-parse", "HEAD"]), revision);
+        }
+    }
+}
+
 struct TestProject {
     root: PathBuf,
     release_root: PathBuf,
@@ -5624,6 +5744,10 @@ struct TestProject {
 
 impl TestProject {
     fn new() -> Self {
+        Self::with_evidence_rule(false)
+    }
+
+    fn with_evidence_rule(evidence_only: bool) -> Self {
         use std::sync::atomic::{AtomicU64, Ordering};
         static SEQUENCE: AtomicU64 = AtomicU64::new(0);
         let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -5656,6 +5780,31 @@ impl TestProject {
             &manifest_root.join("schemas/v1"),
             &release_root.join("schemas/v1"),
         );
+        if evidence_only {
+            let rules_path = release_root.join("rules.yaml");
+            let mut rules = read_yaml(&rules_path);
+            rules["requirements"].as_array_mut().unwrap().retain(|r| {
+                r["id"] == "risk-signals-reviewed" || r["id"] == "data-evidence-recorded"
+            });
+            let requirement = &mut rules["requirements"][1];
+            requirement["phase"] = json!("before-build");
+            requirement["context"] = json!([
+                "change",
+                "matching-contracts",
+                "matching-decisions",
+                "affected-code",
+                "matching-evidence"
+            ]);
+            rules["rules"].as_array_mut().unwrap().retain(|r| {
+                r["id"] == "baseline.review-risk-signals"
+                    || r["id"] == "persistent-data.record-evidence"
+            });
+            rules["rules"][1]
+                .as_object_mut()
+                .unwrap()
+                .remove("repository_phase");
+            write_yaml(&rules_path, &rules);
+        }
         let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
         let artifact_digest = write_signed_release(
             &release_root,
@@ -5681,6 +5830,18 @@ impl TestProject {
         write_yaml(&root.join(".adf/trusted-release-keys.yaml"), &trust_store);
         let framework_lock_path = root.join(".adf/framework.lock");
         let mut framework_lock = read_yaml(&framework_lock_path);
+        if evidence_only {
+            let rules = read_yaml(&release_root.join("rules.yaml"));
+            let schemas =
+                adf::schema::SchemaRegistry::load(release_root.join("schemas/v1")).unwrap();
+            framework_lock["rule_set"]["source_digest"] = json!(canonical_digest(&rules).unwrap());
+            framework_lock["rule_set"]["index_digest"] = json!(
+                adf::rules::compile_rule_index(&rules, &schemas)
+                    .unwrap()
+                    .digest
+            );
+        }
+
         framework_lock["schema_version"] = Value::String("2".to_owned());
         framework_lock["release_artifact"] = json!({
             "artifact_digest": artifact_digest,

@@ -1016,8 +1016,23 @@ pub(crate) fn evidence_matches_inputs(
         return string_field(&snapshot.repository, "revision")
             .is_some_and(|revision| string_field(evidence, "git_revision") == Some(revision));
     }
+    // Evidence produced for the same Requirement can appear only after the
+    // verification inputs were captured. It is an output, not a prerequisite
+    // that earlier Evidence must retroactively record. Keep checking every
+    // recorded dependency below, including Evidence used by this verification.
+    let instances = string_array_set(&evidence["requirement_instances"]);
+    let output_evidence = snapshot
+        .evidence
+        .iter()
+        .filter(|candidate| {
+            string_field(candidate, "change_id") == string_field(evidence, "change_id")
+                && !instances.is_disjoint(&string_array_set(&candidate["requirement_instances"]))
+        })
+        .filter_map(|candidate| string_field(candidate, "id"))
+        .collect::<BTreeSet<_>>();
     required_inputs
         .iter()
+        .filter(|(reference, _)| !output_evidence.contains(reference.as_str()))
         .all(|(reference, digest)| recorded_inputs.get(reference) == Some(digest))
         && recorded_inputs
             .iter()
