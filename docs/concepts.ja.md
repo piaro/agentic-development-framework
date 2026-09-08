@@ -89,6 +89,8 @@ Challengerが行う反証とは、依頼・規範・実装が間違っている�
 
 ResultとEvidenceの鮮度は、それぞれが確認したコード、Contract、Decision、Changeの内容で判定します。実行時のGit revisionは追跡情報として残しますが、ADFのResultやEvidenceだけをcommitしてHEADが進んでも、確認対象の内容が同じなら再確認は要求しません。
 
+Evidenceを追加してから`adf_next`でContextを取り直しても、Evidence自身や後から同じRequirementに追加したEvidenceのdigestを、過去の検証記録へ書き足す必要はありません。作成時に入力として記録した別のEvidenceへの依存は、引き続き鮮度を確認します。検証が失敗した場合は`unsatisfied`、判定できなかった場合は`inconclusive`として、対応するEvidenceを`basis_refs`と`output_refs`に指定して提出できます。提出前のcommitは不要です。
+
 Contractまたは条項の`evidence_mode`で、検証に掛ける費用を選べます。`direct`は、その条項を何によって確認したかをEvidenceの`claims`へ明示します。`inherited`は、別の条項と共通するテストや実証結果を再利用できます。`review`はEvidenceを要求せず、独立したChallengerによる反証の対象にします。設定のない既存Contractは従来どおり全条項を`direct`として扱います。新しいContractでは、全体を`review`として、事故やデータ破損などにつながる条項だけを`direct`または`inherited`で上書きできます。
 
 ## 文脈の再利用と実行コスト
