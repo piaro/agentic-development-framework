@@ -1,4 +1,5 @@
 {
+  "description": "Next work uses current candidate reviews regardless of Result ID or file order; stale non-applicability cannot hide a current review, and confirmation takes precedence.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "adf://schemas/mcp/v1/next-output",
   "title": "adf_next output v1",
