@@ -805,33 +805,15 @@ fn not_applicable_disposition<'a>(
     snapshot: &'a ProjectSnapshot,
     candidate: &crate::detection::SignalCandidate,
 ) -> Option<(&'a str, &'a str, &'a Value)> {
-    snapshot.results.iter().find_map(|result| {
-        if result["result_schema"].as_str() != Some("result.risk-signal-review")
-            || result["role"].as_str() != Some("Analyst")
-        {
-            return None;
-        }
-        let input_refs = result["input_refs"].as_object()?;
-        if !candidate.evidence_refs.iter().all(|reference| {
-            input_refs.get(reference).and_then(Value::as_str)
-                == snapshot.artifact_digests.get(reference).map(String::as_str)
-        }) {
-            return None;
-        }
-        array_field(&result["payload"], "reviewed_candidates")
-            .iter()
-            .find(|review| {
-                review["fingerprint"].as_str() == Some(candidate.fingerprint.as_str())
-                    && review["status"].as_str() == Some("not-applicable")
-            })
-            .and_then(|review| {
-                Some((
-                    result["id"].as_str()?,
-                    review["reason"].as_str()?,
-                    &review["basis_refs"],
-                ))
-            })
-    })
+    let (result, review) = crate::kernel::current_candidate_review(snapshot, candidate)?;
+    if review["status"].as_str() != Some("not-applicable") {
+        return None;
+    }
+    Some((
+        result["id"].as_str()?,
+        review["reason"].as_str()?,
+        &review["basis_refs"],
+    ))
 }
 
 fn array_field<'a>(value: &'a Value, field: &str) -> &'a [Value] {

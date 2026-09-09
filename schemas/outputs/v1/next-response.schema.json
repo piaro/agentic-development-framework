@@ -1,4 +1,5 @@
 {
+  "description": "Next work uses current candidate reviews regardless of Result ID or file order; stale non-applicability cannot hide a current review, and confirmation takes precedence.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://agentic-development-framework.dev/schemas/outputs/v1/next-response.schema.json",
   "title": "Next Response v1",

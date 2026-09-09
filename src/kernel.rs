@@ -185,7 +185,7 @@ impl ThinKernel {
         let declared_candidates = assessment
             .map(|assessment| impact_candidates(assessment, snapshot))
             .unwrap_or_default();
-        let dispositions = candidate_dispositions(snapshot);
+        let dispositions = candidate_dispositions(snapshot, detection);
         let build_results = fresh_build_results(snapshot);
         let mut confirmed: Vec<&SignalCandidate> = declared_candidates
             .iter()
@@ -643,30 +643,66 @@ fn repository_phase(snapshot: &ProjectSnapshot) -> &str {
     snapshot.repository["phase"].as_str().unwrap_or("pre-build")
 }
 
-fn candidate_dispositions(snapshot: &ProjectSnapshot) -> BTreeMap<String, CandidateDisposition> {
-    let mut dispositions = BTreeMap::new();
-    for result in &snapshot.results {
-        if string_field(result, "result_schema") != Some("result.risk-signal-review")
-            || string_field(result, "role") != Some("Analyst")
-        {
-            continue;
-        }
-        for review in nested_array(result, &["payload", "reviewed_candidates"]) {
-            if let (Some(fingerprint), Some(status)) = (
-                string_field(review, "fingerprint"),
-                string_field(review, "status"),
-            ) {
-                dispositions.insert(
-                    fingerprint.to_owned(),
+fn candidate_dispositions(
+    snapshot: &ProjectSnapshot,
+    detection: &DetectionReport,
+) -> BTreeMap<String, CandidateDisposition> {
+    detection
+        .candidates
+        .iter()
+        .filter_map(|candidate| {
+            current_candidate_review(snapshot, candidate).map(|(result, review)| {
+                (
+                    candidate.fingerprint.clone(),
                     CandidateDisposition {
-                        status: status.to_owned(),
+                        status: review["status"].as_str().unwrap().to_owned(),
                         input_refs: string_map(result.get("input_refs")),
                     },
-                );
-            }
-        }
-    }
-    dispositions
+                )
+            })
+        })
+        .collect()
+}
+
+/// Result IDs are content hashes, not submission order. Select a usable review
+/// before resolving ties; stale non-applicability must never hide a current one.
+/// Confirmation remains binding across evidence changes and wins conflicts.
+pub(crate) fn current_candidate_review<'a>(
+    snapshot: &'a ProjectSnapshot,
+    candidate: &SignalCandidate,
+) -> Option<(&'a Value, &'a Value)> {
+    snapshot
+        .results
+        .iter()
+        .filter(|result| {
+            string_field(result, "result_schema") == Some("result.risk-signal-review")
+                && string_field(result, "role") == Some("Analyst")
+        })
+        .flat_map(|result| {
+            nested_array(result, &["payload", "reviewed_candidates"])
+                .iter()
+                .map(move |review| (result, review))
+        })
+        .filter(|(result, review)| {
+            string_field(review, "fingerprint") == Some(candidate.fingerprint.as_str())
+                && (string_field(review, "status") == Some("confirmed")
+                    || (string_field(review, "status") == Some("not-applicable")
+                        && candidate.evidence_refs.iter().all(|reference| {
+                            snapshot
+                                .artifact_digests
+                                .get(reference)
+                                .is_some_and(|digest| {
+                                    result["input_refs"][reference].as_str()
+                                        == Some(digest.as_str())
+                                })
+                        })))
+        })
+        .max_by_key(|(result, review)| {
+            (
+                string_field(review, "status") == Some("confirmed"),
+                string_field(result, "id"),
+            )
+        })
 }
 
 fn disposition_evidence_is_current(
@@ -2225,6 +2261,101 @@ mod tests {
             explanation.candidates[0].disposition,
             "applicability-pending"
         );
+    }
+
+    #[test]
+    fn refreshed_candidate_reviews_survive_stale_results_in_either_order() {
+        let (mut snapshot, rule_index, mut detection) = not_applicable_signal_case();
+        snapshot.repository["phase"] = json!("post-build");
+        let original = detection.candidates[0].clone();
+        detection.candidates = (0..7)
+            .map(|index| {
+                let mut candidate = original.clone();
+                candidate.fingerprint = format!("sha256:{index:064x}");
+                candidate
+            })
+            .collect();
+        let mut current = snapshot.results[0].clone();
+        current["id"] = json!("result.a-current");
+        current["payload"]["reviewed_candidates"] = json!(
+            detection
+                .candidates
+                .iter()
+                .map(|candidate| {
+                    json!({
+                        "fingerprint": candidate.fingerprint,
+                        "status": "not-applicable",
+                        "reason": "Current code is a read-only probe",
+                        "basis_refs": candidate.evidence_refs,
+                    })
+                })
+                .collect::<Vec<_>>()
+        );
+        let mut stale = current.clone();
+        stale["id"] = json!("result.z-stale");
+        stale["input_refs"]["code.place-order"] = json!(format!("sha256:{}", "0".repeat(64)));
+        for results in [
+            vec![current.clone(), stale.clone()],
+            vec![stale, current.clone()],
+        ] {
+            snapshot.results = results;
+            let decision = ThinKernel.evaluate(&snapshot, &rule_index, &detection);
+            assert_eq!(decision.state, "needs-pre-build-challenge");
+            assert_eq!(
+                decision
+                    .action
+                    .as_ref()
+                    .unwrap()
+                    .requirement_instances
+                    .len(),
+                7
+            );
+            let explanation =
+                ExplanationBuilder.build(&snapshot, &rule_index, &detection, &decision);
+            assert!(explanation.candidates.iter().all(|candidate| {
+                candidate.disposition == "applicability-pending"
+                    && candidate.disposition_result_id.as_deref() == Some("result.a-current")
+            }));
+            let context = ContextCompiler
+                .compile(&decision, &snapshot, &detection)
+                .unwrap();
+            let candidates = context.payload["not_applicable_signal_candidates"]
+                .as_array()
+                .unwrap();
+            assert_eq!(candidates.len(), 7);
+            assert!(
+                candidates
+                    .iter()
+                    .all(|candidate| candidate["disposition_result_id"] == "result.a-current")
+            );
+        }
+        snapshot.artifact_digests.insert(
+            "code.place-order".to_owned(),
+            format!("sha256:{}", "9".repeat(64)),
+        );
+        let decision = ThinKernel.evaluate(&snapshot, &rule_index, &detection);
+        assert_eq!(decision.action.unwrap().candidate_fingerprints.len(), 7);
+    }
+
+    #[test]
+    fn confirmed_candidate_review_wins_conflicting_non_applicability_in_either_order() {
+        let (mut snapshot, rule_index, detection) = not_applicable_signal_case();
+        let not_applicable = snapshot.results[0].clone();
+        let mut confirmed = not_applicable.clone();
+        confirmed["id"] = json!("result.a-confirmed");
+        confirmed["payload"]["reviewed_candidates"][0]["status"] = json!("confirmed");
+        confirmed["input_refs"]["code.place-order"] = json!("old-evidence");
+        for results in [
+            vec![confirmed.clone(), not_applicable.clone()],
+            vec![not_applicable, confirmed],
+        ] {
+            snapshot.results = results;
+            let decision = ThinKernel.evaluate(&snapshot, &rule_index, &detection);
+            let explanation =
+                ExplanationBuilder.build(&snapshot, &rule_index, &detection, &decision);
+            assert_eq!(explanation.candidates[0].disposition, "confirmed");
+            assert_eq!(decision.action.unwrap().action, "analyze-requirements");
+        }
     }
 
     #[test]

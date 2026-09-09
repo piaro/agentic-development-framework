@@ -112,6 +112,13 @@ Read the code the candidate points at. A candidate is not confirmed because its 
 looks right, and not dismissed because it is inconvenient. If you cannot tell, mark the
 matching outcome `inconclusive` rather than guessing.
 
+When changed evidence reopens a previously non-applicable candidate, submit a new
+review using the issued context. ADF retains prior Results and selects a current
+review regardless of Result ID or file order; do not delete prior Results to make
+progress. Non-applicability still requires independent challenge. Confirmation
+remains binding across evidence changes and takes precedence over conflicting
+non-applicability.
+
 ## `analyze-requirements`
 
 Answer each requirement instance in the action. Submit an `outcomes` entry per instance:

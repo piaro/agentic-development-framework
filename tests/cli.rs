@@ -3112,6 +3112,90 @@ fn project_next_explain_and_contract_health_share_the_real_project_loader() {
 }
 
 #[test]
+fn cli_and_mcp_keep_current_candidate_reviews_when_stale_results_sort_last() {
+    let project = TestProject::new();
+    let (mut child, mut input, mut output) = start_mcp_server(&project.root);
+    let next = mcp_call(
+        &mut input,
+        &mut output,
+        2,
+        "adf_next",
+        json!({"change_id": "change.place-order"}),
+    );
+    assert_eq!(next["isError"], false);
+    let data = &next["structuredContent"];
+    let mut submission = risk_signal_submission(
+        &data["issued_action"],
+        &data["next_response"]["context"]["payload"],
+    );
+    for review in submission["payload"]["reviewed_candidates"]
+        .as_array_mut()
+        .unwrap()
+    {
+        review["status"] = json!("not-applicable");
+    }
+    let submitted = mcp_call(&mut input, &mut output, 3, "adf_submit", submission);
+    assert_eq!(submitted["isError"], false, "{submitted}");
+    drop(input);
+    assert!(child.wait().unwrap().success());
+
+    let results_dir = project.root.join(".adf/changes/change.place-order/results");
+    let path = fs::read_dir(&results_dir)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let current: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    let mut stale = current.clone();
+    stale["id"] = json!("result.zz-stale");
+    stale["action_id"] = json!("action.old-review");
+    for field in ["input_refs", "freshness_refs"] {
+        for digest in stale[field].as_object_mut().unwrap().values_mut() {
+            *digest = json!(format!("sha256:{}", "0".repeat(64)));
+        }
+    }
+    fs::write(
+        results_dir.join("old-review.json"),
+        serde_json::to_vec(&stale).unwrap(),
+    )
+    .unwrap();
+
+    let cli = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&cli);
+    let cli: Value = serde_json::from_slice(&cli.stdout).unwrap();
+    assert_eq!(cli["state"], "needs-pre-build-challenge");
+    let explain = project.run(&["explain", "change.place-order", "--format", "json"]);
+    assert_success(&explain);
+    let explain: Value = serde_json::from_slice(&explain.stdout).unwrap();
+    assert!(
+        explain["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|candidate| {
+                candidate["disposition"] == "applicability-pending"
+                    && candidate["disposition_result_id"] == current["id"]
+            })
+    );
+    let (mut child, mut input, mut output) = start_mcp_server(&project.root);
+    let next = mcp_call(
+        &mut input,
+        &mut output,
+        2,
+        "adf_next",
+        json!({"change_id": "change.place-order"}),
+    );
+    assert_eq!(next["isError"], false);
+    assert_eq!(
+        next["structuredContent"]["next_response"]["next_action"]["id"],
+        cli["next_action"]["id"]
+    );
+    drop(input);
+    assert!(child.wait().unwrap().success());
+}
+
+#[test]
 fn pending_impact_assessment_does_not_load_repository_wide_contract_health() {
     let project = TestProject::new();
     let pending_change_root = project

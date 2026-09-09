@@ -111,6 +111,12 @@ silently treated as no impact. This also gives an empty repository a valid
 bootstrap path: the first Change declares its intended effects, then creates
 only the Contracts needed to govern them before implementation starts.
 
+Candidate reviews are resolved from their evidence, independently of Result ID or
+file order. A current `not-applicable` review takes precedence over stale reviews
+and proceeds to independent challenge. A `confirmed` review remains binding
+across evidence changes and takes precedence if reviews disagree. CLI, MCP,
+explanations, and challenge context use the same selection.
+
 **Contracts going stale is a feature.** Each result is bound to digests of what
 it was based on, so changing a contract, the code, or the authority behind it
 marks the work that depended on it stale and asks for it again. A contract that

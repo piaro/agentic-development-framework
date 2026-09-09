@@ -7,7 +7,8 @@
 
 use crate::detection::{DetectionReport, SignalCandidate};
 use crate::kernel::{
-    KernelDecision, ProjectSnapshot, RequirementInstance, outcome_has_current_evidence,
+    KernelDecision, ProjectSnapshot, RequirementInstance, current_candidate_review,
+    outcome_has_current_evidence,
 };
 use crate::rules::{Assurance, RuleIndex};
 use serde::Serialize;
@@ -15,13 +16,6 @@ use serde_json::Value;
 use std::collections::BTreeMap;
 
 pub const EXPLAIN_REPORT_SCHEMA_VERSION: &str = "1";
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct CandidateDispositionTrace {
-    status: String,
-    input_refs: BTreeMap<String, String>,
-    result_id: Option<String>,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct CandidateTrace {
@@ -170,23 +164,17 @@ impl ExplanationBuilder {
         detection: &DetectionReport,
         decision: &KernelDecision,
     ) -> ExplainReport {
-        let dispositions = candidate_dispositions(snapshot);
         let candidates = detection
             .candidates
             .iter()
             .map(|candidate| {
-                let disposition = dispositions
-                    .get(&candidate.fingerprint)
-                    .cloned()
-                    .filter(|disposition| {
-                        disposition.status == "confirmed"
-                            || candidate.evidence_refs.iter().all(|reference| {
-                                snapshot.artifact_digests.get(reference)
-                                    == disposition.input_refs.get(reference)
-                                    && disposition.input_refs.contains_key(reference)
-                            })
+                let disposition = current_candidate_review(snapshot, candidate)
+                    .map(|(result, review)| {
+                        (
+                            review["status"].as_str().unwrap().to_owned(),
+                            string_field(result, "id").map(str::to_owned),
+                        )
                     })
-                    .map(|disposition| (disposition.status, disposition.result_id))
                     .unwrap_or_else(|| ("unreviewed".to_owned(), None));
                 candidate_trace(candidate, disposition, rule_index, decision, snapshot)
             })
@@ -219,49 +207,6 @@ impl ExplanationBuilder {
             diagnostics: decision.diagnostics.clone(),
         }
     }
-}
-
-fn candidate_dispositions(
-    snapshot: &ProjectSnapshot,
-) -> BTreeMap<String, CandidateDispositionTrace> {
-    let mut dispositions = BTreeMap::new();
-    for result in &snapshot.results {
-        if string_field(result, "result_schema") != Some("result.risk-signal-review")
-            || string_field(result, "role") != Some("Analyst")
-        {
-            continue;
-        }
-        for review in nested_array(result, &["payload", "reviewed_candidates"]) {
-            if let (Some(fingerprint), Some(status)) = (
-                string_field(review, "fingerprint"),
-                string_field(review, "status"),
-            ) {
-                dispositions.insert(
-                    fingerprint.to_owned(),
-                    CandidateDispositionTrace {
-                        status: status.to_owned(),
-                        input_refs: string_map(result.get("input_refs")),
-                        result_id: string_field(result, "id").map(str::to_owned),
-                    },
-                );
-            }
-        }
-    }
-    dispositions
-}
-
-fn string_map(value: Option<&Value>) -> BTreeMap<String, String> {
-    value
-        .and_then(Value::as_object)
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|(key, value)| {
-                    value.as_str().map(|value| (key.clone(), value.to_owned()))
-                })
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn candidate_trace(
