@@ -679,6 +679,91 @@ mod tests {
     }
 
     #[test]
+    fn explicit_cross_change_verification_distributes_context_and_accepts_evidence() {
+        use crate::application::InMemoryApplication;
+        use crate::submission::ResultSubmission;
+
+        let schemas = registry();
+        let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/fixtures/db-sqs");
+        let rules =
+            serde_yaml::from_str(&std::fs::read_to_string(fixture.join("rules.yaml")).unwrap())
+                .unwrap();
+        let lock = serde_yaml::from_str(
+            &std::fs::read_to_string(fixture.join("framework-lock.yaml")).unwrap(),
+        )
+        .unwrap();
+        for status in ["unverified", "stale", "failed"] {
+            let mut project = project_with_evidence(
+                if status == "failed" {
+                    "failed"
+                } else {
+                    "passed"
+                },
+                if status == "failed" {
+                    "unsatisfied"
+                } else {
+                    "satisfied"
+                },
+            );
+            project["contracts"][0]["change_id"] = json!("change.test");
+            // Explicit selection must work even without a subject overlap.
+            project["contracts"][0]["applies_to"] = json!([]);
+            let digest = digest_value(&project["contracts"][0]).unwrap();
+            project["results"][0]["input_refs"]["contract.test"] = json!(digest);
+            project["results"][0]["freshness_refs"]["contract.test"] = json!(digest);
+            project["results"][0]["payload"]["outcomes"][0]["input_refs"]["contract.test"] =
+                json!(digest);
+            project["results"][0]["payload"]["outcomes"][0]["freshness_refs"]["contract.test"] =
+                json!(digest);
+            if status == "unverified" {
+                project["results"] = json!([]);
+                project["evidence"] = json!([]);
+            } else if status == "stale" {
+                project["repository"]["artifacts"][0]["digest"] =
+                    json!(format!("sha256:{}", "d".repeat(64)));
+            }
+            project["repository"]["phase"] = json!("post-build");
+            project["repository"]["coverage"] = json!({"status": "complete", "scope": "declared-artifacts", "analyzed_refs": [], "gaps": []});
+            project["changes"].as_array_mut().unwrap().push(json!({
+                "schema_version": "1", "id": "change.verify", "title": "Verify an existing clause", "intent": "Verify stable output",
+                "verification_scope": ["contract.test#stable-output"]
+            }));
+            let mut app = InMemoryApplication::new(project, &rules, &lock, &schemas).unwrap();
+            assert_eq!(app.contract_health().unwrap().clauses[0].status, status);
+            let response = app.next("change.verify").unwrap();
+            assert_eq!(response.decision.state, "needs-evidence");
+            let context = response.context.unwrap();
+            let clause = &context.contract_clauses[0];
+            assert_eq!(clause.clause_ref, "contract.test#stable-output");
+            assert_eq!(clause.text, "output remains stable");
+            assert!(clause.applies_to.is_empty());
+            let instance_key = "contract-clause-revalidated|contract.test#stable-output";
+            assert_eq!(clause.selected_for, [instance_key]);
+            assert_eq!(
+                context.instance_source_digests[instance_key]["contract.test"],
+                digest
+            );
+            app.add_evidence(json!({
+                "schema_version": "1", "id": "evidence.verify", "change_id": "change.verify",
+                "requirement_instances": [instance_key], "contract_clause_refs": [clause.clause_ref],
+                "git_revision": "revision-2", "method": "output regression test", "outcome": "passed", "summary": "Stable output verified",
+                "artifact": {"uri": "artifact://test/output", "digest": format!("sha256:{}", "f".repeat(64)), "exit_code": 0}
+            })).unwrap();
+            let refreshed = app.next("change.verify").unwrap();
+            let context = refreshed.context.unwrap();
+            let action = refreshed.decision.action.unwrap();
+            let instance = &action.requirement_instances[0];
+            let result = app.submit(&ResultSubmission {
+                change_id: "change.verify".to_owned(), action_id: action.id,
+                context_digest: context.digest, role: action.role, result_schema: action.expected_result_schema,
+                payload: json!({"outcomes": [{"instance_key": instance_key, "definition_digest": instance.definition_digest, "status": "satisfied", "summary": "Stable output verified", "basis_refs": ["contract.test", "evidence.verify"]}]}),
+                output_refs: vec!["evidence.verify".to_owned()], execution: None,
+            }).unwrap();
+            assert_eq!(result.decision.state, "ready-to-merge");
+        }
+    }
+
+    #[test]
     fn reports_verified_stale_and_failed_without_mutating_contracts() {
         let verified = build_contract_health_report(
             &project_with_evidence("passed", "satisfied"),

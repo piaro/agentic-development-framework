@@ -51,6 +51,14 @@ demonstrates. `inherited` may reuse an Evidence artifact that covers the clause.
 Contract without `evidence_mode` keeps the original all-direct behavior, so a
 framework update never weakens an existing Contract silently.
 
+A Contract's `change_id` identifies its originating Change, not its applicability.
+Snapshots retain Contracts across Changes; action Context selects the applicable
+clauses by `applies_to` or an explicit clause reference in `verification_scope`.
+Revalidation therefore includes the selected clause's text, authority reference,
+evidence mode, and source digests even when another Change created the Contract.
+When upgrading from Change-filtered Snapshots, an existing Impact Assessment may
+need to be refreshed because its Contract index now includes those Contracts.
+
 **They grow.** A question answered once does not come back - the next change
 that touches deletion finds the clause and resolves against it instead of
 asking again. An incident becomes a

@@ -58,7 +58,11 @@ pub fn build_project_snapshot(
         .get(change_id)
         .cloned()
         .ok_or_else(|| ProjectSnapshotError::new(format!("unknown change: {change_id}")))?;
-    let contracts = records_for_change(project, "contracts", change_id)?;
+    // Contracts are current project norms; change_id records their origin, not
+    // their applicability. Keep the same universe used by Contract Health and
+    // let Context selectors choose the clauses needed by each requirement.
+    let mut contracts = record_array(project, "contracts")?.to_vec();
+    contracts.sort_by(|left, right| left["id"].as_str().cmp(&right["id"].as_str()));
     let decisions = decision_records_for_change(project, change_id)?;
     let results = records_for_change(project, "results", change_id)?;
     let evidence = records_for_change(project, "evidence", change_id)?;
