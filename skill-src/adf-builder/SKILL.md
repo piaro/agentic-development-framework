@@ -46,6 +46,11 @@ This is the most common way the control plane gets bypassed. Resist it.
 
 ## `record-evidence`
 
+For `contract-clause-revalidated`, use the corresponding `contract_clauses` entry
+whose `selected_for` contains the requirement's instance key. Contracts created by
+another Change remain applicable; `change_id` identifies their origin. Use the
+issued clause text, scope, evidence mode, authority reference, and source digests.
+
 Show that each requirement instance in the action actually holds. For each one, call
 `adf_add_evidence` with what you observed, then submit an `outcomes` entry:
 

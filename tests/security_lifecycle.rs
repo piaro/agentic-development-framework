@@ -10,6 +10,15 @@ use std::process::{Command, Output};
 
 #[test]
 fn security_bindings_drive_the_reviewed_lifecycle() {
+    security_lifecycle(None);
+}
+
+#[test]
+fn cross_change_contracts_drive_the_reviewed_lifecycle() {
+    security_lifecycle(Some("change.previous"));
+}
+
+fn security_lifecycle(contract_origin: Option<&str>) {
     let manifest_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let fixture_root = manifest_root.join("testdata/fixtures/security-lifecycle");
     let scenario = read_yaml(fixture_root.join("scenario.yaml"));
@@ -33,6 +42,18 @@ fn security_bindings_drive_the_reviewed_lifecycle() {
         );
     }
     project["repository"] = pre_build_observation;
+    if let Some(origin) = contract_origin {
+        for contract in project["contracts"].as_array_mut().unwrap() {
+            contract["change_id"] = json!(origin);
+        }
+    }
+    project["contracts"].as_array_mut().unwrap().push(json!({
+        "schema_version": "1",
+        "id": "contract.unrelated",
+        "change_id": "change.other",
+        "applies_to": ["operation.unrelated"],
+        "clauses": [{"id": "unrelated", "text": "Unrelated operation preserves its output."}]
+    }));
 
     let change_id = scenario["change_id"].as_str().unwrap();
     let mut application =
@@ -150,6 +171,7 @@ fn security_bindings_drive_the_reviewed_lifecycle() {
         .unwrap();
 
     assert_action(&response, &scenario["after_build"][1]);
+    assert_revalidation_context(&application, change_id, &response);
     let revalidation_instances = response
         .decision
         .action
@@ -182,13 +204,9 @@ fn security_bindings_drive_the_reviewed_lifecycle() {
             }
         }))
         .unwrap();
-    let mut revalidation_payload = satisfied_payload(&response);
-    for outcome in revalidation_payload["outcomes"].as_array_mut().unwrap() {
-        outcome["basis_refs"]
-            .as_array_mut()
-            .unwrap()
-            .push(Value::String(revalidation_evidence_id.to_owned()));
-    }
+    response = application.next(change_id).unwrap();
+    assert_revalidation_context(&application, change_id, &response);
+    let revalidation_payload = satisfied_payload(&response);
     response = application
         .submit(&submission(
             &response,
@@ -210,6 +228,72 @@ fn security_bindings_drive_the_reviewed_lifecycle() {
     assert_eq!(response.decision.state, scenario["terminal_state"]);
     assert!(response.decision.action.is_none());
     assert!(response.context.is_none());
+}
+
+fn assert_revalidation_context(
+    application: &InMemoryApplication<'_>,
+    change_id: &str,
+    response: &ApplicationResponse,
+) {
+    let snapshot = application.snapshot(change_id).unwrap();
+    let context = response.context.as_ref().unwrap();
+    assert!(
+        !context
+            .source_refs
+            .iter()
+            .any(|reference| reference.starts_with("contract.unrelated"))
+    );
+    assert!(
+        !context
+            .contract_clauses
+            .iter()
+            .any(|clause| clause.contract_id == "contract.unrelated")
+    );
+    for instance in &response
+        .decision
+        .action
+        .as_ref()
+        .unwrap()
+        .requirement_instances
+    {
+        let reference = instance.instance_key.split_once('|').unwrap().1;
+        let clause = context
+            .contract_clauses
+            .iter()
+            .find(|clause| clause.clause_ref == reference)
+            .unwrap();
+        assert!(clause.selected_for.contains(&instance.instance_key));
+        assert_eq!(clause.digest, snapshot.artifact_digests[reference]);
+        assert!(!clause.text.is_empty());
+        assert_eq!(clause.evidence_mode, "direct");
+        assert_eq!(
+            clause.authority_ref.as_deref(),
+            Some("decision.customer-security-boundary")
+        );
+        let contract = snapshot
+            .contracts
+            .iter()
+            .find(|contract| contract["id"] == clause.contract_id)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(&clause.applies_to).unwrap(),
+            contract["clauses"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|item| item["id"] == clause.clause_id)
+                .unwrap()["applies_to"]
+        );
+        let sources = &context.instance_source_digests[&instance.instance_key];
+        assert_eq!(
+            sources[&clause.clause_ref],
+            snapshot.artifact_digests[&clause.clause_ref]
+        );
+        assert_eq!(
+            context.source_digests[&clause.clause_ref],
+            sources[&clause.clause_ref]
+        );
+    }
 }
 
 fn assert_action(response: &ApplicationResponse, expected: &Value) {

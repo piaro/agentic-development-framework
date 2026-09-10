@@ -69,9 +69,15 @@ pub(crate) fn contract_matches_subjects(contract: &Value, subjects: &BTreeSet<&s
         .as_array()
         .filter(|clauses| !clauses.is_empty())
     {
-        return clauses
-            .iter()
-            .any(|clause| clause_matches_subjects(contract, clause, subjects));
+        return clauses.iter().any(|clause| {
+            clause_matches_subjects(contract, clause, subjects)
+                || contract["id"]
+                    .as_str()
+                    .zip(clause["id"].as_str())
+                    .is_some_and(|(contract_id, clause_id)| {
+                        subjects.contains(format!("{contract_id}#{clause_id}").as_str())
+                    })
+        });
     }
     contract["applies_to"].as_array().is_some_and(|targets| {
         targets
