@@ -1,8 +1,9 @@
 //! Mechanical observations extracted from JavaScript and TypeScript syntax.
 
 use crate::source_detection::{
-    SourceObservation, canonical_node_text, observation_from_nodes, observe_tree,
+    SourceObservation, SourceObservationKind, canonical_node_text, classify_method, observe_tree,
 };
+use std::collections::BTreeSet;
 use tree_sitter::Node;
 
 pub fn observe_javascript(source: &str) -> Result<Vec<SourceObservation>, String> {
@@ -72,19 +73,152 @@ fn collect_observations(
     language: &str,
     observations: &mut Vec<SourceObservation>,
 ) {
+    let crypto_imports = CryptoImports::from_root(node, source);
+    collect_observations_with_imports(
+        node,
+        source,
+        enclosing_symbol,
+        language,
+        &crypto_imports,
+        observations,
+    );
+}
+
+fn collect_observations_with_imports(
+    node: Node<'_>,
+    source: &[u8],
+    enclosing_symbol: Option<&str>,
+    language: &str,
+    crypto_imports: &CryptoImports,
+    observations: &mut Vec<SourceObservation>,
+) {
     let declared_symbol = symbol_for_node(node, source);
     let symbol = declared_symbol.as_deref().or(enclosing_symbol);
 
     if node.kind() == "call_expression"
-        && let Some(observation) = observation_for_call(node, source, symbol, language)
+        && let Some(observation) =
+            observation_for_call(node, source, symbol, language, crypto_imports)
     {
         observations.push(observation);
     }
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        collect_observations(child, source, symbol, language, observations);
+        collect_observations_with_imports(
+            child,
+            source,
+            symbol,
+            language,
+            crypto_imports,
+            observations,
+        );
     }
+}
+
+#[derive(Default)]
+struct CryptoImports {
+    namespaces: BTreeSet<String>,
+    create_hash_functions: BTreeSet<String>,
+}
+
+impl CryptoImports {
+    fn from_root(root: Node<'_>, source: &[u8]) -> Self {
+        let mut imports = Self::default();
+        let mut cursor = root.walk();
+        for statement in root
+            .children(&mut cursor)
+            .filter(|child| child.kind() == "import_statement")
+        {
+            let Some(module) = statement
+                .child_by_field_name("source")
+                .and_then(|source_node| source_node.utf8_text(source).ok())
+                .and_then(quoted_property_name)
+            else {
+                continue;
+            };
+            if !matches!(module.as_str(), "crypto" | "node:crypto") {
+                continue;
+            }
+            let Some(clause) = named_child(statement, "import_clause") else {
+                continue;
+            };
+            let mut clause_cursor = clause.walk();
+            for binding in clause.named_children(&mut clause_cursor) {
+                match binding.kind() {
+                    "identifier" => {
+                        if let Ok(name) = binding.utf8_text(source) {
+                            imports.namespaces.insert(name.to_owned());
+                        }
+                    }
+                    "namespace_import" => {
+                        if let Some(name) = named_child(binding, "identifier")
+                            .and_then(|name| name.utf8_text(source).ok())
+                        {
+                            imports.namespaces.insert(name.to_owned());
+                        }
+                    }
+                    "named_imports" => {
+                        let mut named_cursor = binding.walk();
+                        for specifier in binding
+                            .named_children(&mut named_cursor)
+                            .filter(|child| child.kind() == "import_specifier")
+                        {
+                            let Some(imported) = specifier
+                                .child_by_field_name("name")
+                                .and_then(|name| name.utf8_text(source).ok())
+                            else {
+                                continue;
+                            };
+                            if imported != "createHash" {
+                                continue;
+                            }
+                            let local = specifier
+                                .child_by_field_name("alias")
+                                .and_then(|alias| alias.utf8_text(source).ok())
+                                .unwrap_or(imported);
+                            imports.create_hash_functions.insert(local.to_owned());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        imports
+    }
+
+    fn creates_hash(&self, receiver: Node<'_>, source: &[u8]) -> bool {
+        if receiver.kind() != "call_expression" {
+            return false;
+        }
+        let Some(factory) = receiver.child_by_field_name("function") else {
+            return false;
+        };
+        if factory.kind() == "identifier" {
+            return factory
+                .utf8_text(source)
+                .is_ok_and(|name| self.create_hash_functions.contains(name));
+        }
+        if factory.kind() != "member_expression" {
+            return false;
+        }
+        let Some(namespace) = factory.child_by_field_name("object") else {
+            return false;
+        };
+        let Some(method) = factory.child_by_field_name("property") else {
+            return false;
+        };
+        namespace.kind() == "identifier"
+            && namespace
+                .utf8_text(source)
+                .is_ok_and(|name| self.namespaces.contains(name))
+            && method.utf8_text(source) == Ok("createHash")
+    }
+}
+
+fn named_child<'tree>(node: Node<'tree>, kind: &str) -> Option<Node<'tree>> {
+    let mut cursor = node.walk();
+    node.named_children(&mut cursor)
+        .find(|child| child.kind() == kind)
 }
 
 fn symbol_for_node(node: Node<'_>, source: &[u8]) -> Option<String> {
@@ -162,12 +296,24 @@ fn observation_for_call(
     source: &[u8],
     symbol: Option<&str>,
     language: &str,
+    crypto_imports: &CryptoImports,
 ) -> Option<SourceObservation> {
     let callable = call.child_by_field_name("function")?;
     if callable.kind() == "member_expression" {
         let receiver = callable.child_by_field_name("object")?;
         let property = callable.child_by_field_name("property")?;
-        return observation_from_nodes(language, receiver, property, call, source, symbol);
+        let method = property.utf8_text(source).ok()?;
+        return Some(SourceObservation {
+            kind: if method == "update" && crypto_imports.creates_hash(receiver, source) {
+                SourceObservationKind::OtherMethodCall
+            } else {
+                classify_method(language, method)
+            },
+            symbol: symbol.unwrap_or("<module>").to_owned(),
+            resource: canonical_node_text(receiver, source)?,
+            method: method.to_owned(),
+            line: call.start_position().row + 1,
+        });
     }
     if callable.kind() == "subscript_expression" {
         let receiver = callable.child_by_field_name("object")?;
@@ -175,7 +321,7 @@ fn observation_for_call(
         let index_text = canonical_node_text(index, source)?;
         let method = quoted_property_name(&index_text).unwrap_or_else(|| format!("[{index_text}]"));
         return Some(SourceObservation {
-            kind: crate::source_detection::classify_method(language, &method),
+            kind: classify_method(language, &method),
             symbol: symbol.unwrap_or("<module>").to_owned(),
             resource: canonical_node_text(receiver, source)?,
             method,
@@ -241,6 +387,67 @@ const cancelOrder = (order: Order) => orders.delete(order);
                 },
             ]
         );
+    }
+
+    #[test]
+    fn treats_updates_on_imported_crypto_hashes_as_other_calls() {
+        let observations = observe_javascript(
+            r#"
+import crypto from "node:crypto";
+import { createHash } from "node:crypto";
+import * as legacyCrypto from "crypto";
+
+export function digest(value) {
+  crypto.createHash("sha256").update(value).digest("hex");
+  createHash("sha256").update(value).digest("hex");
+  legacyCrypto.createHash("sha256").update(value).digest("hex");
+  orders.update(value);
+}
+"#,
+        )
+        .unwrap();
+
+        let updates = observations
+            .iter()
+            .filter(|observation| observation.method == "update")
+            .collect::<Vec<_>>();
+        assert_eq!(updates.len(), 4);
+        for resource in [
+            "crypto.createHash(\"sha256\")",
+            "createHash(\"sha256\")",
+            "legacyCrypto.createHash(\"sha256\")",
+        ] {
+            assert_eq!(
+                updates
+                    .iter()
+                    .find(|observation| observation.resource == resource)
+                    .unwrap()
+                    .kind,
+                SourceObservationKind::OtherMethodCall
+            );
+        }
+        assert_eq!(
+            updates
+                .iter()
+                .find(|observation| observation.resource == "orders")
+                .unwrap()
+                .kind,
+            SourceObservationKind::DbWrite
+        );
+    }
+
+    #[test]
+    fn keeps_unrelated_create_hash_updates_as_database_writes() {
+        let observations = observe_typescript(
+            "const crypto = service; crypto.createHash('sha256').update(value);",
+        )
+        .unwrap();
+
+        let update = observations
+            .iter()
+            .find(|observation| observation.method == "update")
+            .unwrap();
+        assert_eq!(update.kind, SourceObservationKind::DbWrite);
     }
 
     #[test]
