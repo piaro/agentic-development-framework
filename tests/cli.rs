@@ -1962,6 +1962,59 @@ fn project_observe_offers_unclassified_methods_on_a_resource_with_a_builtin_effe
 }
 
 #[test]
+fn hash_only_javascript_does_not_require_database_bindings() {
+    let project = TestProject::new();
+    let source_path = "src/hash-only.mjs";
+    fs::write(
+        project.root.join(source_path),
+        "import crypto from \"node:crypto\";\n\
+         export function digest(value) {\n\
+         \x20 const hash = crypto.createHash(\"sha256\").update(value).digest(\"hex\");\n\
+         \x20 return hash;\n\
+         }\n",
+    )
+    .unwrap();
+    let draft_relative = ".adf/hash-only-observation.draft.yaml";
+    let observed = project.run(&[
+        "project",
+        "observe",
+        "--analysis-root",
+        source_path,
+        "--output",
+        draft_relative,
+    ]);
+    assert_success(&observed);
+
+    let draft = read_yaml(&project.root.join(draft_relative));
+    let artifact = &draft["artifacts"][0];
+    let update = artifact["observations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|observation| observation["method"] == "update")
+        .unwrap();
+    assert_eq!(update["kind"], "other_method_call");
+    assert_eq!(
+        draft["binding_artifacts"][0]["bindings"]["symbols"],
+        json!({})
+    );
+    assert_eq!(
+        draft["binding_artifacts"][0]["bindings"]["resources"],
+        json!({})
+    );
+    assert_eq!(
+        draft["binding_artifacts"][0]["bindings"]["methods"],
+        json!({})
+    );
+
+    let validation = project.run(&["project", "validate-bindings", "--draft", draft_relative]);
+    assert_success(&validation);
+    assert!(
+        String::from_utf8_lossy(&validation.stdout).contains("Binding Draft validation: valid")
+    );
+}
+
+#[test]
 fn project_validates_and_promotes_a_reviewed_draft_safely() {
     let project = TestProject::new();
     fs::write(
