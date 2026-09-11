@@ -15,6 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub struct LoadedProject {
+    _storage_guard: crate::storage_io::StorageGuard,
     root: PathBuf,
     config: ProjectConfig,
     repository: Value,
@@ -36,6 +37,8 @@ impl LoadedProject {
             .as_ref()
             .canonicalize()
             .map_err(|error| runtime_error(format!("cannot resolve project root: {error}")))?;
+        let storage_guard =
+            crate::storage_io::StorageGuard::shared(&root).map_err(runtime_error)?;
         let config =
             load_project_config(&root).map_err(|error| runtime_error(error.to_string()))?;
         let framework_lock = read_yaml(root.join(".adf/framework.lock"))?;
@@ -52,6 +55,7 @@ impl LoadedProject {
         .and_then(|adapter| adapter.observe_cached())
         .map_err(|error| runtime_error(error.to_string()))?;
         Ok(Self {
+            _storage_guard: storage_guard,
             root,
             config,
             repository,

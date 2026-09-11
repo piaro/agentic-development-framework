@@ -60,6 +60,11 @@ pub fn initialize_project(
     if !project_root.is_dir() {
         return Err(setup_error("project root must be a directory"));
     }
+    let _storage_guard = if project_root.join(".adf/config.yaml").exists() {
+        Some(crate::storage_io::StorageGuard::shared(&project_root).map_err(setup_error)?)
+    } else {
+        None
+    };
     assert_git_root(&project_root)?;
     for relative in [
         ".adf",
@@ -291,6 +296,8 @@ pub fn initialize_change(
             "Change ID must use change.<id> with letters, digits, '.', '_', or '-'",
         ));
     }
+    let _storage_guard =
+        crate::storage_io::StorageGuard::shared(project_root).map_err(setup_error)?;
     let root = project_root
         .canonicalize()
         .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
@@ -450,6 +457,8 @@ pub fn promote_observation_draft(
     project_root: &Path,
     draft: &Value,
 ) -> Result<ObservationPromotionReceipt, ProjectSetupError> {
+    let _storage_guard =
+        crate::storage_io::StorageGuard::shared(project_root).map_err(setup_error)?;
     let root = project_root
         .canonicalize()
         .map_err(|error| setup_error(format!("cannot resolve project root: {error}")))?;
@@ -933,25 +942,25 @@ fn atomic_replace_if_digest(
 }
 
 #[cfg(unix)]
-fn sync_directory(path: &Path) -> Result<(), ProjectSetupError> {
+pub(crate) fn sync_directory(path: &Path) -> Result<(), ProjectSetupError> {
     fs::File::open(path)
         .and_then(|directory| directory.sync_all())
         .map_err(|error| setup_error(format!("{}: {error}", path.display())))
 }
 
 #[cfg(windows)]
-fn sync_directory(_path: &Path) -> Result<(), ProjectSetupError> {
+pub(crate) fn sync_directory(_path: &Path) -> Result<(), ProjectSetupError> {
     Ok(())
 }
 
 #[cfg(not(windows))]
-fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
+pub(crate) fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
     fs::rename(source, target)
         .map_err(|error| setup_error(format!("{}: {error}", target.display())))
 }
 
 #[cfg(windows)]
-fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
+pub(crate) fn replace_file(source: &Path, target: &Path) -> Result<(), ProjectSetupError> {
     use std::os::windows::ffi::OsStrExt;
 
     const MOVEFILE_REPLACE_EXISTING: u32 = 0x1;

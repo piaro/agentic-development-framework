@@ -3360,7 +3360,14 @@ fn derived_runtime_indexes_are_rebuilt_when_cache_files_are_corrupt() {
     for relative in cache_paths {
         let value: Value =
             serde_json::from_slice(&fs::read(project.root.join(relative)).unwrap()).unwrap();
-        assert_eq!(value["schema_version"], "1");
+        assert_eq!(
+            value["schema_version"],
+            if relative.contains("contract-health-") {
+                "2"
+            } else {
+                "1"
+            }
+        );
     }
 }
 
@@ -3971,6 +3978,226 @@ fn mcp_call(
         }),
     );
     mcp_receive(output)["result"].clone()
+}
+
+#[test]
+fn storage_migration_preserves_restart_health_execution_and_correction() {
+    use adf::project_application::ProjectApplicationService;
+    use adf::record_storage::{self, RecordKind, StoragePolicy};
+    let project = TestProject::new();
+    let mut service = ProjectApplicationService::new(&project.root, None).unwrap();
+    let issued = service.next("change.place-order", false).unwrap();
+    let key = issued.issued_action.unwrap();
+    let begun = service
+        .begin_execution(
+            &key,
+            serde_json::from_value(json!({
+                "runner":{"provider":"test", "surface":"fixture"}
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+    let submission = risk_signal_submission(
+        &serde_json::to_value(&key).unwrap(),
+        &issued.next_response["context"]["payload"],
+    );
+    service
+        .submit(&key, submission["payload"].clone(), vec![], None)
+        .unwrap();
+    let results = project.root.join(".adf/changes/change.place-order/results");
+    let path = fs::read_dir(&results)
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    let mut original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    // Historical Records explicitly repeated inherited outcome maps.
+    for field in ["input_refs", "freshness_refs"] {
+        let inherited = original[field].clone();
+        for outcome in original["payload"]["outcomes"].as_array_mut().unwrap() {
+            outcome
+                .as_object_mut()
+                .unwrap()
+                .entry(field)
+                .or_insert_with(|| inherited.clone());
+        }
+    }
+    let mut identity = original.clone();
+    identity.as_object_mut().unwrap().remove("execution");
+    identity.as_object_mut().unwrap().remove("id");
+    original["id"] = json!(format!(
+        "result.{}",
+        &canonical_digest(&identity).unwrap()[7..27]
+    ));
+    fs::write(&path, serde_json::to_vec_pretty(&original).unwrap()).unwrap();
+    let record_id = original["id"].as_str().unwrap();
+    drop(service);
+    let next_before = project.run(&["next", "change.place-order", "--format", "json"]);
+    let health_before = project.run(&["contract-health", "--format", "json"]);
+    assert_success(&next_before);
+    assert_success(&health_before);
+    let before_bytes = fs::read(&path).unwrap();
+    let before_config = fs::read(project.root.join(".adf/config.yaml")).unwrap();
+    let head = git_output(&project.root, &["rev-parse", "HEAD"]);
+    let dry = project.run(&[
+        "project",
+        "storage",
+        "migrate",
+        "--to",
+        "adaptive-refmaps-v1",
+        "--dry-run",
+    ]);
+    assert_success(&dry);
+    assert_eq!(fs::read(&path).unwrap(), before_bytes);
+    assert_eq!(
+        fs::read(project.root.join(".adf/config.yaml")).unwrap(),
+        before_config
+    );
+    assert!(
+        !project
+            .root
+            .join(".adf/local/storage-migrations/current.json")
+            .exists()
+    );
+    let migrated = project.run(&[
+        "project",
+        "storage",
+        "migrate",
+        "--to",
+        "adaptive-refmaps-v1",
+    ]);
+    assert_success(&migrated);
+    let packed = fs::read(&path).unwrap();
+    assert_eq!(
+        record_storage::parse_strict(&packed).unwrap()["storage_format"],
+        record_storage::STORAGE_FORMAT
+    );
+    assert_eq!(
+        record_storage::decode(&packed, RecordKind::Result).unwrap(),
+        original
+    );
+    assert_eq!(git_output(&project.root, &["rev-parse", "HEAD"]), head);
+    assert_eq!(
+        read_yaml(&project.root.join(".adf/config.yaml"))["schema_version"],
+        "2"
+    );
+    for (command, before) in [("next", &next_before), ("contract-health", &health_before)] {
+        let args = if command == "next" {
+            vec![command, "change.place-order", "--format", "json"]
+        } else {
+            vec![command, "--format", "json"]
+        };
+        let after = project.run(&args);
+        assert_success(&after);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&before.stdout).unwrap(),
+            serde_json::from_slice::<Value>(&after.stdout).unwrap()
+        );
+    }
+    fs::remove_dir_all(project.root.join(".adf/cache/runtime")).unwrap();
+    let cold = project.run(&["contract-health", "--format", "json"]);
+    assert_success(&cold);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&health_before.stdout).unwrap(),
+        serde_json::from_slice::<Value>(&cold.stdout).unwrap()
+    );
+    let exported = project.run(&["project", "storage", "export", "--record", record_id]);
+    assert_success(&exported);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&exported.stdout).unwrap(),
+        original
+    );
+    let completed = project.run(&[
+        "execution",
+        "complete",
+        &begun.execution_id,
+        "--change",
+        "change.place-order",
+        "--status",
+        "succeeded",
+        "--result",
+        record_id,
+        "--format",
+        "json",
+    ]);
+    assert_success(&completed);
+    let (mut child, mut input, mut output) = start_mcp_server(&project.root);
+    let restarted = mcp_call(
+        &mut input,
+        &mut output,
+        2,
+        "adf_next",
+        json!({"change_id":"change.place-order"}),
+    );
+    assert_eq!(restarted["isError"], false, "{restarted}");
+    drop(input);
+    assert!(child.wait().unwrap().success());
+    let source = project.root.join("src/place_order.py");
+    let mut text = fs::read_to_string(&source).unwrap();
+    text.push_str("\n# changed after verification\n");
+    fs::write(&source, text).unwrap();
+    let stale_packed = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&stale_packed);
+    assert_ne!(
+        serde_json::from_slice::<Value>(&stale_packed.stdout).unwrap()["context"]["digest"],
+        serde_json::from_slice::<Value>(&next_before.stdout).unwrap()["context"]["digest"]
+    );
+    let restored = project.run(&["project", "storage", "migrate", "--to", "plain-json-v1"]);
+    assert_success(&restored);
+    assert_eq!(
+        read_yaml(&project.root.join(".adf/config.yaml"))["schema_version"],
+        "1"
+    );
+    assert_eq!(
+        serde_json::from_slice::<Value>(&fs::read(&path).unwrap()).unwrap(),
+        original
+    );
+    let stale_plain = project.run(&["next", "change.place-order", "--format", "json"]);
+    assert_success(&stale_plain);
+    assert_eq!(
+        serde_json::from_slice::<Value>(&stale_packed.stdout).unwrap(),
+        serde_json::from_slice::<Value>(&stale_plain.stdout).unwrap()
+    );
+    assert_success(&project.run(&[
+        "project",
+        "storage",
+        "migrate",
+        "--to",
+        "adaptive-refmaps-v1",
+    ]));
+    let schemas =
+        adf::schema::SchemaRegistry::load(project.release_root.join("schemas/v1")).unwrap();
+    let mut store =
+        adf::filesystem_project::FileProjectStore::open(&project.root, json!({}), &schemas)
+            .unwrap();
+    assert!(store.append_result(&original).is_err());
+    let mut corrected = original.clone();
+    corrected["id"] = json!("result.corrected");
+    store.replace_result(&corrected, record_id).unwrap();
+    assert!(store.replace_result(&original, record_id).is_err());
+    assert_eq!(
+        record_storage::decode(&fs::read(&path).unwrap(), RecordKind::Result).unwrap(),
+        corrected
+    );
+    let exclusive = project.run(&["project", "storage", "migrate", "--to", "plain-json-v1"]);
+    assert!(!exclusive.status.success());
+    assert!(String::from_utf8_lossy(&exclusive.stderr).contains("storage is busy"));
+    drop(store);
+    let mut additional = original.clone();
+    additional["id"] = json!("result.additional");
+    additional["action_id"] = json!("action.additional");
+    let mut store =
+        adf::filesystem_project::FileProjectStore::open(&project.root, json!({}), &schemas)
+            .unwrap();
+    store.append_result(&additional).unwrap();
+    drop(store);
+    let report = project.run(&["project", "storage", "verify"]);
+    assert_success(&report);
+    assert_eq!(
+        record_storage::encode(&corrected, RecordKind::Result, StoragePolicy::Adaptive).unwrap(),
+        fs::read(&path).unwrap()
+    );
 }
 
 fn risk_signal_submission(key: &Value, context: &Value) -> Value {

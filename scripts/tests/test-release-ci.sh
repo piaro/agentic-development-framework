@@ -32,6 +32,23 @@ test -s "$OUTPUT/candidate-framework.lock"
 test -s "$OUTPUT/distribution-trust.json"
 test -s "$OUTPUT/publish-receipt.json"
 
+# A new CLI release must not collide with the development release tag.
+VERSIONED_OUTPUT=$TEST_ROOT/versioned
+ADF_RELEASE_ID=adf-storage-test run_release_ci "$VERSIONED_OUTPUT" "$PUBLIC_KEY"
+python3 - "$VERSIONED_OUTPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+assert json.loads((root / 'publish-receipt.json').read_text())['release_id'] == 'adf-storage-test'
+assert 'adf-storage-test' in (root / 'candidate-framework.lock').read_text()
+PY
+if ADF_RELEASE_ID='../invalid' run_release_ci "$TEST_ROOT/invalid" "$PUBLIC_KEY" >/dev/null 2>&1; then
+  echo "Release CI accepted an unsafe release ID" >&2
+  exit 1
+fi
+test ! -e "$TEST_ROOT/invalid/framework-release.tar"
+
 # A rerun must not replace an already reviewed candidate.
 if run_release_ci "$OUTPUT" "$PUBLIC_KEY" >/dev/null 2>&1; then
   echo "Release CI unexpectedly overwrote existing outputs" >&2

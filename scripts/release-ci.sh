@@ -12,6 +12,13 @@ BASE_LOCK=$KIT_ROOT/testdata/fixtures/db-sqs/framework-lock.yaml
 OUTPUT_DIR=${ADF_RELEASE_OUTPUT_DIR:-"$KIT_ROOT/dist/framework"}
 SOURCE_ID=${ADF_RELEASE_SOURCE_ID:-remote:official}
 SIGNER_KEY_ID=${ADF_RELEASE_SIGNER_KEY_ID:-framework.release.prototype}
+RELEASE_ID=${ADF_RELEASE_ID:-adf-dev}
+case "$RELEASE_ID" in
+  ''|*[!A-Za-z0-9._-]*)
+    echo "ADF_RELEASE_ID contains unsupported characters" >&2
+    exit 2
+    ;;
+esac
 PUBLIC_KEY=${ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX:?ADF_RELEASE_SIGNING_PUBLIC_KEY_HEX is required}
 : "${ADF_RELEASE_SIGNING_KEY_HEX:?ADF_RELEASE_SIGNING_KEY_HEX is required}"
 
@@ -34,6 +41,19 @@ cleanup() {
 trap cleanup EXIT HUP INT TERM
 
 mkdir -p "$WORK_ROOT/source/schemas" "$WORK_ROOT/first" "$WORK_ROOT/second"
+python3 - "$BASE_LOCK" "$WORK_ROOT/framework-lock.yaml" "$RELEASE_ID" <<'PY'
+import re
+import sys
+from pathlib import Path
+
+source, output, release_id = sys.argv[1:]
+text, count = re.subn(r'^framework_release:.*$', 'framework_release: "' + release_id + '"',
+                      Path(source).read_text(), flags=re.MULTILINE)
+if count != 1:
+    raise SystemExit('Expected exactly one Framework Release ID in the base lock')
+Path(output).write_text(text)
+PY
+BASE_LOCK=$WORK_ROOT/framework-lock.yaml
 cp "$SOURCE_RULES" "$WORK_ROOT/source/rules.yaml"
 cp "$SOURCE_FRAMEWORK_CATALOG" "$WORK_ROOT/source/framework-catalog.yaml"
 cp -R "$SOURCE_SCHEMAS" "$WORK_ROOT/source/schemas/v1"

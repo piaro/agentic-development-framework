@@ -1320,6 +1320,15 @@ pub fn apply_migration_candidate(
         )));
     }
 
+    let _storage_guard = crate::storage_io::StorageGuard::shared(&root).map_err(migration_error)?;
+    if root.join(".adf/config.yaml").exists() {
+        let config = load_project_config(&root).map_err(|e| migration_error(e.to_string()))?;
+        if config.record_storage != crate::record_storage::StoragePolicy::Plain {
+            return Err(migration_error(
+                "expand Record storage to plain-json-v1 before applying a legacy migration candidate",
+            ));
+        }
+    }
     let manifest = load_candidate_manifest(&candidate_root)?;
     let draft = load_candidate_draft(&candidate_root)?;
     let manifest_value = serde_json::to_value(&manifest).map_err(|error| {

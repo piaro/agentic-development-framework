@@ -289,6 +289,8 @@ pub fn switch_framework_lock(
     project_root: &Path,
     candidate_lock_path: &Path,
 ) -> Result<SwitchReceipt, DeliveryError> {
+    let _storage_guard =
+        crate::storage_io::StorageGuard::shared(project_root).map_err(delivery_error)?;
     switch_framework_lock_for(project_root, candidate_lock_path, TrustUse::NewActivation)
 }
 
@@ -355,6 +357,8 @@ pub fn rollback_framework_lock(
     project_root: &Path,
     backup_lock_path: &Path,
 ) -> Result<SwitchReceipt, DeliveryError> {
+    let _storage_guard =
+        crate::storage_io::StorageGuard::shared(project_root).map_err(delivery_error)?;
     let project_root = canonical_project_root(project_root)?;
     let backups_root = project_root.join(".adf/cache/framework-lock-backups");
     let backup_path = absolute_from(&project_root, backup_lock_path)

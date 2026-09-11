@@ -11,7 +11,9 @@ use crate::canonical_digest;
 use crate::contract_health::{ContractHealthReport, build_contract_health_report_with_digests};
 use crate::kernel::ProjectSnapshot;
 use crate::project::build_project_snapshot;
+use crate::record_storage::{self, RecordKind, StoragePolicy};
 use crate::schema::SchemaRegistry;
+use crate::storage_io::{self, StorageGuard};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -19,7 +21,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::fs::{self, File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -36,7 +38,7 @@ const DISALLOWED_SOURCE_ROOTS: [&str; 5] = [
 ];
 pub const FILESYSTEM_PROJECT_PROTOCOL_VERSION: &str = "3";
 static TEMPORARY_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-const HEALTH_INDEX_SCHEMA_VERSION: &str = "1";
+const HEALTH_INDEX_SCHEMA_VERSION: &str = "2";
 const RESULT_INDEX_PATH: &str = ".adf/cache/runtime/contract-health-results-v1.json";
 const EVIDENCE_INDEX_PATH: &str = ".adf/cache/runtime/contract-health-evidence-v1.json";
 
@@ -75,6 +77,8 @@ struct InitializationTarget {
 }
 
 pub struct FileProjectStore<'a> {
+    _storage_guard: StorageGuard,
+    storage_policy: StoragePolicy,
     project_root: PathBuf,
     contract_root: PathBuf,
     decision_root: PathBuf,
@@ -118,10 +122,20 @@ impl<'a> FileProjectStore<'a> {
                 root.display()
             )));
         }
+        let storage_guard = StorageGuard::shared(&root).map_err(file_error)?;
+        let storage_policy = if root.join(".adf/config.yaml").exists() {
+            crate::project_config::load_project_config(&root)
+                .map_err(|e| file_error(e.to_string()))?
+                .record_storage
+        } else {
+            StoragePolicy::Plain
+        };
         let contract_root = source_root(&root, contract_root)?;
         let decision_root = source_root(&root, decision_root)?;
         let change_root = root.join(".adf").join("changes");
         Ok(Self {
+            _storage_guard: storage_guard,
+            storage_policy,
             project_root: root,
             contract_root,
             decision_root,
@@ -352,6 +366,7 @@ impl<'a> FileProjectStore<'a> {
             .join(change_id)
             .join("results")
             .join(result_filename(result)?);
+        let _correction = storage_io::correction_lock(&self.project_root).map_err(file_error)?;
         let existing = read_json(&path)?;
         if existing["id"].as_str() != Some(expected_result_id) {
             return Err(file_error("Result changed before correction"));
@@ -655,8 +670,15 @@ impl<'a> FileProjectStore<'a> {
                         .map(Ok)
                         .unwrap_or_else(|| fs::read(path))
                         .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
-                    let original: Value = serde_json::from_slice(&bytes)
-                        .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
+                    let original = record_storage::decode(
+                        &bytes,
+                        if compact_results {
+                            RecordKind::Result
+                        } else {
+                            RecordKind::Evidence
+                        },
+                    )
+                    .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
                     let record_digest = canonical_digest(&original)
                         .map_err(|error| file_error(error.to_string()))?;
                     let record = if compact_results {
@@ -729,26 +751,31 @@ impl<'a> FileProjectStore<'a> {
         value: &Value,
         format: FileFormat,
     ) -> Result<(), FileProjectError> {
-        let serialized = serialize_record(value, format, None)?;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| {
-                file_error(format!("cannot create {}: {error}", parent.display()))
-            })?;
+        storage_io::reject_symlinks(&self.project_root, path).map_err(file_error)?;
+        let serialized = self.serialize_stored(value, format, None)?;
+        storage_io::atomic_write(path, serialized.as_bytes(), true).map_err(file_error)
+    }
+
+    fn serialize_stored(
+        &self,
+        value: &Value,
+        format: FileFormat,
+        existing: Option<&str>,
+    ) -> Result<String, FileProjectError> {
+        if matches!(format, FileFormat::Json) && self.storage_policy == StoragePolicy::Adaptive {
+            let kind = if value["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("result."))
+            {
+                RecordKind::Result
+            } else {
+                RecordKind::Evidence
+            };
+            let bytes =
+                record_storage::encode(value, kind, self.storage_policy).map_err(file_error)?;
+            return String::from_utf8(bytes).map_err(|e| file_error(e.to_string()));
         }
-        let mut file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(path)
-            .map_err(|error| {
-                if error.kind() == std::io::ErrorKind::AlreadyExists {
-                    file_error(format!("record already exists: {}", path.display()))
-                } else {
-                    file_error(format!("cannot create {}: {error}", path.display()))
-                }
-            })?;
-        file.write_all(serialized.as_bytes())
-            .and_then(|()| file.sync_all())
-            .map_err(|error| file_error(format!("cannot write {}: {error}", path.display())))
+        serialize_record(value, format, existing)
     }
 
     fn write_atomic(
@@ -770,7 +797,12 @@ impl<'a> FileProjectStore<'a> {
         } else {
             None
         };
-        let serialized = serialize_record(value, format, existing.as_deref())?;
+        let serialized = self.serialize_stored(value, format, existing.as_deref())?;
+        storage_io::reject_symlinks(&self.project_root, path).map_err(file_error)?;
+        if matches!(format, FileFormat::Json) {
+            return storage_io::atomic_write(path, serialized.as_bytes(), false)
+                .map_err(file_error);
+        }
         let temporary = temporary_path(path)?;
         let write_result = (|| {
             let mut file = OpenOptions::new()
@@ -1202,11 +1234,13 @@ fn assert_unique_ids(values: &[Value]) -> Result<(), FileProjectError> {
 }
 
 fn read_json(path: &Path) -> Result<Value, FileProjectError> {
-    let mut bytes = Vec::new();
-    File::open(path)
-        .and_then(|mut file| file.read_to_end(&mut bytes))
-        .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
-    let value: Value = serde_json::from_slice(&bytes)
+    let bytes = storage_io::read_record(path).map_err(file_error)?;
+    let kind = match parent_name(path) {
+        Some("results") => RecordKind::Result,
+        Some("evidence") => RecordKind::Evidence,
+        _ => return Err(file_error("unsupported stored Record location")),
+    };
+    let value = record_storage::decode(&bytes, kind)
         .map_err(|error| file_error(format!("{}: {error}", path.display())))?;
     require_object(value, path)
 }
