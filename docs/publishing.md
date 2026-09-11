@@ -75,6 +75,17 @@ linked into them, and uploads the whole set as workflow artifacts.
 
 Nothing is published. Stop here and look at what it produced.
 
+Set `release_id` to a new identifier, for example `adf-2026-09-11-storage`.
+The publication tag will be `framework-adf-2026-09-11-storage`. Never reuse an
+existing identifier for updated binaries. Set `source_id` and `signer_key_id`
+to the configured repository values so existing projects retain their trust pins.
+Local candidate builds accept the same identifier through `ADF_RELEASE_ID`;
+the default `adf-dev` is retained for regression fixtures.
+Signed release names identify archives; compatibility still requires exact
+protocol versions and Rule/Schema digests. The development lock retains its
+fixed `adf-dev` identity. Changing a signed release name does not relax signature
+or pinned archive verification.
+
 ### 2. Publish it
 
 Run the **Publish a Framework Release** workflow with the candidate run's ID

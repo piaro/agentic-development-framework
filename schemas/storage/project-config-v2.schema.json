@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/storage/project-config-v2",
+  "type": "object",
+  "required": ["schema_version", "record_storage", "project_sources", "repository_observation"],
+  "properties": {
+    "schema_version": {"const": "2"},
+    "record_storage": {"const": "adaptive-refmaps-v1"},
+    "project_sources": {
+      "type": "object", "required": ["contracts", "decisions"],
+      "properties": {"contracts": {"type": "string"}, "decisions": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "repository_observation": {"type": "string"}
+  },
+  "additionalProperties": false
+}

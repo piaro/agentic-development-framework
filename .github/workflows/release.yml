@@ -3,6 +3,10 @@ name: Release candidate
 on:
   workflow_dispatch:
     inputs:
+      release_id:
+        description: Unique Framework Release ID (published as framework-<release_id>)
+        required: true
+        type: string
       source_id:
         description: Logical Release source ID
         required: true
@@ -31,6 +35,7 @@ jobs:
       ADF_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
       ADF_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
       ADF_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/framework
+      ADF_RELEASE_ID: ${{ inputs.release_id }}
 
     steps:
       - name: Check out reviewed source

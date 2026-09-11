@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "adf://schemas/storage/record-refmaps-v1",
+  "type": "object",
+  "required": ["storage_format", "record_kind", "record_digest", "record", "reference_maps", "map_bindings"],
+  "properties": {
+    "storage_format": {"const": "adf-record-refmaps-v1"},
+    "record_kind": {"enum": ["result", "evidence"]},
+    "record_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "record": {"type": "object"},
+    "reference_maps": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"pattern": "^sha256:[0-9a-f]{64}$"},
+      "additionalProperties": {"type": "object", "additionalProperties": {"type": "string"}}
+    },
+    "map_bindings": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"pattern": "^/(input_refs|freshness_refs|payload/outcomes/(0|[1-9][0-9]*)/(input_refs|freshness_refs))$"},
+      "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "The codec also verifies map hashes, allowed paths by record kind, missing/unused maps, no overwrites, resource limits and restored record_digest. Validate the restored Record with the pinned logical Schema. This storage Schema does not change the Framework identity."
+}

@@ -124,6 +124,21 @@ fn main() -> ExitCode {
             }
         };
     }
+    if command == "project" && arguments.get(2).map(String::as_str) == Some("storage") {
+        return match adf::storage_migration::run_cli(&arguments[3..]) {
+            Ok(value) => {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&value).expect("JSON response")
+                );
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("{error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     if command == "project" {
         let options = match parse_project_management_command(&arguments[2..]) {
             Ok(options) => options,
@@ -2385,6 +2400,7 @@ fn usage_text() -> &'static str {
     "Agentic Development Framework\n\
 \n\
 usage:\n\
+  adf project storage <inspect|verify|export|migrate> [--project <root>] [--to <adaptive-refmaps-v1|plain-json-v1>] [--dry-run] [--record <id>] [--release <path>] [--format json]\n\
   adf project init [--project <root>] [--candidate-dir <dir>] [--analysis-root <path>]...\n\
   adf project observe [--project <root>] [--analysis-root <path>]... [--format <yaml|json>] [--output <path>]\n\
   adf project validate-bindings [--project <root>] [--draft <path>] [--format <text|json>] [--require-clean]\n\

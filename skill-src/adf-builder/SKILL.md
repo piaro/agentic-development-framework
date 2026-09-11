@@ -103,3 +103,11 @@ collect these metrics. ADF records Context size without an extra model invocatio
 
 If submission is rejected as stale, the inputs moved under you. Call `adf_next`
 again and work from the fresh action rather than retrying the old payload.
+
+## Reading stored Records
+
+CLI and MCP return logical Records even when files use shared reference maps. To
+inspect a file-backed Result or Evidence as ordinary JSON, run
+`adf project storage export --record <id>`. Do not hand-edit storage envelopes,
+reference tables, or digests. Storage migration is an explicit maintenance task;
+continue using the issued Context and normal submission tools for development.

@@ -44,6 +44,7 @@ pub mod project_config;
 pub mod project_runtime;
 pub mod project_setup;
 mod python_detection;
+pub mod record_storage;
 pub mod release_publisher;
 pub mod remote_delivery;
 mod ruby_detection;
@@ -54,6 +55,8 @@ pub mod schema;
 mod script_detection;
 pub mod signal_catalog;
 mod source_detection;
+pub mod storage_io;
+pub mod storage_migration;
 pub mod submission;
 mod swift_detection;
 

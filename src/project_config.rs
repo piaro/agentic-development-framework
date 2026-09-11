@@ -10,6 +10,7 @@ pub const PROJECT_CONFIG_SCHEMA_VERSION: &str = "1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProjectConfig {
+    pub record_storage: crate::record_storage::StoragePolicy,
     pub contract_root: String,
     pub decision_root: String,
     pub repository_observation: String,
@@ -24,21 +25,36 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, ProjectConfigEr
     let object = value
         .as_object()
         .ok_or_else(|| config_error("project config must be a mapping"))?;
-    assert_exact_fields(
-        object.keys().map(String::as_str),
-        &[
-            "schema_version",
-            "project_sources",
-            "repository_observation",
-        ],
-        "project config",
-    )?;
-    if object["schema_version"].as_str() != Some(PROJECT_CONFIG_SCHEMA_VERSION) {
-        return Err(config_error(format!(
-            "unsupported project config schema: {}",
-            object["schema_version"]
-        )));
-    }
+    let (fields, record_storage) = match object.get("schema_version").and_then(Value::as_str) {
+        Some("1") => (
+            vec![
+                "schema_version",
+                "project_sources",
+                "repository_observation",
+            ],
+            crate::record_storage::StoragePolicy::Plain,
+        ),
+        Some("2")
+            if object.get("record_storage").and_then(Value::as_str)
+                == Some("adaptive-refmaps-v1") =>
+        {
+            (
+                vec![
+                    "schema_version",
+                    "project_sources",
+                    "repository_observation",
+                    "record_storage",
+                ],
+                crate::record_storage::StoragePolicy::Adaptive,
+            )
+        }
+        _ => {
+            return Err(config_error(
+                "unsupported project config schema or record_storage policy",
+            ));
+        }
+    };
+    assert_exact_fields(object.keys().map(String::as_str), &fields, "project config")?;
     let sources = object["project_sources"]
         .as_object()
         .ok_or_else(|| config_error("project_sources must be a mapping"))?;
@@ -57,6 +73,7 @@ pub fn load_project_config(root: &Path) -> Result<ProjectConfig, ProjectConfigEr
     repository_path(root, decision_root)?;
     repository_path(root, repository_observation)?;
     Ok(ProjectConfig {
+        record_storage,
         contract_root: contract_root.to_owned(),
         decision_root: decision_root.to_owned(),
         repository_observation: repository_observation.to_owned(),

@@ -417,6 +417,68 @@ cargo build --locked --bin adf-claude-runner
 The signed binary release currently continues to publish only `adf`; runner
 distribution is a later compatibility milestone.
 
+## Reducing stored Record size
+
+ADF can store identical input and freshness reference maps once within each Result.
+Each file remains self-contained JSON. Reading it restores the exact logical Record,
+including explicit versus omitted fields, before validation and digest calculation.
+Record IDs, evidence, explanations and the pinned Framework identity are preserved.
+Small Records remain plain JSON when sharing would cost more space.
+
+Existing projects keep their current write format until explicitly migrated. Before
+migration, stop agents, MCP sessions and CI writers for that working directory and
+update every reader/writer to a version supporting `adf-record-refmaps-v1`. Older
+CLIs reject the new project configuration on most paths, but some old execution
+commands bypass that check; configuration alone cannot stop a running old writer.
+
+```sh
+adf project storage inspect --format json
+adf project storage migrate --to adaptive-refmaps-v1 --dry-run
+adf project storage migrate --to adaptive-refmaps-v1
+adf project storage verify
+adf project storage export --record result.<id> --format json
+```
+
+These commands accept `--project <root>` and the existing offline `--release <root>`
+option. Inspect, dry-run, verify and export leave Records, configuration and derived
+indexes unchanged; they acquire a small maintenance lock under `.adf/cache/locks/`.
+Reports describe Result/Evidence JSON bytes only, excluding execution events,
+non-JSON evidence, caches, Git history and other working directories. A skipped-file
+list identifies non-JSON files and interrupted temporary files.
+
+Migration validates Records against the pinned signed release and checks lossless
+roundtrips before writing. It enables project config version 2, atomically replaces
+individual files, and keeps a small Git-ignored recovery journal under
+`.adf/local/storage-migrations/`. A local `.gitignore` is created there if needed;
+existing ignore rules are never overwritten. Configuration YAML may be reformatted.
+Normal operations cooperate with the migration lock. Do not edit files, switch Git
+revisions, or remove lock files while migration is running.
+
+Repeat the same migration command after interruption. If a Record changed since an
+interrupted migration, the command stops instead of overwriting it. Inspect that
+conflict before continuing. After verifying the changed Records, move the recovery
+journal aside and run dry-run again to review a new plan; do not rewrite its hashes
+to conceal the conflict. To restore compatibility with older CLIs, expand all
+Records before downgrading the configuration:
+
+```sh
+adf project storage migrate --to plain-json-v1 --dry-run
+adf project storage migrate --to plain-json-v1
+```
+
+Rollback restores equivalent JSON, including untracked Records, without keeping
+second copies of their contents. Original whitespace is not retained. Free space is
+checked before either direction. Completed replacement files are synced before
+publication; an interruption during a temporary write can leave a temporary file,
+which is reported and must be reviewed before removal. A restored Record may be up
+to 256 MiB; a sharing envelope may be up to 64 MiB. Excessive expansion is rejected
+before copying shared maps. JSON nesting is subject to the parser's depth limit.
+
+No commits, Git history rewrites, cache deletion or automatic legacy Kit migration
+are performed. Existing indexes rebuild from restored Records when their physical
+source changes; their own reference duplication is a separate capacity cost. A Git
+revision or source change still triggers the normal freshness rules.
+
 ## Commands
 
 | Command | What it does |

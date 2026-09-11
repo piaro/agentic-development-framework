@@ -146,6 +146,7 @@ impl ExecutionEvent {
 
 #[derive(Debug, Clone)]
 pub struct ExecutionEventStore {
+    _storage_guard: crate::storage_io::StorageGuard,
     project_root: PathBuf,
 }
 
@@ -155,7 +156,14 @@ impl ExecutionEventStore {
             .as_ref()
             .canonicalize()
             .map_err(|error| format!("cannot resolve project root: {error}"))?;
-        Ok(Self { project_root })
+        let storage_guard = crate::storage_io::StorageGuard::shared(&project_root)?;
+        if project_root.join(".adf/config.yaml").exists() {
+            crate::project_config::load_project_config(&project_root).map_err(|e| e.to_string())?;
+        }
+        Ok(Self {
+            project_root,
+            _storage_guard: storage_guard,
+        })
     }
 
     pub fn begin(
@@ -291,8 +299,9 @@ impl ExecutionEventStore {
         paths.sort();
         for path in paths {
             let bytes = read_regular_file(&path)?;
-            let result: Value = serde_json::from_slice(&bytes)
-                .map_err(|error| format!("{}: {error}", path.display()))?;
+            let result =
+                crate::record_storage::decode(&bytes, crate::record_storage::RecordKind::Result)
+                    .map_err(|error| format!("{}: {error}", path.display()))?;
             if result["id"].as_str() == Some(result_id) {
                 if result["action_id"].as_str() == Some(started.action_id.as_str())
                     && result["context_digest"].as_str() == Some(started.context_digest.as_str())

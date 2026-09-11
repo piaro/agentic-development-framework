@@ -66,8 +66,27 @@ pub fn validate_framework_lock(
     rule_index: &RuleIndex,
     schema_registry: &SchemaRegistry,
 ) -> Result<FrameworkLock, FrameworkLockError> {
-    let expected = build_framework_lock(rule_source, rule_index, schema_registry)?;
+    let mut expected = build_framework_lock(rule_source, rule_index, schema_registry)?;
     let comparable = comparable_core_lock(lock_source)?;
+    if lock_source.get("schema_version").and_then(Value::as_str)
+        == Some(SIGNED_FRAMEWORK_LOCK_SCHEMA_VERSION)
+    {
+        let release_id = lock_source
+            .get("framework_release")
+            .and_then(Value::as_str)
+            .filter(|id| {
+                !id.is_empty()
+                    && *id != "."
+                    && *id != ".."
+                    && id
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+            })
+            .ok_or_else(|| FrameworkLockError::new("invalid signed Framework Release ID"))?;
+        // Signed delivery checks this label against the pinned archive. Runtime
+        // compatibility is determined by the exact protocol and content fields.
+        expected["framework_release"] = Value::String(release_id.to_owned());
+    }
     let differences = differences(&expected, &comparable, "");
     if !differences.is_empty() {
         return Err(FrameworkLockError::new(format!(
@@ -207,6 +226,37 @@ impl std::error::Error for FrameworkLockError {}
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn signed_release_labels_do_not_relax_runtime_compatibility() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let registry = SchemaRegistry::load(root.join("schemas/v1")).unwrap();
+        let rules: Value = serde_yaml::from_str(
+            &std::fs::read_to_string(root.join("testdata/fixtures/db-sqs/rules.yaml")).unwrap(),
+        )
+        .unwrap();
+        let index = crate::rules::compile_rule_index(&rules, &registry).unwrap();
+        let mut lock = build_framework_lock(&rules, &index, &registry).unwrap();
+        lock["framework_release"] = json!("adf-storage-test");
+        assert!(validate_framework_lock(&lock, &rules, &index, &registry).is_err());
+        lock["schema_version"] = json!("2");
+        lock["release_artifact"] = json!({
+            "artifact_digest": format!("sha256:{}", "a".repeat(64)),
+            "signer_key_id": "test.key",
+            "source_id": "remote:test"
+        });
+        assert!(validate_framework_lock(&lock, &rules, &index, &registry).is_ok());
+        for field in ["protocols", "schema_bundle", "rule_set"] {
+            let mut invalid = lock.clone();
+            invalid[field] = json!({});
+            assert!(validate_framework_lock(&invalid, &rules, &index, &registry).is_err());
+        }
+        for label in ["", ".", "..", "../escape", "a/b"] {
+            let mut invalid = lock.clone();
+            invalid["framework_release"] = json!(label);
+            assert!(validate_framework_lock(&invalid, &rules, &index, &registry).is_err());
+        }
+    }
 
     #[test]
     fn reports_nested_missing_and_unexpected_fields_in_order() {
