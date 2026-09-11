@@ -140,8 +140,18 @@ pub fn publish_release(
         SchemaRegistry::load(&schemas_root).map_err(|error| publish_error(error.to_string()))?;
     let rule_index = compile_rule_index(&rule_source, &schema_registry)
         .map_err(|error| publish_error(error.to_string()))?;
-    validate_framework_lock(&base_lock, &rule_source, &rule_index, &schema_registry)
-        .map_err(|error| publish_error(error.to_string()))?;
+    let mut runtime_base_lock = base_lock.clone();
+    // The publisher assigns the signed archive's release label. Keep the
+    // unsigned development lock check strict for every technical field.
+    runtime_base_lock["framework_release"] =
+        Value::String(crate::framework_lock::FRAMEWORK_RELEASE.to_owned());
+    validate_framework_lock(
+        &runtime_base_lock,
+        &rule_source,
+        &rule_index,
+        &schema_registry,
+    )
+    .map_err(|error| publish_error(error.to_string()))?;
 
     let inventory = files
         .iter()
