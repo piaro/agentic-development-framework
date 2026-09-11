@@ -35,7 +35,6 @@ jobs:
       ADF_RELEASE_SOURCE_ID: ${{ inputs.source_id }}
       ADF_RELEASE_SIGNER_KEY_ID: ${{ inputs.signer_key_id }}
       ADF_RELEASE_OUTPUT_DIR: ${{ github.workspace }}/dist/framework
-      ADF_RELEASE_ID: ${{ inputs.release_id }}
 
     steps:
       - name: Check out reviewed source
@@ -50,6 +49,8 @@ jobs:
         run: sh scripts/tests/test-rust.sh
 
       - name: Build and verify signed Release candidate
+        env:
+          ADF_RELEASE_ID: ${{ inputs.release_id }}
         run: sh scripts/release-ci.sh
 
       - name: Attest distribution trust provenance
